@@ -37,7 +37,7 @@ export default function Login() {
       {/* Background image */}
       <div style={{
         position: 'absolute', inset: 0,
-        backgroundImage: 'url(/bg.jpg)',
+        backgroundImage: 'url(/bg.png)',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         filter: 'brightness(0.55) saturate(1.1)',
