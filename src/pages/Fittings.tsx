@@ -174,18 +174,9 @@ function parseEft(eft: string): { shipName: string; fittingName: string; items: 
 const WHEEL = 440
 const WCX = 220
 const WCY = 220
-const INNER_R = 120   // drone inner radius
-const ICON_SZ = 40    // square icon size
 const SHIP_D = 350    // ship render diameter (large, fills inner circle)
 
 // 0° = top (north), clockwise
-function slotXY(deg: number, r: number) {
-  const rad = deg * Math.PI / 180
-  return {
-    left: Math.round(WCX + r * Math.sin(rad) - ICON_SZ / 2),
-    top:  Math.round(WCY - r * Math.cos(rad) - ICON_SZ / 2),
-  }
-}
 function arcPt(deg: number, r: number): [number, number] {
   const rad = deg * Math.PI / 180
   return [WCX + r * Math.sin(rad), WCY - r * Math.cos(rad)]
@@ -235,7 +226,6 @@ function FittingWheel({ fitting, metaMap: _metaMap }: { fitting: ResolvedFitting
     byFlag.set(item.flag, [...(byFlag.get(item.flag) ?? []), item])
   }
 
-  const droneItems = fitting.items.filter(i => i.flag === 'DroneBay')
   const itemName = (id: number) => fitting.itemNames.get(id) ?? `Type ${id}`
 
   // Aantal getoonde slots: dogma-waarde van het schip, minimaal wat er gefit is
@@ -339,33 +329,6 @@ function FittingWheel({ fitting, metaMap: _metaMap }: { fitting: ResolvedFitting
         })}
       </svg>
 
-      {/* Drone bay (up to 3 types shown) */}
-      {droneItems.slice(0, 3).map((item, i) => {
-        const name = fitting.itemNames.get(item.type_id) ?? `Type ${item.type_id}`
-        const deg = 247 + i * 16
-        const { left, top } = slotXY(deg, INNER_R)
-        const isHov = hovered === `drone_${i}`
-        return (
-          <div
-            key={`drone_${i}`}
-            onMouseEnter={() => setHovered(`drone_${i}`)}
-            onMouseLeave={() => setHovered(null)}
-            title={`${name} ×${item.quantity}`}
-            style={{
-              position: 'absolute', left, top,
-              width: ICON_SZ, height: ICON_SZ, borderRadius: 5,
-              border: `1px solid ${isHov ? '#f97316' : '#f9731650'}`,
-              background: isHov ? 'rgba(120,45,5,0.95)' : 'rgba(80,30,5,0.88)',
-              boxShadow: isHov ? '0 0 10px rgba(249,115,22,0.55)' : 'none',
-              overflow: 'hidden', cursor: 'default',
-              transition: 'border-color 0.12s, box-shadow 0.15s',
-              zIndex: isHov ? 6 : 4,
-            }}
-          >
-            <EveImage category="types" id={item.type_id} variation="icon" size={64} px={ICON_SZ} style={{ borderRadius: 0 }} />
-          </div>
-        )
-      })}
     </div>
   )
 }
