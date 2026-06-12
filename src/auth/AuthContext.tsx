@@ -82,6 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addToken = useCallback((token: TokenData) => {
     setTokens(prev => [...prev.filter(t => t.characterId !== token.characterId), token])
+    // Auto-register member on login
+    try {
+      const list = JSON.parse(localStorage.getItem('dashboard_members') ?? '[]') as { id: number; name: string; lastSeen: string }[]
+      const updated = list.filter(m => m.id !== token.characterId)
+      updated.push({ id: token.characterId, name: token.characterName, lastSeen: new Date().toISOString() })
+      localStorage.setItem('dashboard_members', JSON.stringify(updated))
+    } catch { /* ignore */ }
   }, [])
 
   const removeToken = useCallback((characterId: number) => {

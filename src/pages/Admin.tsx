@@ -14,9 +14,9 @@ interface ZkillStat {
 }
 
 interface SiteMember {
-  character_id: number
+  id: number
   name: string
-  added: string
+  lastSeen: string
 }
 
 type SettingKey = 'maintenance_mode' | 'show_wallet' | 'show_kills' | 'show_market'
@@ -50,22 +50,17 @@ export default function Admin() {
   const [tab, setTab] = useState<'stats' | 'members' | 'settings'>('stats')
   const [stats, setStats] = useState<ZkillStat | null>(null)
   const [members, setMembers] = useState<SiteMember[]>(() => {
-    try { return JSON.parse(localStorage.getItem('site_members') ?? '[]') } catch { return [] }
+    try { return JSON.parse(localStorage.getItem('dashboard_members') ?? '[]') } catch { return [] }
   })
   const [settings, setSettings] = useState(loadSettings)
   const [loading, setLoading] = useState(false)
-  const [addName, setAddName] = useState('')
-  const [addError, setAddError] = useState('')
-  const [addLoading, setAddLoading] = useState(false)
 
   useEffect(() => {
     if (tab === 'stats') fetchStats()
+    if (tab === 'members') {
+      try { setMembers(JSON.parse(localStorage.getItem('dashboard_members') ?? '[]')) } catch { /* ignore */ }
+    }
   }, [tab])
-
-  function saveMembers(list: SiteMember[]) {
-    setMembers(list)
-    localStorage.setItem('site_members', JSON.stringify(list))
-  }
 
   async function fetchStats() {
     setLoading(true)
@@ -76,28 +71,8 @@ export default function Admin() {
     setLoading(false)
   }
 
-  async function addMember() {
-    if (!addName.trim()) return
-    setAddError('')
-    setAddLoading(true)
-    try {
-      const r = await fetch('https://esi.evetech.net/v2/universe/ids/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([addName.trim()]),
-      })
-      const data = await r.json() as { characters?: { id: number; name: string }[] }
-      const char = data.characters?.[0]
-      if (!char) { setAddError('Character niet gevonden'); setAddLoading(false); return }
-      if (members.some(m => m.character_id === char.id)) { setAddError('Al toegevoegd'); setAddLoading(false); return }
-      saveMembers([...members, { character_id: char.id, name: char.name, added: new Date().toLocaleDateString('nl-NL') }])
-      setAddName('')
-    } catch { setAddError('Fout bij zoeken') }
-    setAddLoading(false)
-  }
-
-  function removeMember(id: number) {
-    saveMembers(members.filter(m => m.character_id !== id))
+  function isOnline(lastSeen: string) {
+    return Date.now() - new Date(lastSeen).getTime() < 30 * 60 * 1000
   }
 
   function toggleSetting(key: SettingKey) {
@@ -181,66 +156,47 @@ export default function Admin() {
         {/* Member Beheer */}
         {tab === 'members' && (
           <div style={{ maxWidth: 500 }}>
-            {/* Toevoegen */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
-              <input
-                value={addName}
-                onChange={e => setAddName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addMember()}
-                placeholder="Character naam..."
-                style={{
-                  flex: 1, background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 4, padding: '0.6rem 0.8rem', color: 'var(--text)',
-                  fontSize: '0.8rem', outline: 'none',
-                }}
-              />
-              <button
-                onClick={addMember}
-                disabled={addLoading}
-                style={{
-                  background: 'rgba(0,180,216,0.1)', border: '1px solid var(--blue)',
-                  color: 'var(--blue)', borderRadius: 4, padding: '0.6rem 1rem',
-                  cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700,
-                }}
-              >
-                {addLoading ? '...' : '+ Toevoegen'}
-              </button>
-            </div>
-            {addError && <div style={{ color: 'var(--red)', fontSize: '0.72rem', marginBottom: '0.75rem' }}>{addError}</div>}
-
-            {/* Ledenlijst */}
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.6rem', letterSpacing: '0.08em' }}>
-              {members.length} LEDEN
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.75rem', letterSpacing: '0.08em' }}>
+              {members.length} LEDEN — automatisch bijgewerkt bij inloggen
             </div>
             {members.length === 0 ? (
-              <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>Nog geen leden toegevoegd.</div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>
+                Nog niemand ingelogd op de dashboard.
+              </div>
             ) : (
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                {members.map((m, i) => (
-                  <div key={m.character_id} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.75rem',
-                    padding: '0.55rem 1rem',
-                    borderBottom: i < members.length - 1 ? '1px solid var(--border)' : 'none',
-                    fontSize: '0.8rem',
-                  }}>
-                    <img
-                      src={`https://images.evetech.net/characters/${m.character_id}/portrait?size=32`}
-                      width={28} height={28}
-                      style={{ borderRadius: '50%', flexShrink: 0 }}
-                    />
-                    <span style={{ flex: 1 }}>{m.name}</span>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginRight: '0.5rem' }}>
-                      {m.added}
-                    </span>
-                    <button
-                      onClick={() => removeMember(m.character_id)}
-                      style={{
-                        background: 'transparent', border: 'none', color: 'var(--red)',
-                        cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.4rem',
-                      }}
-                    >✕</button>
-                  </div>
-                ))}
+                {[...members].sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()).map((m, i, arr) => {
+                  const online = isOnline(m.lastSeen)
+                  return (
+                    <div key={m.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '0.75rem',
+                      padding: '0.6rem 1rem',
+                      borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
+                      fontSize: '0.8rem',
+                    }}>
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <img
+                          src={`https://images.evetech.net/characters/${m.id}/portrait?size=64`}
+                          width={32} height={32}
+                          style={{ borderRadius: '50%', display: 'block' }}
+                        />
+                        <div style={{
+                          position: 'absolute', bottom: 0, right: 0,
+                          width: 9, height: 9, borderRadius: '50%',
+                          background: online ? 'var(--green)' : 'var(--border)',
+                          border: '1.5px solid var(--surface)',
+                        }} />
+                      </div>
+                      <span style={{ flex: 1 }}>{m.name}</span>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 600,
+                        color: online ? 'var(--green)' : 'var(--text-dim)',
+                      }}>
+                        {online ? 'Online' : 'Offline'}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
