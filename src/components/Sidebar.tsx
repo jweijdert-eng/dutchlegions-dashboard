@@ -4,6 +4,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useAuth } from '../auth/AuthContext'
+import { useLayoutMode } from '../context/LayoutModeContext'
 import { useAlerts } from '../context/useAlerts'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
 import SolarSystem from './SolarSystem'
@@ -209,6 +210,7 @@ function loadNav(): NavItem[] {
 
 function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.path })
+  const { editMode } = useLayoutMode()
   const count = badgeCount(item.badge)
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}>
@@ -224,11 +226,13 @@ function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: 
           userSelect: 'none',
         })}
       >
-        <span
-          {...attributes} {...listeners}
-          style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
-          title="Versleep om volgorde te wijzigen"
-        >⠿</span>
+        {editMode && (
+          <span
+            {...attributes} {...listeners}
+            style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
+            title="Versleep om volgorde te wijzigen"
+          >⠿</span>
+        )}
         <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
         <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>
         <Badge count={count} />
@@ -621,9 +625,6 @@ export default function Sidebar() {
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0.4rem 0' }}>
-        <div style={{ padding: '0.5rem 1rem 0.25rem', fontSize: '0.6rem', letterSpacing: '0.12em', color: 'var(--text-dim)', userSelect: 'none' }}>
-          INDELING
-        </div>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={nav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {nav.map(item => (

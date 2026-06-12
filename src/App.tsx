@@ -7,6 +7,7 @@ import { useKeybinds } from './hooks/useKeybinds'
 import Layout, { PageHeader } from './components/Layout'
 import { AlertsProvider } from './context/AlertsContext'
 import { LoadingProvider } from './context/LoadingContext'
+import { LayoutModeProvider } from './context/LayoutModeContext'
 
 const lz = <T extends React.ComponentType>(f: () => Promise<{ default: T }>) =>
   lazy(() => f().catch(() => { window.location.reload(); return new Promise<never>(() => {}) }))
@@ -120,7 +121,9 @@ export default function App() {
         <AuthProvider>
           <LoadingProvider>
             <AlertsProvider>
-              <AppRoutes />
+              <LayoutModeProvider>
+                <AppRoutes />
+              </LayoutModeProvider>
             </AlertsProvider>
           </LoadingProvider>
         </AuthProvider>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useAlerts } from '../context/useAlerts'
+import { useLayoutMode } from '../context/LayoutModeContext'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -579,7 +580,7 @@ export default function Dashboard() {
   const tick    = useAutoRefresh()
   const fetchId = useRef(0)
 
-  const [editMode, setEditMode]       = useState(false)
+  const { editMode, setEditMode } = useLayoutMode()
   const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(loadOrder)
   const [charOrder, setCharOrder]     = useState<number[]>([])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
