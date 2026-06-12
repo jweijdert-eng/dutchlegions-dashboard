@@ -80,6 +80,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Heartbeat: update last_seen elke 5 minuten zolang de gebruiker op de site zit
+  useEffect(() => {
+    function sendHeartbeat() {
+      for (const t of tokensRef.current) {
+        fetch('/api/checkin.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ characterId: t.characterId, name: t.characterName }),
+        }).catch(() => {})
+      }
+    }
+    const id = setInterval(sendHeartbeat, 5 * 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   const addToken = useCallback((token: TokenData) => {
     setTokens(prev => [...prev.filter(t => t.characterId !== token.characterId), token])
     // Register member in database
