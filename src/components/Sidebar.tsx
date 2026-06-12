@@ -5,6 +5,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import { useAuth } from '../auth/AuthContext'
 import { useLayoutMode } from '../context/LayoutModeContext'
+
 import { useAlerts } from '../context/useAlerts'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
 import SolarSystem from './SolarSystem'
@@ -487,6 +488,7 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
 
 export default function Sidebar() {
   const { tokens, removeToken, selectedCharId, setSelectedCharId, mainCharId, setMainCharId } = useAuth()
+  const { previewMode } = useLayoutMode()
   const alerts = useAlerts()
   const [nav, setNav] = useState<NavItem[]>(loadNav)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -632,8 +634,8 @@ export default function Sidebar() {
           </SortableContext>
         </DndContext>
 
-        {/* Admin + Local Chat — alleen zichtbaar voor character 1831618559 */}
-        {tokens.some(t => t.characterId === 1831618559) && (
+        {/* Admin + Local Chat — alleen zichtbaar voor character 1831618559, niet in preview */}
+        {tokens.some(t => t.characterId === 1831618559) && !previewMode && (
           <>
             <div style={{ height: 1, background: 'var(--border)', margin: '0.4rem 1rem' }} />
             {([

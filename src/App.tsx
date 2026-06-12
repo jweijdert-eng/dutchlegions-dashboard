@@ -124,6 +124,7 @@ function MaintenancePage() {
 function AppRoutes() {
   useKeybinds()
   const { tokens } = useAuth()
+  const { previewMode } = useLayoutMode()
   const [maintenance, setMaintenance] = useState(false)
 
   useEffect(() => {
@@ -134,7 +135,7 @@ function AppRoutes() {
   }, [])
 
   const isAdmin = tokens.some(t => t.characterId === ADMIN_CHAR_ID)
-  if (maintenance && !isAdmin) return <MaintenancePage />
+  if (maintenance && (!isAdmin || previewMode)) return <MaintenancePage />
 
   return (
     <Suspense fallback={<PageFallback />}>

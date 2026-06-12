@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
+import { useLayoutMode } from '../context/LayoutModeContext'
 
 const CORP_ID = 98652891
 const ADMIN_CHAR_ID = 1831618559
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
 
 export default function Admin() {
   const { tokens } = useAuth()
+  const { previewMode, setPreviewMode } = useLayoutMode()
   const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
   const [tab, setTab] = useState<'stats' | 'members' | 'settings'>('stats')
   const [stats, setStats] = useState<ZkillStat | null>(null)
@@ -110,7 +112,22 @@ export default function Admin() {
   })
 
   return (
-    <Layout header={<PageHeader title="Admin" />}>
+    <Layout header={
+      <PageHeader title="Admin" right={
+        <button
+          onClick={() => setPreviewMode(!previewMode)}
+          style={{
+            padding: '0.3rem 0.75rem', borderRadius: 3, fontSize: '0.72rem',
+            fontWeight: 600, cursor: 'pointer', letterSpacing: '0.04em',
+            background: previewMode ? 'rgba(240,192,64,0.15)' : 'rgba(0,180,216,0.07)',
+            border: `1px solid ${previewMode ? 'var(--gold)' : 'rgba(0,180,216,0.2)'}`,
+            color: previewMode ? 'var(--gold)' : 'var(--blue)',
+          }}
+        >
+          {previewMode ? '← Terug naar Admin' : '👁 Bekijk als member'}
+        </button>
+      } />
+    }>
       <div style={{ padding: '1.5rem', maxWidth: 900 }}>
 
         {/* Tabs */}
