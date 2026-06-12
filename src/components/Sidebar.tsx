@@ -52,6 +52,7 @@ const DEFAULT_NAV: NavItem[] = [
   { label: 'Blueprints',  path: '/blueprints', icon: '⬡', badge: null },
   { label: 'Contracts',   path: '/contracts',  icon: '◧', badge: null },
   { label: 'Build vs Buy',path: '/buildvsbuy', icon: '⚙', badge: null },
+  { label: 'Assets',      path: '/assets',     icon: '◫', badge: null },
   { label: 'Notities',    path: '/notes',      icon: '✎', badge: null },
 ]
 

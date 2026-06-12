@@ -31,6 +31,7 @@ const MultiChar    = lz(() => import('./pages/MultiChar'))
 const LocalChat    = lz(() => import('./pages/LocalChat'))
 const BuildvsBuy   = lz(() => import('./pages/BuildvsBuy'))
 const Ratting      = lz(() => import('./pages/Ratting'))
+const Assets       = lz(() => import('./pages/Assets'))
 const Admin        = lz(() => import('./pages/Admin'))
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -159,6 +160,7 @@ function AppRoutes() {
       <Route path="/local"      element={<AdminRoute><LocalChat /></AdminRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
       <Route path="/ratting"    element={<ProtectedRoute><Ratting /></ProtectedRoute>} />
+      <Route path="/assets"     element={<ProtectedRoute><Assets /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/login"      element={<Login />} />
       <Route path="/debug/unresolved" element={<ProtectedRoute><DebugUnresolved /></ProtectedRoute>} />
