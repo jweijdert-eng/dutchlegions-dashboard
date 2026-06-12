@@ -6,6 +6,38 @@ import EveImage from '../components/EveImage'
 import Location from '../components/Location'
 import { usePageLoading } from '../hooks/usePageLoading'
 
+async function resolveTypeNames(typeIds: number[]): Promise<Map<number, string>> {
+  const result = new Map<number, string>()
+  const uncached: number[] = []
+  for (const id of typeIds) {
+    const cached = localStorage.getItem(`tn_${id}`)
+    if (cached) result.set(id, cached)
+    else uncached.push(id)
+  }
+  if (uncached.length > 0) {
+    const fetched = await resolveNames(uncached)
+    for (const [id, name] of fetched) {
+      result.set(id, name)
+      try { localStorage.setItem(`tn_${id}`, name) } catch { /* localStorage vol */ }
+    }
+    // Fallback via /universe/types/ for any still-missing IDs
+    const missing = uncached.filter(id => !fetched.has(id))
+    await Promise.all(missing.map(async id => {
+      try {
+        const r = await fetch(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility&language=en`)
+        if (r.ok) {
+          const d = await r.json()
+          if (d.name) {
+            result.set(id, d.name)
+            try { localStorage.setItem(`tn_${id}`, d.name) } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore */ }
+    }))
+  }
+  return result
+}
+
 type ResolvedAsset = {
   typeId: number
   name: string
@@ -121,7 +153,7 @@ export default function Assets() {
       const structureIds = rootLocations.filter(r => r.type === 'structure').map(r => r.id)
       const typeIds = [...new Set(allRaw.map(a => a.type_id))]
 
-      const [typeMap, locationNameMap] = await Promise.all([ resolveNames(typeIds), resolveNames(rootIds) ])
+      const [typeMap, locationNameMap] = await Promise.all([ resolveTypeNames(typeIds), resolveNames(rootIds) ])
 
       const structureInfoMap = new Map<number, { name: string; systemId: number }>()
       await Promise.all(structureIds.map(async id => {
