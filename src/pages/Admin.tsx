@@ -19,6 +19,7 @@ interface SiteMember {
   character_id: number
   name: string
   last_seen: string
+  blocked: number
 }
 
 type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance'
@@ -67,6 +68,27 @@ export default function Admin() {
       setMembers(await r.json())
     } catch { /* ignore */ }
     setLoading(false)
+  }
+
+  async function deleteMember(charId: number) {
+    if (!adminToken) return
+    setMembers(prev => prev.filter(m => m.character_id !== charId))
+    await fetch('/api/members.php', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: charId }),
+    }).catch(() => {})
+  }
+
+  async function toggleBlock(member: SiteMember) {
+    if (!adminToken) return
+    const action = member.blocked ? 'unblock' : 'block'
+    setMembers(prev => prev.map(m => m.character_id === member.character_id ? { ...m, blocked: member.blocked ? 0 : 1 } : m))
+    await fetch('/api/members.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: member.character_id, action }),
+    }).catch(() => {})
   }
 
   async function fetchSettings() {
@@ -197,33 +219,60 @@ export default function Admin() {
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
                 {members.map((m, i) => {
                   const online = isOnline(m.last_seen)
+                  const blocked = !!m.blocked
                   return (
                     <div key={m.character_id} style={{
                       display: 'flex', alignItems: 'center', gap: '0.75rem',
                       padding: '0.6rem 1rem',
                       borderBottom: i < members.length - 1 ? '1px solid var(--border)' : 'none',
                       fontSize: '0.8rem',
+                      opacity: blocked ? 0.6 : 1,
                     }}>
                       <div style={{ position: 'relative', flexShrink: 0 }}>
                         <img
                           src={`https://images.evetech.net/characters/${m.character_id}/portrait?size=64`}
                           width={32} height={32}
-                          style={{ borderRadius: '50%', display: 'block' }}
+                          style={{ borderRadius: '50%', display: 'block', filter: blocked ? 'grayscale(1)' : 'none' }}
                         />
                         <div style={{
                           position: 'absolute', bottom: 0, right: 0,
                           width: 9, height: 9, borderRadius: '50%',
-                          background: online ? 'var(--green)' : 'var(--border)',
+                          background: blocked ? 'var(--red)' : online ? 'var(--green)' : 'var(--border)',
                           border: '1.5px solid var(--surface)',
                         }} />
                       </div>
                       <span style={{ flex: 1 }}>{m.name}</span>
-                      <span style={{
-                        fontSize: '0.65rem', fontWeight: 600,
-                        color: online ? 'var(--green)' : 'var(--text-dim)',
-                      }}>
-                        {online ? 'Online' : 'Offline'}
-                      </span>
+                      {blocked && (
+                        <span style={{ fontSize: '0.6rem', color: 'var(--red)', fontWeight: 700, letterSpacing: '0.06em' }}>GEBLOKKEERD</span>
+                      )}
+                      {!blocked && (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: online ? 'var(--green)' : 'var(--text-dim)' }}>
+                          {online ? 'Online' : 'Offline'}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => toggleBlock(m)}
+                        title={blocked ? 'Deblokkeren' : 'Blokkeren'}
+                        style={{
+                          padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
+                          border: `1px solid ${blocked ? 'rgba(0,180,216,0.3)' : 'rgba(224,85,85,0.3)'}`,
+                          borderRadius: 3, cursor: 'pointer', background: 'transparent',
+                          color: blocked ? 'var(--blue)' : 'var(--red)',
+                        }}
+                      >
+                        {blocked ? 'Deblokkeer' : 'Blokkeer'}
+                      </button>
+                      <button
+                        onClick={() => deleteMember(m.character_id)}
+                        title="Verwijder"
+                        style={{
+                          padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
+                          border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer',
+                          background: 'transparent', color: 'var(--red)',
+                        }}
+                      >
+                        ✕
+                      </button>
                     </div>
                   )
                 })}
