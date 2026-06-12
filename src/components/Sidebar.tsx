@@ -226,7 +226,7 @@ function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: 
       >
         <span
           {...attributes} {...listeners}
-          style={{ fontSize: 10, width: 10, color: 'var(--border)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
+          style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
           title="Versleep om volgorde te wijzigen"
         >⠿</span>
         <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
