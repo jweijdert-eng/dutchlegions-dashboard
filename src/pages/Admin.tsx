@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
 import { useLayoutMode } from '../context/LayoutModeContext'
 
-const CORP_ID = 98652891
 const ADMIN_CHAR_ID = 1831618559
 
-interface ZkillStat {
-  allTimeSum: number
-  iskDestroyed: number
-  iskLost: number
-  shipsDestroyed: number
-  shipsLost: number
-  topLists: { type: string; data: { kills: number; characterName?: string; shipName?: string }[] }[]
+interface ActivityData {
+  total: number
+  today: number
+  week: number
+  month: number
+  daily: { day: string; count: number }[]
 }
 
 interface SiteMember {
@@ -41,22 +40,22 @@ export default function Admin() {
   const { previewMode, setPreviewMode } = useLayoutMode()
   const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
   const [tab, setTab] = useState<'stats' | 'members' | 'settings'>('stats')
-  const [stats, setStats] = useState<ZkillStat | null>(null)
+  const [activity, setActivity] = useState<ActivityData | null>(null)
   const [members, setMembers] = useState<SiteMember[]>([])
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (tab === 'stats') fetchStats()
+    if (tab === 'stats') fetchActivity()
     if (tab === 'members') fetchMembers()
     if (tab === 'settings') fetchSettings()
   }, [tab])
 
-  async function fetchStats() {
+  async function fetchActivity() {
     setLoading(true)
     try {
-      const r = await fetch(`https://zkillboard.com/api/stats/corporationID/${CORP_ID}/`)
-      setStats(await r.json())
+      const r = await fetch('/api/activity.php')
+      setActivity(await r.json())
     } catch { /* ignore */ }
     setLoading(false)
   }
@@ -127,8 +126,6 @@ export default function Admin() {
     } catch { /* ignore */ }
   }
 
-  const fmtISK = (v: number) => v >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : `${(v / 1e6).toFixed(0)}M`
-
   const TAB_STYLE = (active: boolean): React.CSSProperties => ({
     padding: '0.5rem 1.2rem',
     fontSize: '0.75rem',
@@ -173,44 +170,44 @@ export default function Admin() {
         )}
 
         {/* Statistieken */}
-        {tab === 'stats' && !loading && stats && (
+        {tab === 'stats' && !loading && activity && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
               {[
-                { label: 'Ships Destroyed', value: stats.shipsDestroyed?.toLocaleString() ?? '—', color: 'var(--green)' },
-                { label: 'Ships Lost',      value: stats.shipsLost?.toLocaleString() ?? '—',      color: 'var(--red)' },
-                { label: 'ISK Destroyed',   value: fmtISK(stats.iskDestroyed ?? 0),               color: 'var(--green)' },
-                { label: 'ISK Lost',        value: fmtISK(stats.iskLost ?? 0),                    color: 'var(--red)' },
+                { label: 'TOTAAL MEMBERS', value: activity.total, color: 'var(--text)' },
+                { label: 'ACTIEF VANDAAG', value: activity.today, color: 'var(--blue)' },
+                { label: 'ACTIEF DEZE WEEK', value: activity.week, color: 'var(--blue)' },
+                { label: 'ACTIEF DEZE MAAND', value: activity.month, color: 'var(--blue)' },
               ].map(c => (
                 <div key={c.label} style={{
-                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
                   borderRadius: 4, padding: '1rem',
                 }}>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.4rem', letterSpacing: '0.08em' }}>{c.label}</div>
-                  <div style={{ fontSize: '1.3rem', fontWeight: 700, color: c.color }}>{c.value}</div>
+                  <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginBottom: '0.5rem', letterSpacing: '0.1em' }}>{c.label}</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: c.color }}>{c.value}</div>
                 </div>
               ))}
             </div>
 
-            {stats.topLists?.map(list => list.type === 'character' && list.data?.length > 0 && (
-              <div key={list.type}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginBottom: '0.75rem' }}>TOP PILOTS</div>
-                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                  {list.data.slice(0, 10).map((p, i) => (
-                    <div key={i} style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '0.6rem 1rem',
-                      borderBottom: i < 9 ? '1px solid var(--border)' : 'none',
-                      fontSize: '0.8rem',
-                    }}>
-                      <span style={{ color: 'var(--text-dim)', marginRight: '0.75rem' }}>#{i + 1}</span>
-                      <span style={{ flex: 1 }}>{p.characterName ?? '—'}</span>
-                      <span style={{ color: 'var(--green)', fontWeight: 700 }}>{p.kills} kills</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginBottom: '0.75rem' }}>LOGINS PER DAG — LAATSTE 30 DAGEN</div>
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 4, padding: '1rem' }}>
+              {activity.daily.length === 0 ? (
+                <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', textAlign: 'center', padding: '2rem 0' }}>Nog geen logindata beschikbaar.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={activity.daily} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-dim)' }} tickFormatter={d => d.slice(5)} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-dim)' }} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.75rem' }}
+                      labelStyle={{ color: 'var(--text-dim)' }}
+                      formatter={(v: number) => [v, 'logins']}
+                    />
+                    <Bar dataKey="count" fill="var(--blue)" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
         )}
 

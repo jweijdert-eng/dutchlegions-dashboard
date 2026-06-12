@@ -98,11 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addToken = useCallback((token: TokenData) => {
     setTokens(prev => [...prev.filter(t => t.characterId !== token.characterId), token])
-    // Register member in database
     fetch('/api/checkin.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: token.characterId, name: token.characterName }),
+      body: JSON.stringify({ characterId: token.characterId, name: token.characterName, type: 'login' }),
     }).catch(() => { /* ignore */ })
   }, [])
 

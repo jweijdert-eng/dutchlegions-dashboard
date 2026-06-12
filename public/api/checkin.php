@@ -14,6 +14,12 @@ try {
     $pdo = getDB();
     $stmt = $pdo->prepare('INSERT INTO members (character_id, name, last_seen) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE name = ?, last_seen = NOW()');
     $stmt->execute([$id, $name, $name]);
+
+    $type = $data['type'] ?? 'heartbeat';
+    if ($type === 'login') {
+        $pdo->prepare('INSERT INTO login_log (character_id, logged_at) VALUES (?, NOW())')->execute([$id]);
+    }
+
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
     http_response_code(500);
