@@ -71,17 +71,19 @@ export default function Admin() {
   }
 
   async function deleteMember(charId: number) {
-    if (!adminToken) return
+    if (!adminToken || charId === ADMIN_CHAR_ID) return
     setMembers(prev => prev.filter(m => m.character_id !== charId))
     await fetch('/api/members.php', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: charId }),
     }).catch(() => {})
+    await fetchMembers()
   }
 
   async function toggleBlock(member: SiteMember) {
     if (!adminToken) return
+    if (member.character_id === ADMIN_CHAR_ID) return
     const action = member.blocked ? 'unblock' : 'block'
     setMembers(prev => prev.map(m => m.character_id === member.character_id ? { ...m, blocked: member.blocked ? 0 : 1 } : m))
     await fetch('/api/members.php', {
@@ -89,6 +91,7 @@ export default function Admin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: member.character_id, action }),
     }).catch(() => {})
+    await fetchMembers()
   }
 
   async function fetchSettings() {
@@ -251,29 +254,33 @@ export default function Admin() {
                           {online ? 'Online' : 'Offline'}
                         </span>
                       )}
-                      <button
-                        onClick={() => toggleBlock(m)}
-                        title={blocked ? 'Deblokkeren' : 'Blokkeren'}
-                        style={{
-                          padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
-                          border: `1px solid ${blocked ? 'rgba(0,180,216,0.3)' : 'rgba(224,85,85,0.3)'}`,
-                          borderRadius: 3, cursor: 'pointer', background: 'transparent',
-                          color: blocked ? 'var(--blue)' : 'var(--red)',
-                        }}
-                      >
-                        {blocked ? 'Deblokkeer' : 'Blokkeer'}
-                      </button>
-                      <button
-                        onClick={() => deleteMember(m.character_id)}
-                        title="Verwijder"
-                        style={{
-                          padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
-                          border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer',
-                          background: 'transparent', color: 'var(--red)',
-                        }}
-                      >
-                        ✕
-                      </button>
+                      {m.character_id !== ADMIN_CHAR_ID && (
+                        <>
+                          <button
+                            onClick={() => toggleBlock(m)}
+                            title={blocked ? 'Deblokkeren' : 'Blokkeren'}
+                            style={{
+                              padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
+                              border: `1px solid ${blocked ? 'rgba(0,180,216,0.3)' : 'rgba(224,85,85,0.3)'}`,
+                              borderRadius: 3, cursor: 'pointer', background: 'transparent',
+                              color: blocked ? 'var(--blue)' : 'var(--red)',
+                            }}
+                          >
+                            {blocked ? 'Deblokkeer' : 'Blokkeer'}
+                          </button>
+                          <button
+                            onClick={() => deleteMember(m.character_id)}
+                            title="Verwijder"
+                            style={{
+                              padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
+                              border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer',
+                              background: 'transparent', color: 'var(--red)',
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
                     </div>
                   )
                 })}
