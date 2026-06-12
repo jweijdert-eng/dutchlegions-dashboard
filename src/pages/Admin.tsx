@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
 
 const CORP_ID = 98652891
+const ADMIN_CHAR_ID = 1831618559
 
 interface ZkillStat {
   allTimeSum: number
@@ -14,9 +15,9 @@ interface ZkillStat {
 }
 
 interface SiteMember {
-  id: number
+  character_id: number
   name: string
-  lastSeen: string
+  last_seen: string
 }
 
 type SettingKey = 'maintenance_mode' | 'show_wallet' | 'show_kills' | 'show_market'
@@ -35,31 +36,19 @@ const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
   show_market:      true,
 }
 
-function loadSettings(): Record<SettingKey, boolean> {
-  try {
-    return JSON.parse(localStorage.getItem('admin_settings') ?? 'null') ?? DEFAULT_SETTINGS
-  } catch { return DEFAULT_SETTINGS }
-}
-
-function saveSettings(s: Record<SettingKey, boolean>) {
-  localStorage.setItem('admin_settings', JSON.stringify(s))
-}
-
 export default function Admin() {
   const { tokens } = useAuth()
+  const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
   const [tab, setTab] = useState<'stats' | 'members' | 'settings'>('stats')
   const [stats, setStats] = useState<ZkillStat | null>(null)
-  const [members, setMembers] = useState<SiteMember[]>(() => {
-    try { return JSON.parse(localStorage.getItem('dashboard_members') ?? '[]') } catch { return [] }
-  })
-  const [settings, setSettings] = useState(loadSettings)
+  const [members, setMembers] = useState<SiteMember[]>([])
+  const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (tab === 'stats') fetchStats()
-    if (tab === 'members') {
-      try { setMembers(JSON.parse(localStorage.getItem('dashboard_members') ?? '[]')) } catch { /* ignore */ }
-    }
+    if (tab === 'members') fetchMembers()
+    if (tab === 'settings') fetchSettings()
   }, [tab])
 
   async function fetchStats() {
@@ -71,14 +60,40 @@ export default function Admin() {
     setLoading(false)
   }
 
+  async function fetchMembers() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/members.php')
+      setMembers(await r.json())
+    } catch { /* ignore */ }
+    setLoading(false)
+  }
+
+  async function fetchSettings() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/settings.php')
+      const data = await r.json()
+      setSettings({ ...DEFAULT_SETTINGS, ...data })
+    } catch { /* ignore */ }
+    setLoading(false)
+  }
+
   function isOnline(lastSeen: string) {
     return Date.now() - new Date(lastSeen).getTime() < 30 * 60 * 1000
   }
 
-  function toggleSetting(key: SettingKey) {
+  async function toggleSetting(key: SettingKey) {
+    if (!adminToken) return
     const next = { ...settings, [key]: !settings[key] }
     setSettings(next)
-    saveSettings(next)
+    try {
+      await fetch('/api/settings.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: adminToken.characterId, settings: next }),
+      })
+    } catch { /* ignore */ }
   }
 
   const fmtISK = (v: number) => v >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : `${(v / 1e6).toFixed(0)}M`
@@ -154,7 +169,7 @@ export default function Admin() {
         )}
 
         {/* Member Beheer */}
-        {tab === 'members' && (
+        {tab === 'members' && !loading && (
           <div style={{ maxWidth: 500 }}>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.75rem', letterSpacing: '0.08em' }}>
               {members.length} LEDEN — automatisch bijgewerkt bij inloggen
@@ -165,18 +180,18 @@ export default function Admin() {
               </div>
             ) : (
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                {[...members].sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()).map((m, i, arr) => {
-                  const online = isOnline(m.lastSeen)
+                {members.map((m, i) => {
+                  const online = isOnline(m.last_seen)
                   return (
-                    <div key={m.id} style={{
+                    <div key={m.character_id} style={{
                       display: 'flex', alignItems: 'center', gap: '0.75rem',
                       padding: '0.6rem 1rem',
-                      borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
+                      borderBottom: i < members.length - 1 ? '1px solid var(--border)' : 'none',
                       fontSize: '0.8rem',
                     }}>
                       <div style={{ position: 'relative', flexShrink: 0 }}>
                         <img
-                          src={`https://images.evetech.net/characters/${m.id}/portrait?size=64`}
+                          src={`https://images.evetech.net/characters/${m.character_id}/portrait?size=64`}
                           width={32} height={32}
                           style={{ borderRadius: '50%', display: 'block' }}
                         />
@@ -203,7 +218,7 @@ export default function Admin() {
         )}
 
         {/* Site Instellingen */}
-        {tab === 'settings' && (
+        {tab === 'settings' && !loading && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 400 }}>
             {(Object.keys(settings) as SettingKey[]).map(key => (
               <div key={key} style={{
@@ -230,7 +245,7 @@ export default function Admin() {
               </div>
             ))}
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: '0.5rem' }}>
-              Instellingen worden lokaal opgeslagen.
+              Instellingen worden opgeslagen in de database.
             </div>
           </div>
         )}
