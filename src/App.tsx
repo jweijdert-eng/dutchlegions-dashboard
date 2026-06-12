@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, type ReactNode } from 'react'
+import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import Login from './pages/Login'
@@ -83,8 +83,40 @@ function PageFallback() {
 }
 
 
+const ADMIN_CHAR_ID = 1831618559
+
+function MaintenancePage() {
+  return (
+    <div style={{
+      minHeight: '100vh', background: '#05050e',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '1.5rem', fontFamily: 'inherit',
+    }}>
+      <img src={`https://images.evetech.net/corporations/98652891/logo?size=128`} style={{ width: 80, height: 80, borderRadius: '50%', opacity: 0.7 }} />
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ color: 'var(--blue)', fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.2em', marginBottom: '0.5rem' }}>DUTCH LEGIONS</div>
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', letterSpacing: '0.1em' }}>Dashboard is momenteel in onderhoud.</div>
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginTop: '0.4rem', opacity: 0.6 }}>Kom later terug.</div>
+      </div>
+    </div>
+  )
+}
+
 function AppRoutes() {
   useKeybinds()
+  const { tokens } = useAuth()
+  const [maintenance, setMaintenance] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings.php')
+      .then(r => r.json())
+      .then(data => { if (data.maintenance_mode === true) setMaintenance(true) })
+      .catch(() => {})
+  }, [])
+
+  const isAdmin = tokens.some(t => t.characterId === ADMIN_CHAR_ID)
+  if (maintenance && !isAdmin) return <MaintenancePage />
+
   return (
     <Suspense fallback={<PageFallback />}>
     <Routes>
