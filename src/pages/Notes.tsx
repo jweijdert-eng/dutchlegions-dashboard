@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
+import { useAuth } from '../auth/AuthContext'
 
 interface Note {
   id: string
@@ -8,30 +9,51 @@ interface Note {
   updatedAt: number
 }
 
-const STORAGE_KEY = 'eve_notes'
-
-function loadNotes(): Note[] {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') }
-  catch { return [] }
-}
-
-function saveNotes(notes: Note[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes))
-}
-
 function fmt(ts: number) {
   return new Date(ts).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+async function apiSave(charId: number, note: Note) {
+  await fetch('/api/notes.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ characterId: charId, note }),
+  }).catch(() => { /* ignore */ })
+}
+
+async function apiDelete(charId: number, id: string) {
+  await fetch('/api/notes.php', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ characterId: charId, id }),
+  }).catch(() => { /* ignore */ })
+}
+
 export default function Notes() {
-  const [notes, setNotes] = useState<Note[]>(loadNotes)
-  const [selectedId, setSelectedId] = useState<string | null>(() => loadNotes()[0]?.id ?? null)
+  const { tokens, selectedCharId } = useAuth()
+  const charId = selectedCharId ?? tokens[0]?.characterId ?? null
+
+  const [notes, setNotes] = useState<Note[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selected = notes.find(n => n.id === selectedId) ?? null
+
+  useEffect(() => {
+    if (!charId) return
+    fetch(`/api/notes.php?characterId=${charId}`)
+      .then(r => r.json())
+      .then((data: Note[]) => {
+        if (Array.isArray(data)) {
+          setNotes(data)
+          setSelectedId(data[0]?.id ?? null)
+        }
+      })
+      .catch(() => { /* ignore */ })
+  }, [charId])
 
   useEffect(() => {
     if (selected) {
@@ -42,14 +64,16 @@ export default function Notes() {
   }, [selectedId])
 
   function autosave(title: string, content: string) {
-    if (!selectedId) return
+    if (!selectedId || !charId) return
     if (saveTimeout.current) clearTimeout(saveTimeout.current)
     saveTimeout.current = setTimeout(() => {
       setNotes(prev => {
+        const updatedAt = Date.now()
         const updated = prev.map(n =>
-          n.id === selectedId ? { ...n, title, content, updatedAt: Date.now() } : n
+          n.id === selectedId ? { ...n, title, content, updatedAt } : n
         )
-        saveNotes(updated)
+        const note = updated.find(n => n.id === selectedId)
+        if (note) apiSave(charId, note)
         return updated
       })
       setDirty(false)
@@ -65,15 +89,18 @@ export default function Notes() {
   }
 
   function addNote() {
+    if (!charId) return
     const note: Note = { id: crypto.randomUUID(), title: 'Nieuwe notitie', content: '', updatedAt: Date.now() }
-    const updated = [note, ...notes]
-    setNotes(updated); saveNotes(updated); setSelectedId(note.id)
+    setNotes(prev => [note, ...prev])
+    setSelectedId(note.id)
+    apiSave(charId, note)
   }
 
   function deleteNote(id: string) {
-    const updated = notes.filter(n => n.id !== id)
-    setNotes(updated); saveNotes(updated)
-    if (selectedId === id) setSelectedId(updated[0]?.id ?? null)
+    if (!charId) return
+    setNotes(prev => prev.filter(n => n.id !== id))
+    if (selectedId === id) setSelectedId(notes.find(n => n.id !== id)?.id ?? null)
+    apiDelete(charId, id)
   }
 
   return (
