@@ -688,12 +688,15 @@ export default function Dashboard() {
       if (myId !== fetchId.current) return
       setSkillNames(sn); setJobNames(jn)
 
-      // Phase 2: kills
-      const allKills  = (await Promise.allSettled(allTokens.map(t => getKills(t.characterId)))).flatMap(r => r.status === 'fulfilled' ? r.value : [])
-      const allLosses = (await Promise.allSettled(allTokens.map(t => getLosses(t.characterId)))).flatMap(r => r.status === 'fulfilled' ? r.value : [])
+      // Phase 2: kills — gebruik alleen de hoofdcharacter (= zkillboard character page)
+      const killCharId = (mainCharId ? allTokens.find(t => t.characterId === mainCharId) : null)?.characterId ?? allTokens[0]?.characterId
+      const [charKills, charLosses] = await Promise.all([
+        getKills(killCharId),
+        getLosses(killCharId),
+      ])
       const recent    = [
-        ...allKills.slice(0, 8).map(k => ({ ...k, type: 'kill' as const })),
-        ...allLosses.slice(0, 8).map(k => ({ ...k, type: 'loss' as const })),
+        ...charKills.slice(0, 10).map(k => ({ ...k, type: 'kill' as const })),
+        ...charLosses.slice(0, 10).map(k => ({ ...k, type: 'loss' as const })),
       ]
       const details = await Promise.all(recent.map(async k => ({ ...k, km: await getKillmailDetail(k.killmail_id, k.zkb.hash) })))
       if (myId !== fetchId.current) return
