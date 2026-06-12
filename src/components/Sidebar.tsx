@@ -586,6 +586,29 @@ export default function Sidebar() {
             </NavLink>
           )
         })}
+
+        {/* Admin — alleen zichtbaar voor character 1831618559 */}
+        {tokens.some(t => t.characterId === 1831618559) && (
+          <>
+            <div style={{ height: 1, background: 'var(--border)', margin: '0.4rem 1rem' }} />
+            <NavLink
+              to="/admin"
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                padding: '0.55rem 1rem',
+                textDecoration: 'none',
+                background: isActive ? 'rgba(224,85,85,0.07)' : 'transparent',
+                borderLeft: `2px solid ${isActive ? 'var(--red)' : 'transparent'}`,
+                color: isActive ? 'var(--red)' : 'rgba(224,85,85,0.6)',
+              })}
+            >
+              <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⚑</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1 }}>Admin</span>
+            </NavLink>
+          </>
+        )}
       </div>
 
       {/* Externe links */}

@@ -27,6 +27,7 @@ const DebugUnresolved = lazy(() => import('./pages/DebugUnresolved'))
 const MultiChar    = lazy(() => import('./pages/MultiChar'))
 const LocalChat    = lazy(() => import('./pages/LocalChat'))
 const BuildvsBuy   = lazy(() => import('./pages/BuildvsBuy'))
+const Admin        = lazy(() => import('./pages/Admin'))
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -101,6 +102,7 @@ function AppRoutes() {
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
       <Route path="/local"      element={<ProtectedRoute><LocalChat /></ProtectedRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
+      <Route path="/admin"      element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/login"      element={<Login />} />
       <Route path="/debug/unresolved" element={<ProtectedRoute><DebugUnresolved /></ProtectedRoute>} />
       <Route path="*"          element={<Navigate to="/" replace />} />
