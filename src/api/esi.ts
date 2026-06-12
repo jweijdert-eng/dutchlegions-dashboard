@@ -578,12 +578,6 @@ export async function getMarketHistory(id: number, token: string): Promise<Marke
 }
 export const getTransactions   = (id: number, token: string) => esiGet<WalletTransaction[]>(`/characters/${id}/wallet/transactions/`, token)
 
-export interface CharacterYearStats {
-  year: number
-  combat?: { npc_killed?: number; npc_killed_assisted?: number }
-  pve?: { dungeons_completed_agent?: number; dungeons_completed_distribution?: number; missions_succeeded?: number }
-}
-export const getCharacterStats = (id: number, token: string) => esiGet<CharacterYearStats[]>(`/characters/${id}/stats/`, token, 3600)
 export const getCharacterInfo = (id: number) => esiGet<CharacterInfo>(`/characters/${id}/`)
 export const getSkillsInfo   = (id: number, token: string) => esiGet<SkillsInfo>(`/characters/${id}/skills/`, token)
 export const getCorporation  = (id: number) => esiGet<CorporationInfo>(`/corporations/${id}/`)

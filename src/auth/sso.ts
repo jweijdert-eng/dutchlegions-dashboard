@@ -22,7 +22,6 @@ const SCOPES = [
   'esi-universe.read_structures.v1',
   'esi-characters.read_blueprints.v1',
   'esi-contracts.read_character_contracts.v1',
-  'esi-characters.read_stats.v1',
   'esi-search.search_structures.v1',
   'esi-markets.structure_markets.v1',
   'esi-fleets.read_fleet.v1',
