@@ -34,10 +34,11 @@ if ($method === 'POST') {
     $title     = substr($note['title'] ?? '', 0, 255);
     $content   = $note['content'] ?? '';
     $updatedAt = (int)($note['updatedAt'] ?? (time() * 1000));
+    $charName  = substr($data['characterName'] ?? '', 0, 100);
     try {
         $pdo  = getDB();
-        $stmt = $pdo->prepare('INSERT INTO notes (id, character_id, title, content, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE title = ?, content = ?, updated_at = ?');
-        $stmt->execute([$id, $charId, $title, $content, $updatedAt, $title, $content, $updatedAt]);
+        $stmt = $pdo->prepare('INSERT INTO notes (id, character_id, character_name, title, content, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE character_name = ?, title = ?, content = ?, updated_at = ?');
+        $stmt->execute([$id, $charId, $charName, $title, $content, $updatedAt, $charName, $title, $content, $updatedAt]);
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);

@@ -13,11 +13,11 @@ function fmt(ts: number) {
   return new Date(ts).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-async function apiSave(charId: number, note: Note) {
+async function apiSave(charId: number, charName: string, note: Note) {
   await fetch('/api/notes.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ characterId: charId, note }),
+    body: JSON.stringify({ characterId: charId, characterName: charName, note }),
   }).catch(() => { /* ignore */ })
 }
 
@@ -74,7 +74,7 @@ export default function Notes() {
           n.id === selectedId ? { ...n, title, content, updatedAt } : n
         )
         const note = updated.find(n => n.id === selectedId)
-        if (note) apiSave(charId, note)
+        if (note) apiSave(charId, charName ?? '', note)
         return updated
       })
       setDirty(false)
@@ -94,7 +94,7 @@ export default function Notes() {
     const note: Note = { id: crypto.randomUUID(), title: 'Nieuwe notitie', content: '', updatedAt: Date.now() }
     setNotes(prev => [note, ...prev])
     setSelectedId(note.id)
-    apiSave(charId, note)
+    apiSave(charId, charName ?? '', note)
   }
 
   function deleteNote(id: string) {
