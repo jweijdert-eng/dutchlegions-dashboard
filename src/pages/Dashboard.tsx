@@ -979,9 +979,11 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div style={{ marginBottom: GAP }}>
-        <LocalChatWidget />
-      </div>
+      {allTokens.some(t => t.characterId === 1831618559) && (
+        <div style={{ marginBottom: GAP }}>
+          <LocalChatWidget />
+        </div>
+      )}
 
       {/* Sorteerbare widgets */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
