@@ -134,7 +134,7 @@ function SortableWidget({ id, editMode, children }: { id: WidgetId; editMode: bo
     <span
       {...attributes}
       {...listeners}
-      style={{ cursor: 'grab', color: 'var(--border)', fontSize: '0.75rem', lineHeight: 1, userSelect: 'none', touchAction: 'none' }}
+      style={{ cursor: 'grab', color: 'var(--text-dim)', fontSize: '0.75rem', lineHeight: 1, userSelect: 'none', touchAction: 'none' }}
       title="Verslepen"
     >⠿</span>
   ) : null
@@ -160,7 +160,7 @@ function SortableCharCard({ id, editMode, children }: { id: number; editMode: bo
         <span
           {...attributes}
           {...listeners}
-          style={{ position: 'absolute', top: 6, right: 8, cursor: 'grab', color: 'var(--border)', fontSize: '0.75rem', lineHeight: 1, userSelect: 'none', touchAction: 'none', zIndex: 1 }}
+          style={{ position: 'absolute', top: 6, right: 8, cursor: 'grab', color: 'var(--text-dim)', fontSize: '0.75rem', lineHeight: 1, userSelect: 'none', touchAction: 'none', zIndex: 1 }}
           title="Verslepen"
         >⠿</span>
       )}
@@ -301,7 +301,7 @@ function RecentTxWidget({ journal, loading }: { journal: WalletJournalEntry[]; l
             <span style={{ fontSize: '0.7rem', fontWeight: 600, color: e.amount >= 0 ? 'var(--green)' : 'var(--red)', flexShrink: 0 }}>
               {e.amount >= 0 ? '+' : '−'}{fmtISK(Math.abs(e.amount))}
             </span>
-            <span style={{ fontSize: '0.6rem', color: 'var(--border)', flexShrink: 0, minWidth: 22, textAlign: 'right' }}>{time}</span>
+            <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', flexShrink: 0, minWidth: 22, textAlign: 'right' }}>{time}</span>
           </div>
         )
       })}
