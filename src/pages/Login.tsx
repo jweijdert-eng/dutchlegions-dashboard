@@ -63,16 +63,10 @@ export default function Login() {
         }}>
           {[{ src: ALLIANCE_LOGO, alt: 'Alliance Logo' }, { src: CORP_LOGO, alt: 'Corporation Logo' }].map(logo => (
             <div key={logo.alt} style={{ position: 'relative' }}>
-              <div style={{
-                position: 'absolute', inset: -12, borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(255,120,0,0.22) 0%, transparent 70%)',
-              }} />
-              <img src={logo.src} alt={logo.alt} width={80} height={80}
+                <img src={logo.src} alt={logo.alt} width={80} height={80}
                 style={{
                   borderRadius: '50%',
-                  border: '2px solid rgba(255,120,0,0.7)',
                   display: 'block',
-                  boxShadow: '0 0 32px rgba(255,120,0,0.35)',
                 }}
               />
             </div>
