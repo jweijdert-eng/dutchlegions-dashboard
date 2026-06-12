@@ -701,7 +701,7 @@ export default function Sidebar() {
         ))}
       </div>
 
-      <SdeWidget />
+      {tokens.some(t => t.characterId === 1831618559) && !previewMode && <SdeWidget />}
 
       {/* Account dropdown */}
       <AccountDropdown
