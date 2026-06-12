@@ -142,7 +142,7 @@ export default function Admin() {
               ))}
             </div>
 
-            {stats.topLists?.map(list => list.type === 'character' && (
+            {stats.topLists?.map(list => list.type === 'character' && list.data?.length > 0 && (
               <div key={list.type}>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginBottom: '0.75rem' }}>TOP PILOTS</div>
                 <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
