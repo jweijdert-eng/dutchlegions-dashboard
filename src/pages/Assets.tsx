@@ -289,13 +289,49 @@ export default function Assets() {
 
   return (
     <Layout header={<PageHeader title="Assets" sub={loading ? 'Laden...' : `${totalItems.toLocaleString()} items · ${groups.size} locaties`} right={
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <select value={selectedChar} onChange={e => setSelectedChar(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ padding: '0.25rem', background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <select
+          value={selectedChar}
+          onChange={e => setSelectedChar(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          style={{
+            padding: '0.3rem 0.55rem', background: 'var(--surface2)', border: '1px solid var(--border)',
+            borderRadius: 4, color: 'var(--text)', fontSize: '0.78rem', cursor: 'pointer',
+          }}
+        >
           {characterOptions.map(o => <option key={String(o.id)} value={String(o.id)}>{o.label}</option>)}
         </select>
-        <input placeholder="Zoek item of locatie..." value={search} onChange={e => setSearch(e.target.value)} style={{ padding: '0.3rem 0.6rem', width: 240 }} />
-        <button onClick={() => loadAssets()} disabled={loading}>Ververs</button>
-        <button onClick={exportCsv} disabled={items.length === 0}>Export CSV</button>
+        <input
+          placeholder="Zoek item of locatie..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            padding: '0.3rem 0.6rem', width: 210, background: 'var(--surface2)',
+            border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)',
+            fontSize: '0.78rem', outline: 'none',
+          }}
+        />
+        <button
+          onClick={() => loadAssets()}
+          disabled={loading}
+          style={{
+            padding: '0.3rem 0.75rem', background: 'rgba(0,180,216,0.1)',
+            border: '1px solid rgba(0,180,216,0.4)', borderRadius: 4, color: 'var(--blue)',
+            fontSize: '0.78rem', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.5 : 1,
+          }}
+        >
+          Ververs
+        </button>
+        <button
+          onClick={exportCsv}
+          disabled={items.length === 0}
+          style={{
+            padding: '0.3rem 0.75rem', background: 'var(--surface2)',
+            border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-dim)',
+            fontSize: '0.78rem', cursor: items.length === 0 ? 'default' : 'pointer', opacity: items.length === 0 ? 0.4 : 1,
+          }}
+        >
+          Export CSV
+        </button>
       </div>
     }/>}>
 
