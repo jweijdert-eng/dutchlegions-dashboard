@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
+import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, getSystemInfo, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import Location from '../components/Location'
@@ -37,6 +37,7 @@ export default function Assets() {
 
   const [items, setItems] = useState<ResolvedAsset[]>([])
   const [locationSystemMap, setLocationSystemMap] = useState<Record<number, number>>({})
+  const [securityMap, setSecurityMap] = useState<Record<number, number>>({})
   const [routeCounts, setRouteCounts] = useState<Record<number, number | null>>({})
   const [originSystemId, setOriginSystemId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -171,6 +172,18 @@ export default function Assets() {
       for (const [id, info] of stationInfoMap.entries()) locationsToSystems[id] = info.systemId
       for (const [id, info] of structureInfoMap.entries()) locationsToSystems[id] = info.systemId
       setLocationSystemMap(locationsToSystems)
+
+      // Security status per system
+      const uniqueSystems = [...new Set(Object.values(locationsToSystems))].filter(Boolean)
+      const secEntries = await Promise.all(
+        uniqueSystems.map(async sysId => {
+          const info = await getSystemInfo(sysId).catch(() => null)
+          return [sysId, info?.security_status ?? null] as const
+        })
+      )
+      const secMap: Record<number, number> = {}
+      for (const [sysId, sec] of secEntries) if (sec !== null) secMap[sysId] = sec
+      setSecurityMap(secMap)
       // default collapse state: all collapsed
       const collapsedState: Record<string, boolean> = {}
       for (const it of final) collapsedState[it.locationName] = true
@@ -243,6 +256,21 @@ export default function Assets() {
     return m
   }, [filtered])
 
+  function secColor(sec: number | undefined) {
+    if (sec === undefined) return 'var(--text-dim)'
+    if (sec >= 0.5) return '#3ecf6e'
+    if (sec >= 0.1) return '#f97316'
+    return '#e05555'
+  }
+
+  function secLabel(locationId: number) {
+    const sysId = locationSystemMap[locationId]
+    const sec = sysId !== undefined ? securityMap[sysId] : undefined
+    if (sec === undefined) return null
+    const display = Math.max(0.1, sec).toFixed(1)
+    return { label: display, color: secColor(sec) }
+  }
+
   function toggle(loc: string) {
     setCollapsed(c => ({ ...c, [loc]: !c[loc] }))
   }
@@ -281,19 +309,23 @@ export default function Assets() {
           const qty = items.reduce((s, it) => s + it.quantity, 0)
           const routeCount = routeCounts[locationId]
           const routeLabel = routeCount === null
-            ? originSystemId !== null ? 'Route: berekenen…' : 'Route: geen origin'
+            ? originSystemId !== null ? 'berekenen…' : ''
             : routeCount === undefined
-              ? originSystemId !== null ? 'Route: onbekend' : 'Route: geen origin'
-              : `Route: ${routeCount} sprongen`
+              ? ''
+              : `${routeCount} sprongen`
+          const sec = secLabel(locationId)
 
           return (
             <div key={loc} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
               <div onClick={() => toggle(loc)} style={{ padding: '0.6rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'var(--surface2)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ color: 'var(--blue)' }}>{open ? '▾' : '▸'}</span>
-                  <Location locationId={locationId} name={loc} fontSize="0.88rem" />
+                  {sec && (
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: sec.color, minWidth: 28, textAlign: 'right' }}>{sec.label}</span>
+                  )}
+                  <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{loc}</span>
                 </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
                   <span>{items.length} soorten · {qty.toLocaleString()} items</span>
                   <span>{routeLabel}</span>
                 </div>
@@ -308,7 +340,9 @@ export default function Assets() {
                         <td style={{ padding: '0.4rem 0.6rem', fontWeight: 700 }}>{it.name}</td>
                         <td style={{ padding: '0.4rem 0.6rem', color: 'var(--text-dim)' }}>{it.flag}</td>
                         <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 700 }}>{it.quantity > 1 ? it.quantity.toLocaleString() : ''}</td>
-                        <td style={{ padding: '0.4rem 0.6rem', fontSize: '0.78rem', color: 'var(--text-dim)' }}>{it.ownerCharId}</td>
+                        <td style={{ padding: '0.4rem 0.6rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                          {allTokens.find(t => t.characterId === it.ownerCharId)?.characterName ?? ''}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
