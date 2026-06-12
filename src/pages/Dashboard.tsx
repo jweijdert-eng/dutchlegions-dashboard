@@ -580,7 +580,7 @@ export default function Dashboard() {
   const tick    = useAutoRefresh()
   const fetchId = useRef(0)
 
-  const { editMode, setEditMode } = useLayoutMode()
+  const { editMode, setEditMode, previewMode } = useLayoutMode()
   const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(loadOrder)
   const [charOrder, setCharOrder]     = useState<number[]>([])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -979,7 +979,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {allTokens.some(t => t.characterId === 1831618559) && (
+      {allTokens.some(t => t.characterId === 1831618559) && !previewMode && (
         <div style={{ marginBottom: GAP }}>
           <LocalChatWidget />
         </div>
