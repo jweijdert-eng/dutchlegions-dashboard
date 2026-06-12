@@ -186,7 +186,6 @@ const NAV = [
   { label: 'Skills',     path: '/skills',     icon: '◎', badge: null },
   { label: 'Blueprints', path: '/blueprints', icon: '⬡', badge: null },
   { label: 'Contracts',  path: '/contracts',  icon: '◧', badge: null },
-  { label: 'Intel',      path: '/intel',      icon: '◈', badge: null },
   { label: 'Local Chat', path: '/local',      icon: '⌁', badge: null },
   { label: 'Build vs Buy', path: '/buildvsbuy', icon: '⚙', badge: null },
   { label: 'Notities',   path: '/notes',      icon: '✎', badge: null },

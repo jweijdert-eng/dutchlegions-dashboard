@@ -21,7 +21,6 @@ const Market       = lazy(() => import('./pages/Market'))
 const Skills       = lazy(() => import('./pages/Skills'))
 const Blueprints   = lazy(() => import('./pages/Blueprints'))
 const Contracts    = lazy(() => import('./pages/Contracts'))
-const Intel        = lazy(() => import('./pages/Intel'))
 const Notes        = lazy(() => import('./pages/Notes'))
 const DebugUnresolved = lazy(() => import('./pages/DebugUnresolved'))
 const MultiChar    = lazy(() => import('./pages/MultiChar'))
@@ -97,7 +96,6 @@ function AppRoutes() {
       <Route path="/skills"      element={<ProtectedRoute><Skills /></ProtectedRoute>} />
       <Route path="/blueprints" element={<ProtectedRoute><Blueprints /></ProtectedRoute>} />
       <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
-      <Route path="/intel"      element={<ProtectedRoute><Intel /></ProtectedRoute>} />
       <Route path="/notes"      element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
       <Route path="/local"      element={<ProtectedRoute><LocalChat /></ProtectedRoute>} />
