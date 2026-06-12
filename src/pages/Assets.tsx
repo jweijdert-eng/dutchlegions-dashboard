@@ -150,7 +150,7 @@ export default function Assets() {
           quantity: a.quantity,
           flag: fmtFlag(a.location_flag),
           locationId: root.id,
-          locationName: locationNames.get(root.id) ?? String(root.id),
+          locationName: locationNames.get(root.id) ?? (root.id >= 1_000_000_000_000 ? `\x00struct:${root.id}` : String(root.id)),
           ownerCharId: a.owner,
         }
       })
@@ -164,7 +164,12 @@ export default function Assets() {
         else merged.set(key, { ...r })
       }
 
-      const final = [...merged.values()].sort((a, b) => a.locationName.localeCompare(b.locationName) || a.name.localeCompare(b.name))
+      const isUnknown = (loc: string) => loc.startsWith('\x00struct:')
+      const final = [...merged.values()].sort((a, b) => {
+        const au = isUnknown(a.locationName), bu = isUnknown(b.locationName)
+        if (au !== bu) return au ? 1 : -1
+        return a.locationName.localeCompare(b.locationName) || a.name.localeCompare(b.name)
+      })
       setItems(final)
       setRouteCounts({})
       const locationsToSystems: Record<number, number> = {}
@@ -341,6 +346,9 @@ export default function Assets() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {[...groups.entries()].map(([loc, { locationId, items }]) => {
+          const unknown = loc.startsWith('\x00struct:')
+          const structId = unknown ? loc.slice('\x00struct:'.length) : null
+          const displayName = unknown ? 'Onbekende structuur' : loc
           const open = !collapsed[loc]
           const qty = items.reduce((s, it) => s + it.quantity, 0)
           const routeCount = routeCounts[locationId]
@@ -352,14 +360,17 @@ export default function Assets() {
           const sec = secLabel(locationId)
 
           return (
-            <div key={loc} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+            <div key={loc} style={{ background: 'var(--surface)', border: `1px solid ${unknown ? 'rgba(28,28,53,0.6)' : 'var(--border)'}`, borderRadius: 4, overflow: 'hidden', opacity: unknown ? 0.65 : 1 }}>
               <div onClick={() => toggle(loc)} style={{ padding: '0.6rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'var(--surface2)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: 'var(--blue)' }}>{open ? '▾' : '▸'}</span>
-                  {sec && (
+                  <span style={{ color: unknown ? 'var(--text-dim)' : 'var(--blue)' }}>{open ? '▾' : '▸'}</span>
+                  {!unknown && sec && (
                     <span style={{ fontSize: '0.72rem', fontWeight: 700, color: sec.color, minWidth: 28, textAlign: 'right' }}>{sec.label}</span>
                   )}
-                  <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{loc}</span>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 600, color: unknown ? 'var(--text-dim)' : 'var(--text)' }}>{displayName}</span>
+                  {unknown && structId && (
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(150,155,180,0.4)', fontFamily: 'monospace' }}>#{structId}</span>
+                  )}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
                   <span>{items.length} soorten · {qty.toLocaleString()} items</span>
