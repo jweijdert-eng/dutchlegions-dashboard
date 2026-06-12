@@ -11,10 +11,13 @@ if ($method === 'GET') {
         $stmt = $pdo->prepare('SELECT character_id, name, blocked FROM members WHERE character_id = ?');
         $stmt->execute([(int)$_GET['characterId']]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) $row['blocked'] = (int)$row['blocked'];
         echo json_encode($row ?: null);
     } else {
         $stmt = $pdo->query('SELECT character_id, name, last_seen, blocked FROM members ORDER BY last_seen DESC');
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$r) $r['blocked'] = (int)$r['blocked'];
+        echo json_encode($rows);
     }
     exit;
 }

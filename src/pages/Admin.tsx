@@ -70,6 +70,13 @@ export default function Admin() {
     setLoading(false)
   }
 
+  async function refreshMembers() {
+    try {
+      const r = await fetch('/api/members.php')
+      setMembers(await r.json())
+    } catch { /* ignore */ }
+  }
+
   async function deleteMember(charId: number) {
     if (!adminToken || charId === ADMIN_CHAR_ID) return
     setMembers(prev => prev.filter(m => m.character_id !== charId))
@@ -78,20 +85,19 @@ export default function Admin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: charId }),
     }).catch(() => {})
-    await fetchMembers()
+    await refreshMembers()
   }
 
   async function toggleBlock(member: SiteMember) {
-    if (!adminToken) return
-    if (member.character_id === ADMIN_CHAR_ID) return
-    const action = member.blocked ? 'unblock' : 'block'
-    setMembers(prev => prev.map(m => m.character_id === member.character_id ? { ...m, blocked: member.blocked ? 0 : 1 } : m))
+    if (!adminToken || member.character_id === ADMIN_CHAR_ID) return
+    const action = member.blocked === 1 ? 'unblock' : 'block'
+    setMembers(prev => prev.map(m => m.character_id === member.character_id ? { ...m, blocked: member.blocked === 1 ? 0 : 1 } : m))
     await fetch('/api/members.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: member.character_id, action }),
     }).catch(() => {})
-    await fetchMembers()
+    await refreshMembers()
   }
 
   async function fetchSettings() {
