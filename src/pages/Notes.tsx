@@ -1,0 +1,184 @@
+import { useState, useEffect, useRef } from 'react'
+import Layout, { PageHeader } from '../components/Layout'
+
+interface Note {
+  id: string
+  title: string
+  content: string
+  updatedAt: number
+}
+
+const STORAGE_KEY = 'eve_notes'
+
+function loadNotes(): Note[] {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') }
+  catch { return [] }
+}
+
+function saveNotes(notes: Note[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes))
+}
+
+function fmt(ts: number) {
+  return new Date(ts).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+export default function Notes() {
+  const [notes, setNotes] = useState<Note[]>(loadNotes)
+  const [selectedId, setSelectedId] = useState<string | null>(() => loadNotes()[0]?.id ?? null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
+  const [dirty, setDirty] = useState(false)
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const selected = notes.find(n => n.id === selectedId) ?? null
+
+  useEffect(() => {
+    if (selected) {
+      setEditTitle(selected.title)
+      setEditContent(selected.content)
+      setDirty(false)
+    }
+  }, [selectedId])
+
+  function autosave(title: string, content: string) {
+    if (!selectedId) return
+    if (saveTimeout.current) clearTimeout(saveTimeout.current)
+    saveTimeout.current = setTimeout(() => {
+      setNotes(prev => {
+        const updated = prev.map(n =>
+          n.id === selectedId ? { ...n, title, content, updatedAt: Date.now() } : n
+        )
+        saveNotes(updated)
+        return updated
+      })
+      setDirty(false)
+    }, 600)
+  }
+
+  function handleTitleChange(v: string) {
+    setEditTitle(v); setDirty(true); autosave(v, editContent)
+  }
+
+  function handleContentChange(v: string) {
+    setEditContent(v); setDirty(true); autosave(editTitle, v)
+  }
+
+  function addNote() {
+    const note: Note = { id: crypto.randomUUID(), title: 'Nieuwe notitie', content: '', updatedAt: Date.now() }
+    const updated = [note, ...notes]
+    setNotes(updated); saveNotes(updated); setSelectedId(note.id)
+  }
+
+  function deleteNote(id: string) {
+    const updated = notes.filter(n => n.id !== id)
+    setNotes(updated); saveNotes(updated)
+    if (selectedId === id) setSelectedId(updated[0]?.id ?? null)
+  }
+
+  return (
+    <Layout header={
+      <PageHeader
+        title="NOTITIES"
+        right={
+          <button
+            onClick={addNote}
+            style={{
+              background: 'rgba(0,180,216,0.07)', border: '1px solid rgba(0,180,216,0.2)',
+              borderRadius: 3, color: 'var(--blue)', padding: '0.3rem 0.75rem',
+              fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.04em',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,180,216,0.15)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,180,216,0.07)'}
+          >
+            + Nieuwe notitie
+          </button>
+        }
+      />
+    }>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
+
+        {/* Sidebar */}
+        <div style={{
+          width: 220, flexShrink: 0, borderRight: '1px solid var(--border)',
+          overflowY: 'auto', display: 'flex', flexDirection: 'column',
+        }}>
+          {notes.length === 0 && (
+            <div style={{ padding: '2rem 1rem', color: 'var(--text-dim)', fontSize: '0.72rem', textAlign: 'center' }}>
+              Geen notities
+            </div>
+          )}
+          {notes.map(n => {
+            const active = n.id === selectedId
+            return (
+              <div key={n.id} style={{
+                display: 'flex', alignItems: 'center',
+                background: active ? 'rgba(0,180,216,0.07)' : 'transparent',
+                borderLeft: `2px solid ${active ? 'var(--blue)' : 'transparent'}`,
+                borderBottom: '1px solid var(--border)',
+              }}>
+                <button
+                  onClick={() => setSelectedId(n.id)}
+                  style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', padding: '0.65rem 0.75rem', cursor: 'pointer' }}
+                >
+                  <div style={{ color: active ? 'var(--blue)' : 'var(--text)', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 155 }}>
+                    {n.title || 'Naamloos'}
+                  </div>
+                  <div style={{ color: 'var(--text-dim)', fontSize: '0.62rem' }}>{fmt(n.updatedAt)}</div>
+                </button>
+                <button
+                  onClick={() => deleteNote(n.id)}
+                  title="Verwijderen"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '0.5rem 0.6rem', lineHeight: 1, flexShrink: 0 }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text-dim)'}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Editor */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {!selected ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
+              Selecteer of maak een notitie
+            </div>
+          ) : (
+            <>
+              <div style={{ borderBottom: '1px solid var(--border)', padding: '0.6rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--surface)', flexShrink: 0 }}>
+                <input
+                  value={editTitle}
+                  onChange={e => handleTitleChange(e.target.value)}
+                  placeholder="Titel..."
+                  style={{
+                    flex: 1, background: 'none', border: 'none', outline: 'none',
+                    color: 'var(--text)', fontSize: '0.85rem', fontWeight: 700,
+                    fontFamily: 'inherit', letterSpacing: '0.04em',
+                  }}
+                />
+                <span style={{ color: dirty ? 'var(--yellow, #f59e0b)' : 'var(--border)', fontSize: '0.62rem', flexShrink: 0, transition: 'color 0.2s' }}>
+                  {dirty ? 'opslaan...' : 'opgeslagen'}
+                </span>
+              </div>
+              <textarea
+                value={editContent}
+                onChange={e => handleContentChange(e.target.value)}
+                placeholder="Schrijf hier je notitie..."
+                style={{
+                  flex: 1, background: 'none', border: 'none', outline: 'none',
+                  color: 'var(--text)', fontSize: '0.82rem', lineHeight: 1.8,
+                  padding: '1.25rem', resize: 'none', fontFamily: 'inherit',
+                }}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </Layout>
+  )
+}

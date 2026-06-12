@@ -1,0 +1,324 @@
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useAuth } from '../auth/AuthContext'
+import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
+import Layout, { PageHeader } from '../components/Layout'
+import EveImage from '../components/EveImage'
+import Location from '../components/Location'
+import { usePageLoading } from '../hooks/usePageLoading'
+
+type ResolvedAsset = {
+  typeId: number
+  name: string
+  quantity: number
+  flag: string
+  locationId: number
+  locationName: string
+  ownerCharId?: number
+}
+
+const FLAG_LABEL: Record<string, string> = {
+  Hangar: 'Hangar', CargoHold: 'Cargo', DroneBay: 'Drones',
+  ShipHangar: 'Ship Hangar', SpecializedFuelBay: 'Fuel Bay',
+  FighterBay: 'Fighters', FleetHangar: 'Fleet Hangar',
+  Unlocked: 'Unlocked', Locked: 'Locked',
+}
+
+function fmtFlag(f: string) {
+  return FLAG_LABEL[f] ?? f.replace(/([A-Z])/g, ' $1').trim()
+}
+
+export default function Assets() {
+  const { tokens: allTokens, activeTokens } = useAuth()
+  const [selectedChar, setSelectedChar] = useState<number | 'all'>('all')
+  const tokens = selectedChar === 'all' ? allTokens : allTokens.filter(t => t.characterId === selectedChar)
+  const routeCharacterId = selectedChar === 'all'
+    ? activeTokens[0]?.characterId ?? allTokens[0]?.characterId ?? null
+    : selectedChar
+
+  const [items, setItems] = useState<ResolvedAsset[]>([])
+  const [locationSystemMap, setLocationSystemMap] = useState<Record<number, number>>({})
+  const [routeCounts, setRouteCounts] = useState<Record<number, number | null>>({})
+  const [originSystemId, setOriginSystemId] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const fetchId = useRef(0)
+  const routeFetchId = useRef(0)
+  usePageLoading(loading)
+
+  const characterOptions = useMemo(() => [{ label: 'All characters', id: 'all' as const }, ...allTokens.map(t => ({ label: `${t.characterName ?? t.characterId}`, id: t.characterId }))], [allTokens])
+
+  async function loadAssets() {
+    if (tokens.length === 0) { setItems([]); return }
+    const my = ++fetchId.current
+    setLoading(true)
+    try {
+      const allRaw: (AssetItem & { owner: number })[] = []
+      const allLocations: Array<{ owner: number; loc: AssetLocation }> = []
+      await Promise.all(tokens.map(async t => {
+        const raw = await getAssets(t.characterId, t.accessToken).catch(() => [] as AssetItem[])
+        allRaw.push(...raw.map(r => ({ ...r, owner: t.characterId })))
+        const locations = await getAssetLocations(t.characterId, t.accessToken).catch(() => [] as AssetLocation[])
+        allLocations.push(...locations.map(loc => ({ owner: t.characterId, loc })))
+      }))
+      if (my !== fetchId.current) return
+
+      const byItem = new Map(allRaw.map(a => [`${a.owner}:${a.item_id}`, a]))
+      const locationMap = new Map<string, AssetLocation>()
+      for (const entry of allLocations) {
+        locationMap.set(`${entry.owner}:${entry.loc.item_id}`, entry.loc)
+      }
+
+      type RootLocation = { id: number; type: 'station' | 'solar_system' | 'structure' | 'other' }
+
+      function resolveAssetLocation(loc: AssetLocation, owner: number): RootLocation {
+        if (typeof loc.location_id !== 'number' || Number.isNaN(loc.location_id)) {
+          return { id: 0, type: 'other' }
+        }
+        const inferredType = loc.location_type === 'structure' ? 'structure'
+          : loc.location_type === 'station' ? 'station'
+          : loc.location_type === 'solar_system' ? 'solar_system'
+          : loc.location_type === 'item' ? 'item'
+          : loc.location_id >= 1_000_000_000 ? 'structure'
+          : loc.location_id < 1_000_000_000 ? 'station'
+          : 'other'
+
+        if (inferredType !== 'item') {
+          return { id: loc.location_id, type: inferredType }
+        }
+
+        const parent = byItem.get(`${owner}:${loc.location_id}`)
+        return parent ? rootLocation(parent) : {
+          id: loc.location_id,
+          type: loc.location_id >= 1_000_000_000 ? 'structure' : 'other',
+        }
+      }
+
+      function rootLocation(a: AssetItem): RootLocation {
+        const loc = locationMap.get(`${a.owner}:${a.item_id}`)
+        if (loc) return resolveAssetLocation(loc, a.owner)
+        if (a.location_type !== 'item') {
+          return {
+            id: a.location_id,
+            type: a.location_type === 'station' ? 'station'
+              : a.location_type === 'solar_system' ? 'solar_system'
+              : a.location_id >= 1_000_000_000 ? 'structure'
+              : 'other',
+          }
+        }
+        const parent = byItem.get(`${a.owner}:${a.location_id}`)
+        return parent ? rootLocation(parent) : {
+          id: a.location_id,
+          type: a.location_id >= 1_000_000_000 ? 'structure' : 'other',
+        }
+      }
+
+      const rootLocations = allRaw.map(a => rootLocation(a))
+      const rootIds = [...new Set(rootLocations.map(r => r.id))]
+      const stationIds = rootLocations.filter(r => r.type === 'station').map(r => r.id)
+      const systemIds = rootLocations.filter(r => r.type === 'solar_system').map(r => r.id)
+      const structureIds = rootLocations.filter(r => r.type === 'structure').map(r => r.id)
+      const typeIds = [...new Set(allRaw.map(a => a.type_id))]
+
+      const [typeMap, locationNameMap] = await Promise.all([ resolveNames(typeIds), resolveNames(rootIds) ])
+
+      const structureInfoMap = new Map<number, { name: string; systemId: number }>()
+      await Promise.all(structureIds.map(async id => {
+        const info = await getStructureInfo(id, allTokens)
+        if (info) structureInfoMap.set(id, { name: info.name, systemId: info.solar_system_id })
+      }))
+
+      const stationInfoMap = new Map<number, { name: string; systemId: number }>()
+      await Promise.all(stationIds.map(async id => {
+        const station = await getStationInfo(id)
+        if (station) stationInfoMap.set(id, { name: station.name, systemId: station.system_id })
+      }))
+
+      const locationNames = new Map<number, string>([
+        ...locationNameMap.entries(),
+        ...[...stationInfoMap.entries()].map(([id, info]) => [id, info.name] as [number, string]),
+        ...[...structureInfoMap.entries()].map(([id, info]) => [id, info.name] as [number, string]),
+      ])
+
+      // build resolved items
+      const resolved: ResolvedAsset[] = allRaw.map(a => {
+        const root = rootLocation(a)
+        return {
+          typeId: a.type_id,
+          name: typeMap.get(a.type_id) ?? `Type ${a.type_id}`,
+          quantity: a.quantity,
+          flag: fmtFlag(a.location_flag),
+          locationId: root.id,
+          locationName: locationNames.get(root.id) ?? String(root.id),
+          ownerCharId: a.owner,
+        }
+      })
+
+      // merge by locationName|typeId|flag|ownerCharId
+      const merged = new Map<string, ResolvedAsset>()
+      for (const r of resolved) {
+        const key = `${r.locationName}|${r.typeId}|${r.flag}|${r.ownerCharId}`
+        const ex = merged.get(key)
+        if (ex) ex.quantity += r.quantity
+        else merged.set(key, { ...r })
+      }
+
+      const final = [...merged.values()].sort((a, b) => a.locationName.localeCompare(b.locationName) || a.name.localeCompare(b.name))
+      setItems(final)
+      setRouteCounts({})
+      const locationsToSystems: Record<number, number> = {}
+      for (const id of systemIds) locationsToSystems[id] = id
+      for (const [id, info] of stationInfoMap.entries()) locationsToSystems[id] = info.systemId
+      for (const [id, info] of structureInfoMap.entries()) locationsToSystems[id] = info.systemId
+      setLocationSystemMap(locationsToSystems)
+      // default collapse state: all collapsed
+      const collapsedState: Record<string, boolean> = {}
+      for (const it of final) collapsedState[it.locationName] = true
+      setCollapsed(collapsedState)
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadAssets() }, [selectedChar, allTokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
+
+  useEffect(() => {
+    if (!routeCharacterId) { setOriginSystemId(null); return }
+    const token = allTokens.find(t => t.characterId === routeCharacterId)?.accessToken
+    if (!token) { setOriginSystemId(null); return }
+
+    let active = true
+    getLocation(routeCharacterId, token)
+      .then(loc => { if (!active) return; setOriginSystemId(loc?.solar_system_id ?? null) })
+      .catch(() => { if (!active) return; setOriginSystemId(null) })
+    return () => { active = false }
+  }, [routeCharacterId, allTokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
+
+  useEffect(() => {
+    if (originSystemId === null) { setRouteCounts({}); return }
+
+    const locationIds = Array.from(new Set(items.map(i => i.locationId)))
+    const destinationSystems = new Map<number, number>()
+    for (const locationId of locationIds) {
+      const sys = locationSystemMap[locationId]
+      if (typeof sys === 'number') destinationSystems.set(locationId, sys)
+    }
+
+    if (destinationSystems.size === 0) { setRouteCounts({}); return }
+
+    const current = ++routeFetchId.current
+    const initialCounts: Record<number, number | null> = {}
+    destinationSystems.forEach((_, locationId) => { initialCounts[locationId] = null })
+    setRouteCounts(initialCounts)
+
+    Promise.all([...destinationSystems.entries()].map(async ([locationId, destinationSystemId]) => {
+      if (destinationSystemId === originSystemId) return [locationId, 0] as const
+      try {
+        const route = await getRoute(originSystemId, destinationSystemId)
+        return [locationId, Math.max(0, route.length - 1)] as const
+      } catch {
+        return [locationId, null] as const
+      }
+    })).then(results => {
+      if (current !== routeFetchId.current) return
+      setRouteCounts(prev => {
+        const next = { ...prev }
+        for (const [locationId, count] of results) next[locationId] = count
+        return next
+      })
+    })
+  }, [originSystemId, items, locationSystemMap])
+
+  const filtered = items.filter(i => {
+    const s = search.trim().toLowerCase()
+    if (!s) return true
+    return i.name.toLowerCase().includes(s) || i.locationName.toLowerCase().includes(s) || String(i.typeId) === s
+  })
+
+  const groups = useMemo(() => {
+    const m = new Map<string, { locationId: number; items: ResolvedAsset[] }>()
+    for (const it of filtered) {
+      const g = m.get(it.locationName) ?? { locationId: it.locationId, items: [] }
+      g.items.push(it)
+      m.set(it.locationName, g)
+    }
+    return m
+  }, [filtered])
+
+  function toggle(loc: string) {
+    setCollapsed(c => ({ ...c, [loc]: !c[loc] }))
+  }
+
+  function exportCsv() {
+    const rows = [['location', 'locationId', 'ownerCharId', 'typeId', 'name', 'flag', 'quantity']]
+    for (const it of items) rows.push([it.locationName, String(it.locationId), String(it.ownerCharId ?? ''), String(it.typeId), it.name, it.flag, String(it.quantity)])
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'assets_export.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  }
+
+  const totalItems = items.reduce((s, i) => s + i.quantity, 0)
+
+  return (
+    <Layout header={<PageHeader title="Assets" sub={loading ? 'Laden...' : `${totalItems.toLocaleString()} items · ${groups.size} locaties`} right={
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <select value={selectedChar} onChange={e => setSelectedChar(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ padding: '0.25rem', background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+          {characterOptions.map(o => <option key={String(o.id)} value={String(o.id)}>{o.label}</option>)}
+        </select>
+        <input placeholder="Zoek item of locatie..." value={search} onChange={e => setSearch(e.target.value)} style={{ padding: '0.3rem 0.6rem', width: 240 }} />
+        <button onClick={() => loadAssets()} disabled={loading}>Ververs</button>
+        <button onClick={exportCsv} disabled={items.length === 0}>Export CSV</button>
+      </div>
+    }/>}>
+
+      {loading && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)' }}>Assets laden...</div>}
+
+      {!loading && groups.size === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)' }}>Geen assets gevonden</div>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {[...groups.entries()].map(([loc, { locationId, items }]) => {
+          const open = !collapsed[loc]
+          const qty = items.reduce((s, it) => s + it.quantity, 0)
+          const routeCount = routeCounts[locationId]
+          const routeLabel = routeCount === null
+            ? originSystemId !== null ? 'Route: berekenen…' : 'Route: geen origin'
+            : routeCount === undefined
+              ? originSystemId !== null ? 'Route: onbekend' : 'Route: geen origin'
+              : `Route: ${routeCount} sprongen`
+
+          return (
+            <div key={loc} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+              <div onClick={() => toggle(loc)} style={{ padding: '0.6rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'var(--surface2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--blue)' }}>{open ? '▾' : '▸'}</span>
+                  <Location locationId={locationId} name={loc} fontSize="0.88rem" />
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <span>{items.length} soorten · {qty.toLocaleString()} items</span>
+                  <span>{routeLabel}</span>
+                </div>
+              </div>
+
+              {open && (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <tbody>
+                    {items.map((it, i) => (
+                      <tr key={`${it.typeId}-${it.ownerCharId}-${i}`} style={{ borderTop: '1px solid rgba(28,28,53,0.5)', background: i % 2 ? 'rgba(15,15,34,0.04)' : 'transparent' }}>
+                        <td style={{ padding: '0.4rem 0.6rem', width: 48 }}><EveImage category="types" id={it.typeId} variation="icon" size={32} px={32} /></td>
+                        <td style={{ padding: '0.4rem 0.6rem', fontWeight: 700 }}>{it.name}</td>
+                        <td style={{ padding: '0.4rem 0.6rem', color: 'var(--text-dim)' }}>{it.flag}</td>
+                        <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right', fontWeight: 700 }}>{it.quantity > 1 ? it.quantity.toLocaleString() : ''}</td>
+                        <td style={{ padding: '0.4rem 0.6rem', fontSize: '0.78rem', color: 'var(--text-dim)' }}>{it.ownerCharId}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Layout>
+  )
+}
+
