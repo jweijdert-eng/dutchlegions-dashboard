@@ -25,13 +25,17 @@ export default function Callback() {
         // Admin mag altijd
         if (token.characterId !== 1831618559) {
           const settings = await fetch('/api/settings.php').then(r => r.json()).catch(() => ({}))
-          if (settings.require_corp_alliance) {
+          if (settings.require_corp || settings.require_alliance) {
             const info = await fetch(`https://esi.evetech.net/latest/characters/${token.characterId}/`)
               .then(r => r.json()).catch(() => null)
-            const inCorp     = info?.corporation_id === 98652891
-            const inAlliance = info?.alliance_id    === 99013537
+            const inCorp     = settings.require_corp     && info?.corporation_id === 98652891
+            const inAlliance = settings.require_alliance && info?.alliance_id    === 99013537
             if (!inCorp && !inAlliance) {
-              throw new Error('Toegang geweigerd. Alleen Dutch Legions corp- en allianceleden mogen inloggen.')
+              const who = [
+                settings.require_corp     ? 'Dutch Legions corp' : null,
+                settings.require_alliance ? 'Insidious alliance' : null,
+              ].filter(Boolean).join(' of ')
+              throw new Error(`Toegang geweigerd. Alleen ${who} leden mogen inloggen.`)
             }
           }
         }
