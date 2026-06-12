@@ -61,37 +61,22 @@ export default function Login() {
           gap: '1.5rem',
           marginBottom: '1.5rem',
         }}>
-          <div style={{ position: 'relative' }}>
-            <div style={{
-              position: 'absolute', inset: -12, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(240,192,64,0.18) 0%, transparent 70%)',
-            }} />
-            <img src={ALLIANCE_LOGO} alt="Alliance Logo" width={80} height={80}
-              style={{
-                borderRadius: '50%',
-                border: '2px solid rgba(240,192,64,0.5)',
-                display: 'block',
-                boxShadow: '0 0 32px rgba(240,192,64,0.3)',
-              }}
-            />
-          </div>
-
-          <div style={{ width: 1, height: 60, background: 'rgba(255,255,255,0.1)' }} />
-
-          <div style={{ position: 'relative' }}>
-            <div style={{
-              position: 'absolute', inset: -12, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(0,180,216,0.18) 0%, transparent 70%)',
-            }} />
-            <img src={CORP_LOGO} alt="Corporation Logo" width={80} height={80}
-              style={{
-                borderRadius: '50%',
-                border: '2px solid rgba(0,180,216,0.5)',
-                display: 'block',
-                boxShadow: '0 0 32px rgba(0,180,216,0.3)',
-              }}
-            />
-          </div>
+          {[{ src: ALLIANCE_LOGO, alt: 'Alliance Logo' }, { src: CORP_LOGO, alt: 'Corporation Logo' }].map(logo => (
+            <div key={logo.alt} style={{ position: 'relative' }}>
+              <div style={{
+                position: 'absolute', inset: -12, borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(255,120,0,0.22) 0%, transparent 70%)',
+              }} />
+              <img src={logo.src} alt={logo.alt} width={80} height={80}
+                style={{
+                  borderRadius: '50%',
+                  border: '2px solid rgba(255,120,0,0.7)',
+                  display: 'block',
+                  boxShadow: '0 0 32px rgba(255,120,0,0.35)',
+                }}
+              />
+            </div>
+          ))}
         </div>
 
         {/* Title */}
