@@ -621,6 +621,9 @@ export default function Sidebar() {
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0.4rem 0' }}>
+        <div style={{ padding: '0.5rem 1rem 0.25rem', fontSize: '0.6rem', letterSpacing: '0.12em', color: 'var(--text-dim)', userSelect: 'none' }}>
+          INDELING
+        </div>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={nav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {nav.map(item => (
