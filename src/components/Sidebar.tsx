@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useAuth } from '../auth/AuthContext'
 import { useAlerts } from '../context/useAlerts'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
@@ -171,25 +174,68 @@ function SdeWidget() {
   )
 }
 
-const NAV = [
-  { label: 'Dashboard',     path: '/',              icon: '▣', badge: null as null | 'mail' | 'jobs' | 'alerts' },
-  { label: 'Overzicht',     path: '/overview',      icon: '⊞', badge: null },
-  { label: 'Character', path: '/character', icon: '◈', badge: null },
-  { label: 'Wallet',    path: '/wallet',    icon: '◑', badge: null },
-  { label: 'Market',    path: '/market',    icon: '◊', badge: null },
-  { label: 'Kills',     path: '/kills',     icon: '◉', badge: null },
-  { label: 'Industry',  path: '/industry',  icon: '◫', badge: 'jobs' as const },
-  { label: 'Mining',    path: '/mining',    icon: '⬟', badge: null },
-  { label: 'Planets',   path: '/planets',   icon: '○', badge: null },
-  { label: 'Mail',      path: '/mail',      icon: '✉', badge: 'mail' as const },
-  { label: 'Fittings',   path: '/fittings',   icon: '⌬', badge: null },
-  { label: 'Skills',     path: '/skills',     icon: '◎', badge: null },
-  { label: 'Blueprints', path: '/blueprints', icon: '⬡', badge: null },
-  { label: 'Contracts',  path: '/contracts',  icon: '◧', badge: null },
-  { label: 'Local Chat', path: '/local',      icon: '⌁', badge: null },
-  { label: 'Build vs Buy', path: '/buildvsbuy', icon: '⚙', badge: null },
-  { label: 'Notities',   path: '/notes',      icon: '✎', badge: null },
+type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' }
+
+const DEFAULT_NAV: NavItem[] = [
+  { label: 'Dashboard',   path: '/',           icon: '▣', badge: null },
+  { label: 'Overzicht',   path: '/overview',   icon: '⊞', badge: null },
+  { label: 'Character',   path: '/character',  icon: '◈', badge: null },
+  { label: 'Wallet',      path: '/wallet',     icon: '◑', badge: null },
+  { label: 'Market',      path: '/market',     icon: '◊', badge: null },
+  { label: 'Kills',       path: '/kills',      icon: '◉', badge: null },
+  { label: 'Industry',    path: '/industry',   icon: '◫', badge: 'jobs' },
+  { label: 'Mining',      path: '/mining',     icon: '⬟', badge: null },
+  { label: 'Planets',     path: '/planets',    icon: '○', badge: null },
+  { label: 'Mail',        path: '/mail',       icon: '✉', badge: 'mail' },
+  { label: 'Fittings',    path: '/fittings',   icon: '⌬', badge: null },
+  { label: 'Skills',      path: '/skills',     icon: '◎', badge: null },
+  { label: 'Blueprints',  path: '/blueprints', icon: '⬡', badge: null },
+  { label: 'Contracts',   path: '/contracts',  icon: '◧', badge: null },
+  { label: 'Local Chat',  path: '/local',      icon: '⌁', badge: null },
+  { label: 'Build vs Buy',path: '/buildvsbuy', icon: '⚙', badge: null },
+  { label: 'Notities',    path: '/notes',      icon: '✎', badge: null },
 ]
+
+function loadNav(): NavItem[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem('nav_order') ?? 'null') as string[] | null
+    if (!saved) return DEFAULT_NAV
+    const map = Object.fromEntries(DEFAULT_NAV.map(n => [n.path, n]))
+    const ordered = saved.map(p => map[p]).filter(Boolean)
+    const missing = DEFAULT_NAV.filter(n => !saved.includes(n.path))
+    return [...ordered, ...missing]
+  } catch { return DEFAULT_NAV }
+}
+
+function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.path })
+  const count = badgeCount(item.badge)
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}>
+      <NavLink
+        to={item.path}
+        end={item.path === '/'}
+        style={({ isActive }) => ({
+          display: 'flex', alignItems: 'center', gap: '0.65rem',
+          padding: '0.55rem 1rem', textDecoration: 'none',
+          background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+          borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+          color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+          userSelect: 'none',
+        })}
+      >
+        <span
+          {...attributes} {...listeners}
+          style={{ fontSize: 10, width: 10, color: 'var(--border)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
+          title="Versleep om volgorde te wijzigen"
+        >⠿</span>
+        <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+        <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>
+        <Badge count={count} />
+      </NavLink>
+    </div>
+  )
+}
 
 interface CharData {
   characterId: number
@@ -439,6 +485,20 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
 export default function Sidebar() {
   const { tokens, removeToken, selectedCharId, setSelectedCharId, mainCharId, setMainCharId } = useAuth()
   const alerts = useAlerts()
+  const [nav, setNav] = useState<NavItem[]>(loadNav)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setNav(prev => {
+      const oldIndex = prev.findIndex(n => n.path === active.id)
+      const newIndex = prev.findIndex(n => n.path === over.id)
+      const next = arrayMove(prev, oldIndex, newIndex)
+      localStorage.setItem('nav_order', JSON.stringify(next.map(n => n.path)))
+      return next
+    })
+  }
   const [charData, setCharData] = useState<Map<number, CharData>>(new Map())
 
   useEffect(() => {
@@ -561,30 +621,13 @@ export default function Sidebar() {
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0.4rem 0' }}>
-        {NAV.map(({ label, path, icon, badge }) => {
-          const count = badgeCount(badge)
-          return (
-            <NavLink
-              key={path}
-              to={path}
-              end={path === '/'}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.65rem',
-                padding: '0.55rem 1rem',
-                textDecoration: 'none',
-                background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
-                borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-                color: isActive ? 'var(--blue)' : 'var(--text-dim)',
-              })}
-            >
-              <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{label}</span>
-              <Badge count={count} />
-            </NavLink>
-          )
-        })}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={nav.map(n => n.path)} strategy={verticalListSortingStrategy}>
+            {nav.map(item => (
+              <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} />
+            ))}
+          </SortableContext>
+        </DndContext>
 
         {/* Admin — alleen zichtbaar voor character 1831618559 */}
         {tokens.some(t => t.characterId === 1831618559) && (
