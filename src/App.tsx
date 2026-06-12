@@ -74,6 +74,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return tokens.length > 0 ? <>{children}</> : <Navigate to="/" replace />
 }
 
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { tokens } = useAuth()
+  return tokens.some(t => t.characterId === ADMIN_CHAR_ID) ? <>{children}</> : <Navigate to="/" replace />
+}
+
 function PageFallback() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
@@ -149,7 +154,7 @@ function AppRoutes() {
       <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
       <Route path="/notes"      element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
-      <Route path="/local"      element={<ProtectedRoute><LocalChat /></ProtectedRoute>} />
+      <Route path="/local"      element={<AdminRoute><LocalChat /></AdminRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/login"      element={<Login />} />
