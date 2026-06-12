@@ -83,10 +83,16 @@ export default function Login() {
         </div>
         <div style={{
           fontSize: '0.65rem', color: 'var(--blue)', letterSpacing: '0.35em',
-          textTransform: 'uppercase', marginBottom: '2.5rem',
+          textTransform: 'uppercase', marginBottom: '0.4rem',
           textShadow: '0 0 12px rgba(0,180,216,0.6)',
         }}>
           Dashboard
+        </div>
+        <div style={{
+          fontSize: '0.6rem', color: 'rgba(160,160,190,0.5)', letterSpacing: '0.2em',
+          textTransform: 'uppercase', marginBottom: '2.5rem',
+        }}>
+          Persoonlijke Tracker
         </div>
 
         {/* Card */}
