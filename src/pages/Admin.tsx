@@ -20,24 +20,18 @@ interface SiteMember {
   last_seen: string
 }
 
-type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance' | 'show_wallet' | 'show_kills' | 'show_market'
+type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance'
 
 const SETTING_LABELS: Record<SettingKey, string> = {
   maintenance_mode: 'Onderhoudsmodus',
   require_corp:     'Alleen Dutch Legions corp',
   require_alliance: 'Alleen Insidious alliance',
-  show_wallet:      'Wallet zichtbaar',
-  show_kills:       'Kills zichtbaar',
-  show_market:      'Market zichtbaar',
 }
 
 const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
   maintenance_mode: false,
   require_corp:     false,
   require_alliance: false,
-  show_wallet:      true,
-  show_kills:       true,
-  show_market:      true,
 }
 
 export default function Admin() {
