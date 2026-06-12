@@ -82,9 +82,9 @@ function AdminRoute({ children }: { children: ReactNode }) {
 
 function PageFallback() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
-      Laden...
-    </div>
+    <Layout>
+      <div />
+    </Layout>
   )
 }
 
