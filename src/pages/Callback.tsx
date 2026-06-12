@@ -21,7 +21,20 @@ export default function Callback() {
     }
 
     exchangeCode(code, state)
-      .then((token) => {
+      .then(async (token) => {
+        // Admin mag altijd
+        if (token.characterId !== 1831618559) {
+          const settings = await fetch('/api/settings.php').then(r => r.json()).catch(() => ({}))
+          if (settings.require_corp_alliance) {
+            const info = await fetch(`https://esi.evetech.net/latest/characters/${token.characterId}/`)
+              .then(r => r.json()).catch(() => null)
+            const inCorp     = info?.corporation_id === 98652891
+            const inAlliance = info?.alliance_id    === 99013537
+            if (!inCorp && !inAlliance) {
+              throw new Error('Toegang geweigerd. Alleen Dutch Legions corp- en allianceleden mogen inloggen.')
+            }
+          }
+        }
         addToken(token)
         window.location.replace('/')
       })

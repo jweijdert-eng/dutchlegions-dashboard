@@ -20,20 +20,22 @@ interface SiteMember {
   last_seen: string
 }
 
-type SettingKey = 'maintenance_mode' | 'show_wallet' | 'show_kills' | 'show_market'
+type SettingKey = 'maintenance_mode' | 'require_corp_alliance' | 'show_wallet' | 'show_kills' | 'show_market'
 
 const SETTING_LABELS: Record<SettingKey, string> = {
-  maintenance_mode: 'Onderhoudsmodus',
-  show_wallet:      'Wallet zichtbaar',
-  show_kills:       'Kills zichtbaar',
-  show_market:      'Market zichtbaar',
+  maintenance_mode:      'Onderhoudsmodus',
+  require_corp_alliance: 'Alleen corp/alliance leden',
+  show_wallet:           'Wallet zichtbaar',
+  show_kills:            'Kills zichtbaar',
+  show_market:           'Market zichtbaar',
 }
 
 const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
-  maintenance_mode: false,
-  show_wallet:      true,
-  show_kills:       true,
-  show_market:      true,
+  maintenance_mode:      false,
+  require_corp_alliance: false,
+  show_wallet:           true,
+  show_kills:            true,
+  show_market:           true,
 }
 
 export default function Admin() {
