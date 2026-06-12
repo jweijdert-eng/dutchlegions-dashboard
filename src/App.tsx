@@ -87,20 +87,29 @@ const ADMIN_CHAR_ID = 1831618559
 
 function MaintenancePage() {
   return (
-    <div style={{
-      minHeight: '100vh', width: '100%',
-      backgroundImage: 'url(/bg.png)',
-      backgroundSize: 'cover', backgroundPosition: 'center',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '1.5rem', fontFamily: 'inherit', position: 'relative',
-    }}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(5,5,14,0.6)' }} />
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
-        <img src={`https://images.evetech.net/corporations/98652891/logo?size=128`} style={{ width: 80, height: 80, borderRadius: '50%' }} />
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.2em', marginBottom: '0.5rem' }}>DUTCH LEGIONS</div>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', letterSpacing: '0.1em' }}>Dashboard is momenteel in onderhoud.</div>
-          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.75rem', marginTop: '0.4rem' }}>Kom later terug.</div>
+    <div style={{ minHeight: '100vh', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', background: '#05050e' }}>
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.55) saturate(1.1)' }} />
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at center, transparent 40%, rgba(5,5,14,0.7) 100%)' }} />
+      <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', width: '100%', maxWidth: 420, padding: '0 1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', marginBottom: '1.5rem' }}>
+          {[
+            { src: `https://images.evetech.net/alliances/99013537/logo?size=256`, alt: 'Alliance Logo' },
+            { src: `https://images.evetech.net/corporations/98652891/logo?size=256`, alt: 'Corporation Logo' },
+          ].map(logo => (
+            <img key={logo.alt} src={logo.src} alt={logo.alt} width={80} height={80} style={{ borderRadius: '50%', display: 'block' }} />
+          ))}
+        </div>
+        <div style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '0.22em', color: '#fff', marginBottom: '0.25rem', textTransform: 'uppercase', textShadow: '0 0 30px rgba(0,180,216,0.5)' }}>
+          Dutch Legions
+        </div>
+        <div style={{ fontSize: '0.65rem', color: 'var(--blue)', letterSpacing: '0.35em', textTransform: 'uppercase', marginBottom: '2.5rem', textShadow: '0 0 12px rgba(0,180,216,0.6)' }}>
+          Dashboard
+        </div>
+        <div style={{ background: 'linear-gradient(160deg, rgba(11,11,26,0.92) 0%, rgba(5,5,14,0.96) 100%)', border: '1px solid rgba(0,180,216,0.2)', borderRadius: 6, padding: '2rem 2rem 1.75rem', boxShadow: '0 8px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)', backdropFilter: 'blur(12px)' }}>
+          <div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.75rem' }}>ONDERHOUD</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.7 }}>
+            Het dashboard is tijdelijk niet beschikbaar.<br />Kom later terug.
+          </div>
         </div>
       </div>
     </div>
