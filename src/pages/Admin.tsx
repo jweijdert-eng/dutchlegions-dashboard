@@ -216,17 +216,18 @@ export default function Admin() {
                 Nog niemand ingelogd op de dashboard.
               </div>
             ) : (
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
                 {members.map((m, i) => {
                   const online = isOnline(m.last_seen)
                   const blocked = !!m.blocked
                   return (
                     <div key={m.character_id} style={{
                       display: 'flex', alignItems: 'center', gap: '0.75rem',
-                      padding: '0.6rem 1rem',
-                      borderBottom: i < members.length - 1 ? '1px solid var(--border)' : 'none',
+                      padding: '0.65rem 1rem',
+                      background: i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)',
+                      borderBottom: i < members.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                       fontSize: '0.8rem',
-                      opacity: blocked ? 0.6 : 1,
+                      opacity: blocked ? 0.55 : 1,
                     }}>
                       <div style={{ position: 'relative', flexShrink: 0 }}>
                         <img
