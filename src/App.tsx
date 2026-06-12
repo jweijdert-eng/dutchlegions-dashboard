@@ -31,6 +31,7 @@ const MultiChar    = lz(() => import('./pages/MultiChar'))
 const LocalChat    = lz(() => import('./pages/LocalChat'))
 const BuildvsBuy   = lz(() => import('./pages/BuildvsBuy'))
 const Ratting      = lz(() => import('./pages/Ratting'))
+const Hauling      = lz(() => import('./pages/Hauling'))
 const Assets       = lz(() => import('./pages/Assets'))
 const Admin        = lz(() => import('./pages/Admin'))
 
@@ -160,6 +161,7 @@ function AppRoutes() {
       <Route path="/local"      element={<AdminRoute><LocalChat /></AdminRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
       <Route path="/ratting"    element={<ProtectedRoute><Ratting /></ProtectedRoute>} />
+      <Route path="/hauling"    element={<ProtectedRoute><Hauling /></ProtectedRoute>} />
       <Route path="/assets"     element={<ProtectedRoute><Assets /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/login"      element={<Login />} />

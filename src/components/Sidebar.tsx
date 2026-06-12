@@ -43,6 +43,7 @@ const DEFAULT_NAV: NavItem[] = [
   { label: 'Market',      path: '/market',     icon: '◊', badge: null },
   { label: 'Kills',       path: '/kills',      icon: '◉', badge: null },
   { label: 'Ratting',     path: '/ratting',    icon: '⦿', badge: null },
+  { label: 'Hauling',     path: '/hauling',    icon: '⇶', badge: null },
   { label: 'Industry',    path: '/industry',   icon: '◫', badge: 'jobs' },
   { label: 'Mining',      path: '/mining',     icon: '⬟', badge: null },
   { label: 'Planets',     path: '/planets',    icon: '○', badge: null },
