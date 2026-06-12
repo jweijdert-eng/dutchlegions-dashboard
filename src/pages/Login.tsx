@@ -6,13 +6,6 @@ const ALLIANCE_ID = 99013537
 const CORP_LOGO     = `https://images.evetech.net/corporations/${CORP_ID}/logo?size=256`
 const ALLIANCE_LOGO = `https://images.evetech.net/alliances/${ALLIANCE_ID}/logo?size=256`
 
-// EVE ship renders via official image API
-const SHIPS = [
-  { id: 17738, label: 'Machariel',  x: -8,  y: 55, size: 520, rotate: -15, opacity: 0.18, dur: 22 },
-  { id: 11567, label: 'Avatar',     x: 62,  y: -5, size: 600, rotate: 12,  opacity: 0.13, dur: 30 },
-  { id: 23913, label: 'Nyx',        x: 72,  y: 58, size: 440, rotate: -8,  opacity: 0.15, dur: 26 },
-  { id: 638,   label: 'Raven',      x: 30,  y: 70, size: 320, rotate: 20,  opacity: 0.10, dur: 18 },
-]
 
 export default function Login() {
   const [loading, setLoading] = useState(false)
@@ -33,79 +26,39 @@ export default function Login() {
     <div style={{
       minHeight: '100vh',
       width: '100%',
-      background: '#05050e',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
       overflow: 'hidden',
+      background: '#05050e',
     }}>
 
-      {/* Nebula gradients */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <div style={{
-          position: 'absolute', top: '-20%', left: '-10%',
-          width: '70vw', height: '70vh',
-          background: 'radial-gradient(ellipse, rgba(0,60,120,0.35) 0%, transparent 65%)',
-          filter: 'blur(40px)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-10%', right: '-5%',
-          width: '60vw', height: '60vh',
-          background: 'radial-gradient(ellipse, rgba(80,0,120,0.25) 0%, transparent 65%)',
-          filter: 'blur(40px)',
-        }} />
-        <div style={{
-          position: 'absolute', top: '40%', left: '40%',
-          width: '40vw', height: '40vh',
-          background: 'radial-gradient(ellipse, rgba(0,100,100,0.15) 0%, transparent 65%)',
-          filter: 'blur(60px)',
-        }} />
-      </div>
+      {/* Background image */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        backgroundImage: 'url(/bg.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        filter: 'brightness(0.55) saturate(1.1)',
+      }} />
 
-      {/* Star field */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        {STARS.map((s, i) => (
-          <div key={i} style={{
-            position: 'absolute',
-            left: s.x + '%',
-            top: s.y + '%',
-            width: s.size + 'px',
-            height: s.size + 'px',
-            borderRadius: '50%',
-            background: `rgba(${s.r},${s.g},255,${s.opacity})`,
-            animation: `twinkle ${s.dur}s ease-in-out infinite`,
-            animationDelay: s.delay + 's',
-          }} />
-        ))}
-      </div>
+      {/* Dark overlay to hide EVE/DOMINION text in center */}
+      <div style={{
+        position: 'absolute',
+        left: '50%', top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '340px', height: '160px',
+        background: 'radial-gradient(ellipse, rgba(5,5,14,0.92) 30%, transparent 100%)',
+        filter: 'blur(18px)',
+        pointerEvents: 'none',
+      }} />
 
-      {/* EVE Ships */}
-      {SHIPS.map(ship => (
-        <div key={ship.id} style={{
-          position: 'absolute',
-          left: ship.x + '%',
-          top: ship.y + '%',
-          width: ship.size,
-          height: ship.size,
-          pointerEvents: 'none',
-          animation: `drift${ship.id} ${ship.dur}s ease-in-out infinite`,
-        }}>
-          <img
-            src={`https://images.evetech.net/types/${ship.id}/render?size=512`}
-            alt={ship.label}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              opacity: ship.opacity,
-              transform: `rotate(${ship.rotate}deg)`,
-              filter: 'brightness(1.4) saturate(0.6) drop-shadow(0 0 20px rgba(0,150,255,0.3))',
-              mixBlendMode: 'screen',
-            }}
-          />
-        </div>
-      ))}
+      {/* Edge vignette */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at center, transparent 40%, rgba(5,5,14,0.7) 100%)',
+      }} />
 
       {/* Login card */}
       <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', width: '100%', maxWidth: 420, padding: '0 1.5rem' }}>
@@ -242,14 +195,6 @@ export default function Login() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.2; }
         }
-        ${SHIPS.map(s => `
-          @keyframes drift${s.id} {
-            0%   { transform: translate(0px, 0px); }
-            33%  { transform: translate(${6 + (s.id % 8)}px, ${-(4 + (s.id % 6))}px); }
-            66%  { transform: translate(${-(5 + (s.id % 5))}px, ${3 + (s.id % 7)}px); }
-            100% { transform: translate(0px, 0px); }
-          }
-        `).join('')}
       `}</style>
     </div>
   )
