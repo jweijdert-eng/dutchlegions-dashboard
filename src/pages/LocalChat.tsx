@@ -71,6 +71,8 @@ export default function LocalChat() {
   const listRef      = useRef<HTMLDivElement>(null)
   const seenSenders  = useRef<Map<string, number>>(new Map())
   const notifiedRef  = useRef(false)
+  const lastApiId    = useRef(0)
+  const seenKeys     = useRef<Set<string>>(new Set())
 
   const getEsiStanding = useEsiStandings(activeToken)
 
@@ -89,15 +91,25 @@ export default function LocalChat() {
         if (msg.type === 'status') {
           setFile(msg.file)
         } else {
-          seenSenders.current.set(msg.sender, (seenSenders.current.get(msg.sender) ?? 0) + 1)
-          const isMention = ownNames.some(n =>
-            msg.message.toLowerCase().includes(n.toLowerCase()) ||
-            msg.sender.toLowerCase() === n.toLowerCase()
-          )
-          if (isMention && Notification.permission === 'granted') {
-            new Notification(`Local: ${msg.sender}`, { body: msg.message, icon: '/favicon.ico' })
+          const key = `${msg.sender}|${msg.time}|${msg.message.slice(0, 80)}`
+          if (!seenKeys.current.has(key)) {
+            seenKeys.current.add(key)
+            seenSenders.current.set(msg.sender, (seenSenders.current.get(msg.sender) ?? 0) + 1)
+            const isMention = ownNames.some(n =>
+              msg.message.toLowerCase().includes(n.toLowerCase()) ||
+              msg.sender.toLowerCase() === n.toLowerCase()
+            )
+            if (isMention && Notification.permission === 'granted') {
+              new Notification(`Local: ${msg.sender}`, { body: msg.message, icon: '/favicon.ico' })
+            }
+            setMessages(prev => [...prev.slice(-999), msg])
+            // Doorsturen naar API zodat andere members het ook zien
+            fetch('/api/localchat.php', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sender: msg.sender, message: msg.message, time: msg.time }),
+            }).catch(() => {})
           }
-          setMessages(prev => [...prev.slice(-999), msg])
         }
       }
     }
@@ -108,6 +120,30 @@ export default function LocalChat() {
     }
     connect()
     return () => { alive = false; wsRef.current?.close() }
+  }, [])
+
+  // Poll API voor members zonder lokale server
+  useEffect(() => {
+    async function poll() {
+      try {
+        const r = await fetch(`/api/localchat.php?after_id=${lastApiId.current}`)
+        const data = await r.json() as { id: string; sender: string; message: string; time: string }[]
+        if (!Array.isArray(data) || data.length === 0) return
+        lastApiId.current = parseInt(data[data.length - 1].id)
+        const newMsgs: ChatMsg[] = []
+        for (const row of data) {
+          const key = `${row.sender}|${row.time}|${row.message.slice(0, 80)}`
+          if (seenKeys.current.has(key)) continue
+          seenKeys.current.add(key)
+          seenSenders.current.set(row.sender, (seenSenders.current.get(row.sender) ?? 0) + 1)
+          newMsgs.push({ type: 'message', sender: row.sender, message: row.message, time: row.time })
+        }
+        if (newMsgs.length > 0) setMessages(prev => [...prev.slice(-999), ...newMsgs])
+      } catch { /* ignore */ }
+    }
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => clearInterval(id)
   }, [])
 
   useEffect(() => {
