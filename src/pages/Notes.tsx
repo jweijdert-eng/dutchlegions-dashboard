@@ -34,6 +34,9 @@ export default function Notes() {
   const charId = selectedCharId ?? tokens[0]?.characterId ?? null
   const charName = tokens.find(t => t.characterId === charId)?.characterName ?? null
 
+  const charNameRef = useRef<string>('')
+  charNameRef.current = charName ?? ''
+
   const [notes, setNotes] = useState<Note[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -74,7 +77,7 @@ export default function Notes() {
           n.id === selectedId ? { ...n, title, content, updatedAt } : n
         )
         const note = updated.find(n => n.id === selectedId)
-        if (note) apiSave(charId, charName ?? '', note)
+        if (note) apiSave(charId, charNameRef.current, note)
         return updated
       })
       setDirty(false)
@@ -94,7 +97,7 @@ export default function Notes() {
     const note: Note = { id: crypto.randomUUID(), title: 'Nieuwe notitie', content: '', updatedAt: Date.now() }
     setNotes(prev => [note, ...prev])
     setSelectedId(note.id)
-    apiSave(charId, charName ?? '', note)
+    apiSave(charId, charNameRef.current, note)
   }
 
   function deleteNote(id: string) {
