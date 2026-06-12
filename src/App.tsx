@@ -8,25 +8,28 @@ import Layout, { PageHeader } from './components/Layout'
 import { AlertsProvider } from './context/AlertsContext'
 import { LoadingProvider } from './context/LoadingContext'
 
-const Dashboard    = lazy(() => import('./pages/Dashboard'))
-const Character    = lazy(() => import('./pages/Character'))
-const Wallet       = lazy(() => import('./pages/Wallet'))
-const Kills        = lazy(() => import('./pages/Kills'))
-const Industry     = lazy(() => import('./pages/Industry'))
-const Mining       = lazy(() => import('./pages/Mining'))
-const Planets      = lazy(() => import('./pages/Planets'))
-const Mail         = lazy(() => import('./pages/Mail'))
-const Fittings     = lazy(() => import('./pages/Fittings'))
-const Market       = lazy(() => import('./pages/Market'))
-const Skills       = lazy(() => import('./pages/Skills'))
-const Blueprints   = lazy(() => import('./pages/Blueprints'))
-const Contracts    = lazy(() => import('./pages/Contracts'))
-const Notes        = lazy(() => import('./pages/Notes'))
-const DebugUnresolved = lazy(() => import('./pages/DebugUnresolved'))
-const MultiChar    = lazy(() => import('./pages/MultiChar'))
-const LocalChat    = lazy(() => import('./pages/LocalChat'))
-const BuildvsBuy   = lazy(() => import('./pages/BuildvsBuy'))
-const Admin        = lazy(() => import('./pages/Admin'))
+const lz = <T extends React.ComponentType>(f: () => Promise<{ default: T }>) =>
+  lazy(() => f().catch(() => { window.location.reload(); return new Promise<never>(() => {}) }))
+
+const Dashboard    = lz(() => import('./pages/Dashboard'))
+const Character    = lz(() => import('./pages/Character'))
+const Wallet       = lz(() => import('./pages/Wallet'))
+const Kills        = lz(() => import('./pages/Kills'))
+const Industry     = lz(() => import('./pages/Industry'))
+const Mining       = lz(() => import('./pages/Mining'))
+const Planets      = lz(() => import('./pages/Planets'))
+const Mail         = lz(() => import('./pages/Mail'))
+const Fittings     = lz(() => import('./pages/Fittings'))
+const Market       = lz(() => import('./pages/Market'))
+const Skills       = lz(() => import('./pages/Skills'))
+const Blueprints   = lz(() => import('./pages/Blueprints'))
+const Contracts    = lz(() => import('./pages/Contracts'))
+const Notes        = lz(() => import('./pages/Notes'))
+const DebugUnresolved = lz(() => import('./pages/DebugUnresolved'))
+const MultiChar    = lz(() => import('./pages/MultiChar'))
+const LocalChat    = lz(() => import('./pages/LocalChat'))
+const BuildvsBuy   = lz(() => import('./pages/BuildvsBuy'))
+const Admin        = lz(() => import('./pages/Admin'))
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -77,6 +80,7 @@ function PageFallback() {
     </div>
   )
 }
+
 
 function AppRoutes() {
   useKeybinds()
