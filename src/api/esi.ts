@@ -1115,6 +1115,17 @@ export async function modifyMarketOrder(characterId: number, orderId: number, to
   } catch { return false }
 }
 
+// Slot-layout van een schip via dogma attributes
+// (12=lowSlots, 13=medSlots, 14=hiSlots, 1137=rigSlots, 1367=maxSubSystems, 2056=serviceSlots)
+export interface ShipSlots { hi: number; med: number; low: number; rig: number; sub: number; service: number }
+export async function getShipSlots(typeId: number): Promise<ShipSlots | null> {
+  try {
+    const data = await esiGet<{ dogma_attributes?: Array<{ attribute_id: number; value: number }> }>(`/universe/types/${typeId}/`)
+    const attr = (id: number) => data.dogma_attributes?.find(a => a.attribute_id === id)?.value ?? 0
+    return { hi: attr(14), med: attr(13), low: attr(12), rig: attr(1137), sub: attr(1367), service: attr(2056) }
+  } catch { return null }
+}
+
 const _typeMetaCache = new Map<number, number>()
 
 export async function getTypesMeta(typeIds: number[]): Promise<Map<number, number>> {

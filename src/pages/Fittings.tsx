@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { deleteFitting, getFittings, getTypesMeta, resolveNames, resolveTypeIds, saveFitting, type Fitting } from '../api/esi'
+import { deleteFitting, getFittings, getShipSlots, getTypesMeta, resolveNames, resolveTypeIds, saveFitting, type Fitting, type ShipSlots } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -39,11 +39,18 @@ function MetaBadge({ metaId }: { metaId?: number }) {
 function toEft(f: ResolvedFitting): string {
   const header = `[${f.shipName}, ${f.name}]`
 
-  const slotLines = (flags: string[]) =>
-    f.items
-      .filter(i => flags.includes(i.flag))
-      .sort((a, b) => flags.indexOf(a.flag) - flags.indexOf(b.flag))
-      .map(i => f.itemNames.get(i.type_id) ?? `Type ${i.type_id}`)
+  // Items die een slot delen (turret + geladen charge) op één regel: "Module, Charge"
+  const slotLines = (flags: string[]) => {
+    const byFlag = new Map<string, string[]>()
+    for (const i of f.items) {
+      if (!flags.includes(i.flag)) continue
+      const name = f.itemNames.get(i.type_id) ?? `Type ${i.type_id}`
+      byFlag.set(i.flag, [...(byFlag.get(i.flag) ?? []), name])
+    }
+    return [...byFlag.entries()]
+      .sort((a, b) => flags.indexOf(a[0]) - flags.indexOf(b[0]))
+      .map(([, names]) => names.join(', '))
+  }
 
   const quantLines = (flags: string[]) =>
     f.items
@@ -53,31 +60,33 @@ function toEft(f: ResolvedFitting): string {
         return i.quantity > 1 ? `${name} x${i.quantity}` : name
       })
 
-  const parts = [
+  // Lo/med/hi/rig zijn positioneel (lege sectie = lege regel), zodat import
+  // de secties weer correct kan toewijzen; de rest alleen indien gevuld.
+  const structural = [
     slotLines(['LoSlot0','LoSlot1','LoSlot2','LoSlot3','LoSlot4','LoSlot5','LoSlot6','LoSlot7']),
     slotLines(['MedSlot0','MedSlot1','MedSlot2','MedSlot3','MedSlot4','MedSlot5','MedSlot6','MedSlot7']),
     slotLines(['HiSlot0','HiSlot1','HiSlot2','HiSlot3','HiSlot4','HiSlot5','HiSlot6','HiSlot7']),
     slotLines(['RigSlot0','RigSlot1','RigSlot2']),
+  ]
+  const optional = [
     slotLines(['SubSystemSlot0','SubSystemSlot1','SubSystemSlot2','SubSystemSlot3']),
+    slotLines(['ServiceSlot0','ServiceSlot1','ServiceSlot2','ServiceSlot3','ServiceSlot4','ServiceSlot5','ServiceSlot6','ServiceSlot7']),
     quantLines(['DroneBay']),
+    quantLines(['FighterBay']),
     quantLines(['Cargo']),
   ].filter(p => p.length > 0)
 
-  return `${header}\n\n${parts.map(p => p.join('\n')).join('\n\n')}`
+  const parts = [...structural, ...optional]
+  return `${header}\n\n${parts.map(p => p.join('\n')).join('\n\n')}`.replace(/\n{3,}$/g, '\n')
 }
 
 function toDna(f: ResolvedFitting): string {
-  const section = (flags: string[]) =>
-    f.items.filter(i => flags.includes(i.flag)).map(i => `${i.type_id};${i.quantity}`).join(':')
-  return [
-    f.ship_type_id,
-    section(['HiSlot0','HiSlot1','HiSlot2','HiSlot3','HiSlot4','HiSlot5','HiSlot6','HiSlot7']),
-    section(['MedSlot0','MedSlot1','MedSlot2','MedSlot3','MedSlot4','MedSlot5','MedSlot6','MedSlot7']),
-    section(['LoSlot0','LoSlot1','LoSlot2','LoSlot3','LoSlot4','LoSlot5','LoSlot6','LoSlot7']),
-    section(['RigSlot0','RigSlot1','RigSlot2']),
-    section(['SubSystemSlot0','SubSystemSlot1','SubSystemSlot2','SubSystemSlot3']),
-    '',
-  ].join(':')
+  const section = (prefix: string) =>
+    f.items.filter(i => i.flag.startsWith(prefix)).map(i => `${i.type_id};${i.quantity}`).join(':')
+  const sections = ['HiSlot', 'MedSlot', 'LoSlot', 'RigSlot', 'SubSystemSlot', 'ServiceSlot', 'DroneBay', 'FighterBay', 'Cargo']
+    .map(section)
+    .filter(s => s !== '')
+  return [f.ship_type_id, ...sections].join(':') + '::'
 }
 
 const SLOT_GROUPS: Record<string, { label: string; color: string; flags: string[] }> = {
@@ -86,7 +95,9 @@ const SLOT_GROUPS: Record<string, { label: string; color: string; flags: string[
   low:   { label: 'Low Slots',   color: '#f0c040', flags: ['LoSlot0','LoSlot1','LoSlot2','LoSlot3','LoSlot4','LoSlot5','LoSlot6','LoSlot7'] },
   rig:   { label: 'Rigs',        color: '#a78bfa', flags: ['RigSlot0','RigSlot1','RigSlot2'] },
   sub:   { label: 'Subsystems',  color: '#3ecf6e', flags: ['SubSystemSlot0','SubSystemSlot1','SubSystemSlot2','SubSystemSlot3'] },
+  svc:   { label: 'Service Slots', color: '#e879f9', flags: ['ServiceSlot0','ServiceSlot1','ServiceSlot2','ServiceSlot3','ServiceSlot4','ServiceSlot5','ServiceSlot6','ServiceSlot7'] },
   drone: { label: 'Drones',      color: '#f97316', flags: ['DroneBay'] },
+  fighter: { label: 'Fighters',  color: '#fb7185', flags: ['FighterBay'] },
   cargo: { label: 'Cargo',       color: '#94a3b8', flags: ['Cargo'] },
 }
 
@@ -101,16 +112,34 @@ function parseEft(eft: string): { shipName: string; fittingName: string; items: 
   const LO_FLAGS  = ['LoSlot0','LoSlot1','LoSlot2','LoSlot3','LoSlot4','LoSlot5','LoSlot6','LoSlot7']
   const RIG_FLAGS = ['RigSlot0','RigSlot1','RigSlot2']
   const SUB_FLAGS = ['SubSystemSlot0','SubSystemSlot1','SubSystemSlot2','SubSystemSlot3']
-  const SECTION_SLOTS = [HI_FLAGS, MED_FLAGS, LO_FLAGS, RIG_FLAGS]
+  // EFT section order: low, mid, high, rigs, [subsystems: alleen T3C], drones, cargo
+  const SECTION_SLOTS = [LO_FLAGS, MED_FLAGS, HI_FLAGS, RIG_FLAGS]
+  const isT3 = ['tengu', 'loki', 'proteus', 'legion'].includes(shipName.trim().toLowerCase())
+  const subSection   = isT3 ? 4 : -1
+  const droneSection = isT3 ? 5 : 4
+
+  const body = lines.slice(1)
+  if (body[0]?.trim() === '') body.shift() // optionele lege regel na header is geen sectie-overgang
 
   const items: Array<{ name: string; quantity: number; flag: string }> = []
   let section = 0
   const sectionIdx: Record<number, number> = {}
 
-  for (const raw of lines.slice(1)) {
-    const line = raw.trim()
+  for (const raw of body) {
+    let line = raw.trim()
     if (line === '') { section++; continue }
-    if (line.startsWith('[')) continue
+    if (line.startsWith('[')) continue // [Empty Low slot] e.d.
+    line = line.replace(/\s*\/offline$/i, '')
+
+    // Loaded charge on module line: "200mm AutoCannon II, Republic Fleet EMP S"
+    let chargeName: string | null = null
+    if (section < 3) {
+      const comma = line.indexOf(', ')
+      if (comma > 0) {
+        chargeName = line.slice(comma + 2).trim()
+        line = line.slice(0, comma).trim()
+      }
+    }
 
     const qMatch = line.match(/^(.+?)\s+x\s*(\d+)$/i)
     const name = qMatch ? qMatch[1].trim() : line
@@ -123,17 +152,18 @@ function parseEft(eft: string): { shipName: string; fittingName: string; items: 
       const idx = sectionIdx[section] ?? 0
       flag = slots[Math.min(idx, slots.length - 1)]
       sectionIdx[section] = idx + 1
-    } else if (section === 4 && quantity === 1) {
+    } else if (section === subSection) {
       const idx = sectionIdx[section] ?? 0
       flag = SUB_FLAGS[Math.min(idx, SUB_FLAGS.length - 1)]
       sectionIdx[section] = idx + 1
-    } else if (section <= 5) {
+    } else if (section === droneSection) {
       flag = 'DroneBay'
     } else {
       flag = 'Cargo'
     }
 
     items.push({ name, quantity, flag })
+    if (chargeName) items.push({ name: chargeName, quantity: 1, flag })
   }
 
   return { shipName: shipName.trim(), fittingName: fittingName.trim(), items }
@@ -144,7 +174,6 @@ function parseEft(eft: string): { shipName: string; fittingName: string; items: 
 const WHEEL = 440
 const WCX = 220
 const WCY = 220
-const OUTER_R = 192   // icon center radius (near outer edge)
 const INNER_R = 120   // drone inner radius
 const ICON_SZ = 40    // square icon size
 const SHIP_D = 350    // ship render diameter (large, fills inner circle)
@@ -162,61 +191,67 @@ function arcPt(deg: number, r: number): [number, number] {
   return [WCX + r * Math.sin(rad), WCY - r * Math.cos(rad)]
 }
 
-// EVE Workbench layout: Hi=TOP, Med=RIGHT, Rig=BOTTOM, Lo=LEFT
-const HI  = { color: '#4ade80', bg: 'rgba(20,83,45,0.88)'    }
-const MED = { color: '#fb923c', bg: 'rgba(120,45,15,0.88)'   }
-const RIG = { color: '#22d3ee', bg: 'rgba(12,74,110,0.88)'   }
-const LO  = { color: '#fbbf24', bg: 'rgba(70,55,5,0.88)'     }
+// In-game layout: Hi=TOP, Med=RIGHT, Lo=BOTTOM, Rigs klein linksonder, Subs links
+const RING_IN  = 178
+const RING_OUT = 214
 
-const SLOT_POS: Record<string, { deg: number; r: number; color: string; bg: string }> = {
-  HiSlot0: { deg: 330, r: OUTER_R, ...HI },
-  HiSlot1: { deg: 339, r: OUTER_R, ...HI },
-  HiSlot2: { deg: 347, r: OUTER_R, ...HI },
-  HiSlot3: { deg: 356, r: OUTER_R, ...HI },
-  HiSlot4: { deg: 4,   r: OUTER_R, ...HI },
-  HiSlot5: { deg: 13,  r: OUTER_R, ...HI },
-  HiSlot6: { deg: 21,  r: OUTER_R, ...HI },
-  HiSlot7: { deg: 30,  r: OUTER_R, ...HI },
-  MedSlot0: { deg: 45,  r: OUTER_R, ...MED },
-  MedSlot1: { deg: 58,  r: OUTER_R, ...MED },
-  MedSlot2: { deg: 71,  r: OUTER_R, ...MED },
-  MedSlot3: { deg: 84,  r: OUTER_R, ...MED },
-  MedSlot4: { deg: 96,  r: OUTER_R, ...MED },
-  MedSlot5: { deg: 109, r: OUTER_R, ...MED },
-  MedSlot6: { deg: 122, r: OUTER_R, ...MED },
-  MedSlot7: { deg: 135, r: OUTER_R, ...MED },
-  RigSlot0: { deg: 150, r: OUTER_R, ...RIG },
-  RigSlot1: { deg: 180, r: OUTER_R, ...RIG },
-  RigSlot2: { deg: 210, r: OUTER_R, ...RIG },
-  LoSlot0:  { deg: 225, r: OUTER_R, ...LO },
-  LoSlot1:  { deg: 238, r: OUTER_R, ...LO },
-  LoSlot2:  { deg: 251, r: OUTER_R, ...LO },
-  LoSlot3:  { deg: 264, r: OUTER_R, ...LO },
-  LoSlot4:  { deg: 276, r: OUTER_R, ...LO },
-  LoSlot5:  { deg: 289, r: OUTER_R, ...LO },
-  LoSlot6:  { deg: 302, r: OUTER_R, ...LO },
-  LoSlot7:  { deg: 315, r: OUTER_R, ...LO },
+const WHEEL_GROUPS: Array<{ prefix: string; attr: keyof ShipSlots; center: number; slotW: number; color: string; max: number }> = [
+  { prefix: 'HiSlot',        attr: 'hi',      center: 0,   slotW: 11, color: '#4ade80', max: 8 },
+  { prefix: 'MedSlot',       attr: 'med',     center: 90,  slotW: 11, color: '#38bdf8', max: 8 },
+  { prefix: 'LoSlot',        attr: 'low',     center: 180, slotW: 11, color: '#fbbf24', max: 8 },
+  { prefix: 'RigSlot',       attr: 'rig',     center: 247, slotW: 9,  color: '#a78bfa', max: 3 },
+  { prefix: 'SubSystemSlot', attr: 'sub',     center: 293, slotW: 11, color: '#3ecf6e', max: 4 },
+  { prefix: 'ServiceSlot',   attr: 'service', center: 285, slotW: 11, color: '#e879f9', max: 8 },
+]
+
+// Annulaire sector (trapezium-slot in de ring), hoeken in graden vanaf noord
+function segPath(a1: number, a2: number, r1 = RING_IN, r2 = RING_OUT) {
+  const [x1, y1] = arcPt(a1, r2), [x2, y2] = arcPt(a2, r2)
+  const [x3, y3] = arcPt(a2, r1), [x4, y4] = arcPt(a1, r1)
+  return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r2} ${r2} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`
+    + ` L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${r1} ${r1} 0 0 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z`
 }
+
+function ringArc(a1: number, a2: number, r: number) {
+  const [x1, y1] = arcPt(a1, r), [x2, y2] = arcPt(a2, r)
+  return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 ${a2 - a1 > 180 ? 1 : 0} 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`
+}
+
+const typeIcon = (id: number) => `https://images.evetech.net/types/${id}/icon?size=64`
 
 function FittingWheel({ fitting, metaMap: _metaMap }: { fitting: ResolvedFitting; metaMap: Map<number, number> }) {
   const [hovered, setHovered] = useState<string | null>(null)
+  const [shipSlots, setShipSlots] = useState<ShipSlots | null>(null)
 
-  // Group items per flag; when multiple exist (turret + ammo), prefer quantity=1 (the module)
-  const byFlag = new Map<string, typeof fitting.items[number]>()
+  useEffect(() => {
+    let alive = true
+    getShipSlots(fitting.ship_type_id).then(s => { if (alive) setShipSlots(s) })
+    return () => { alive = false }
+  }, [fitting.ship_type_id])
+
+  // Alle items per slot-flag; bij turret + geladen ammo is de module het qty-1 item
+  const byFlag = new Map<string, Array<typeof fitting.items[number]>>()
   for (const item of fitting.items) {
-    const existing = byFlag.get(item.flag)
-    if (!existing || item.quantity === 1) byFlag.set(item.flag, item)
+    byFlag.set(item.flag, [...(byFlag.get(item.flag) ?? []), item])
   }
 
-  // Collect drone bay items separately (multiple items share the same 'DroneBay' flag)
   const droneItems = fitting.items.filter(i => i.flag === 'DroneBay')
+  const itemName = (id: number) => fitting.itemNames.get(id) ?? `Type ${id}`
 
-  const SHIP_R    = SHIP_D / 2                           // 175
-  const ARC_R     = WCX - 3                              // outer-rim arc radius
+  // Aantal getoonde slots: dogma-waarde van het schip, minimaal wat er gefit is
+  const fittedCount = (prefix: string) => {
+    let m = 0
+    for (const i of fitting.items) {
+      if (!i.flag.startsWith(prefix)) continue
+      const n = parseInt(i.flag.slice(prefix.length))
+      if (!isNaN(n)) m = Math.max(m, n + 1)
+    }
+    return m
+  }
 
-  // Dark ring from ship edge to container edge
-  const ringStrokeR = (SHIP_R + WCX) / 2               // midpoint
-  const ringStrokeW = WCX - SHIP_R + 4                  // full width + a little overlap
+  const SHIP_R = SHIP_D / 2
+  const R_MID  = (RING_IN + RING_OUT) / 2
+  const ICON   = 34
 
   return (
     <div style={{ position: 'relative', width: WHEEL, height: WHEEL, flexShrink: 0, borderRadius: '50%', background: 'rgba(3,4,10,0.99)', overflow: 'hidden' }}>
@@ -231,86 +266,78 @@ function FittingWheel({ fitting, metaMap: _metaMap }: { fitting: ResolvedFitting
         <EveImage category="types" id={fitting.ship_type_id} variation="render" size={512} px={SHIP_D} />
       </div>
 
-      {/* SVG: dark outer ring + vignette + rim arcs */}
       <svg width={WHEEL} height={WHEEL} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <defs>
-          {/* Vignette gradient for ship render edges */}
+          {/* Holo-tint + vignette over de ship render */}
           <radialGradient id={`vig-${fitting.fitting_id}`} cx="50%" cy="50%" r="50%">
-            <stop offset="48%" stopColor="transparent" />
-            <stop offset="72%" stopColor="rgba(3,4,10,0.55)" />
-            <stop offset="90%" stopColor="rgba(3,4,10,0.92)" />
+            <stop offset="40%" stopColor="rgba(60,120,200,0.09)" />
+            <stop offset="60%" stopColor="rgba(25,50,95,0.12)" />
+            <stop offset="78%" stopColor="rgba(3,4,10,0.7)" />
+            <stop offset="92%" stopColor="rgba(3,4,10,0.95)" />
             <stop offset="100%" stopColor="rgba(3,4,10,0.99)" />
           </radialGradient>
         </defs>
 
-        {/* Vignette over ship render edges */}
         <circle cx={WCX} cy={WCY} r={SHIP_R} fill={`url(#vig-${fitting.fitting_id})`} />
 
-        {/* Dark outer ring behind module icons */}
-        <circle cx={WCX} cy={WCY} r={ringStrokeR} fill="none" stroke="rgba(3,4,10,0.98)" strokeWidth={ringStrokeW} />
-
-        {/* Outer rim border */}
+        {/* Donkere ring waar de slot-segmenten in liggen */}
+        <circle cx={WCX} cy={WCY} r={(RING_IN + WCX) / 2} fill="none" stroke="rgba(4,6,11,0.97)" strokeWidth={WCX - RING_IN + 4} />
         <circle cx={WCX} cy={WCY} r={WCX - 1} fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="1.5" />
+        <circle cx={WCX} cy={WCY} r={RING_IN - 1} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
 
-        {/* Inner rim border (ship render / ring divide) */}
-        <circle cx={WCX} cy={WCY} r={SHIP_R + 1} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-
-        {/* Colored slot-type arc at outer rim */}
-        {([
-          { from: 330, to: 30,  color: HI.color  },
-          { from: 45,  to: 135, color: MED.color },
-          { from: 150, to: 210, color: RIG.color },
-          { from: 225, to: 315, color: LO.color  },
-        ] as const).map(({ from, to, color }) => {
-          const [x1, y1] = arcPt(from, ARC_R)
-          const [x2, y2] = arcPt(to,   ARC_R)
+        {/* Slot-segmenten per groep, in-game stijl: alleen de échte slots van het schip */}
+        {WHEEL_GROUPS.map(g => {
+          const n = Math.min(g.max, Math.max(shipSlots?.[g.attr] ?? 0, fittedCount(g.prefix)))
+          if (n === 0) return null
+          const start = g.center - n * g.slotW / 2
           return (
-            <path key={color}
-              d={`M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${ARC_R} ${ARC_R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`}
-              fill="none" stroke={color} strokeWidth="3" opacity="0.5" strokeLinecap="round"
-            />
+            <g key={g.prefix}>
+              {/* Groepskleur-boog aan de binnenrand, ter oriëntatie */}
+              <path d={ringArc(start + 0.8, start + n * g.slotW - 0.8, RING_IN - 4)} fill="none" stroke={g.color} strokeWidth="2" opacity="0.45" strokeLinecap="round" />
+              {Array.from({ length: n }, (_, i) => {
+                const a1 = start + i * g.slotW + 0.7
+                const a2 = start + (i + 1) * g.slotW - 0.7
+                const flag = `${g.prefix}${i}`
+                const inSlot = byFlag.get(flag) ?? []
+                const mod = inSlot.length <= 1 ? inSlot[0] : (inSlot.find(x => x.quantity === 1) ?? inSlot[0])
+                const charge = inSlot.find(x => x !== mod)
+                const isHov = hovered === flag
+                const mid = (a1 + a2) / 2
+                const [ix, iy]   = arcPt(mid, R_MID)
+                const [chx, chy] = arcPt(mid, RING_IN + 8)
+                const clipId = `cl-${fitting.fitting_id}-${flag}`
+                return (
+                  <g key={flag} style={{ pointerEvents: 'auto' }}
+                     onMouseEnter={() => setHovered(flag)} onMouseLeave={() => setHovered(null)}>
+                    <title>{mod ? itemName(mod.type_id) + (charge ? `\n↳ ${itemName(charge.type_id)}` : '') : 'Leeg slot'}</title>
+                    <clipPath id={clipId}><path d={segPath(a1, a2)} /></clipPath>
+                    <path d={segPath(a1, a2)}
+                      fill={mod ? (isHov ? 'rgba(44,58,50,0.97)' : 'rgba(24,32,28,0.95)') : 'rgba(11,15,21,0.9)'}
+                      stroke={isHov ? g.color : 'rgba(255,255,255,0.10)'} strokeWidth="1"
+                      style={{ transition: 'fill 0.12s' }} />
+                    {mod && (
+                      <image href={typeIcon(mod.type_id)} x={ix - ICON / 2} y={iy - ICON / 2} width={ICON} height={ICON}
+                        clipPath={`url(#${clipId})`} preserveAspectRatio="xMidYMid slice" />
+                    )}
+                    {/* Groene 'gefit'-rand aan de buitenkant, zoals in-game */}
+                    {mod && (
+                      <path d={ringArc(a1 + 1, a2 - 1, RING_OUT + 2.5)} fill="none" stroke="#5fe879" strokeWidth="3" strokeLinecap="round" opacity={isHov ? 1 : 0.8} />
+                    )}
+                    {/* Geladen charge als kleine badge aan de binnenkant van het slot */}
+                    {charge && (
+                      <>
+                        <clipPath id={`${clipId}-c`}><circle cx={chx} cy={chy} r={9} /></clipPath>
+                        <circle cx={chx} cy={chy} r={10} fill="rgba(4,7,11,0.95)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.8" />
+                        <image href={typeIcon(charge.type_id)} x={chx - 9} y={chy - 9} width={18} height={18} clipPath={`url(#${clipId}-c)`} />
+                      </>
+                    )}
+                  </g>
+                )
+              })}
+            </g>
           )
         })}
       </svg>
-
-      {/* Module slots — empty placeholders + fitted items */}
-      {Object.entries(SLOT_POS).map(([flag, def]) => {
-        const item = byFlag.get(flag)
-        const isHov = hovered === flag
-        const { left, top } = slotXY(def.deg, def.r)
-        if (!item) {
-          return (
-            <div key={flag} style={{
-              position: 'absolute', left, top,
-              width: ICON_SZ, height: ICON_SZ, borderRadius: 5,
-              border: `1px solid ${def.color}28`,
-              background: def.bg.replace('0.88', '0.18'),
-              zIndex: 4,
-            }} />
-          )
-        }
-        const name = fitting.itemNames.get(item.type_id) ?? `Type ${item.type_id}`
-        return (
-          <div
-            key={flag}
-            onMouseEnter={() => setHovered(flag)}
-            onMouseLeave={() => setHovered(null)}
-            title={name + (item.quantity > 1 ? ` ×${item.quantity}` : '')}
-            style={{
-              position: 'absolute', left, top,
-              width: ICON_SZ, height: ICON_SZ, borderRadius: 5,
-              border: `1px solid ${isHov ? def.color : def.color + '70'}`,
-              background: def.bg,
-              boxShadow: isHov ? `0 0 10px ${def.color}60, inset 0 0 6px ${def.color}20` : 'none',
-              overflow: 'hidden', cursor: 'default',
-              transition: 'border-color 0.12s, box-shadow 0.15s',
-              zIndex: isHov ? 6 : 4,
-            }}
-          >
-            <EveImage category="types" id={item.type_id} variation="icon" size={64} px={ICON_SZ} style={{ borderRadius: 0 }} />
-          </div>
-        )
-      })}
 
       {/* Drone bay (up to 3 types shown) */}
       {droneItems.slice(0, 3).map((item, i) => {
@@ -453,7 +480,7 @@ export default function Fittings() {
       }
 
       const result = await saveFitting(charId, token, {
-        name: importName || parsed.fittingName,
+        name: (importName || parsed.fittingName).slice(0, 50),
         description: '',
         ship_type_id: shipTypeId,
         items: fittingItems,
@@ -522,10 +549,12 @@ export default function Fittings() {
     load()
   }, [tokens.map(t => `${t.characterId}:${t.expiresAt}`).join(','), reloadKey])
 
+  const q = search.toLowerCase()
   const filtered = fittings.filter(f =>
-    search === '' ||
-    f.name.toLowerCase().includes(search.toLowerCase()) ||
-    f.shipName.toLowerCase().includes(search.toLowerCase())
+    q === '' ||
+    f.name.toLowerCase().includes(q) ||
+    f.shipName.toLowerCase().includes(q) ||
+    f.items.some(i => (f.itemNames.get(i.type_id) ?? '').toLowerCase().includes(q))
   )
 
   const toggleOpen = (id: number) => {
@@ -718,7 +747,7 @@ export default function Fittings() {
                 value={importEft}
                 onChange={e => handleEftChange(e.target.value)}
                 rows={12}
-                placeholder={'[Rifter, My Fit]\n\nSmall Shield Extender I\n\nDamage Control I\n\n'}
+                placeholder={'[Rifter, My Fit]\n\nDamage Control I\n\nSmall Shield Extender I\n\n'}
                 style={{ width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 2, padding: '0.5rem', fontSize: '0.72rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
               />
             </div>
