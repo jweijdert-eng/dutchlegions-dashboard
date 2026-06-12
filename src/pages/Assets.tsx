@@ -174,8 +174,8 @@ export default function Assets() {
       setRouteCounts({})
       const locationsToSystems: Record<number, number> = {}
       for (const id of systemIds) locationsToSystems[id] = id
-      for (const [id, info] of stationInfoMap.entries()) locationsToSystems[id] = info.systemId
-      for (const [id, info] of structureInfoMap.entries()) locationsToSystems[id] = info.systemId
+      for (const [id, info] of stationInfoMap.entries()) if (info.systemId > 0) locationsToSystems[id] = info.systemId
+      for (const [id, info] of structureInfoMap.entries()) if (info.systemId > 0) locationsToSystems[id] = info.systemId
       setLocationSystemMap(locationsToSystems)
 
       // Security status per system
@@ -217,7 +217,7 @@ export default function Assets() {
     const destinationSystems = new Map<number, number>()
     for (const locationId of locationIds) {
       const sys = locationSystemMap[locationId]
-      if (typeof sys === 'number') destinationSystems.set(locationId, sys)
+      if (typeof sys === 'number' && sys > 0) destinationSystems.set(locationId, sys)
     }
 
     if (destinationSystems.size === 0) { setRouteCounts({}); return }

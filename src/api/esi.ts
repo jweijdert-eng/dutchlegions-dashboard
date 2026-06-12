@@ -254,12 +254,21 @@ function _normalizeTokens(tokens?: string | string[] | TokenData[] | TokenData) 
 export async function getStructureInfo(id: number, tokens?: string | string[] | TokenData[] | TokenData): Promise<StructureInfo | null> {
   if (_structureCache.has(id)) return _structureCache.get(id)!
 
-  const cachedName = localStorage.getItem(`structure_name_${id}`)
-  if (cachedName && !isStructureFallbackName(id, cachedName)) {
-    const partial: StructureInfo = { name: cachedName, solar_system_id: 0, type_id: 0 }
-    _structureCache.set(id, partial)
-    return partial
+  // Try full JSON cache (name + solar_system_id) first
+  const cachedJson = localStorage.getItem(`structure_info_${id}`)
+  if (cachedJson) {
+    try {
+      const parsed = JSON.parse(cachedJson) as StructureInfo
+      if (parsed.name && parsed.solar_system_id > 0) {
+        _structureCache.set(id, parsed)
+        return parsed
+      }
+    } catch { /* corrupt cache, fall through */ }
+    localStorage.removeItem(`structure_info_${id}`)
   }
+
+  // Legacy cache: name only — don't return early, still fetch to get solar_system_id
+  const cachedName = localStorage.getItem(`structure_name_${id}`)
   if (cachedName && isStructureFallbackName(id, cachedName)) {
     localStorage.removeItem(`structure_name_${id}`)
   }
@@ -273,7 +282,8 @@ export async function getStructureInfo(id: number, tokens?: string | string[] | 
       if (res.ok) {
         const data = await res.json() as StructureInfo
         _structureCache.set(id, data)
-        localStorage.setItem(`structure_name_${id}`, data.name)
+        localStorage.setItem(`structure_info_${id}`, JSON.stringify(data))
+        localStorage.removeItem(`structure_name_${id}`)
         return data
       }
     } catch { continue }
@@ -284,14 +294,21 @@ export async function getStructureInfo(id: number, tokens?: string | string[] | 
     if (res.ok) {
       const data = await res.json() as StructureInfo
       _structureCache.set(id, data)
-      localStorage.setItem(`structure_name_${id}`, data.name)
+      localStorage.setItem(`structure_info_${id}`, JSON.stringify(data))
+      localStorage.removeItem(`structure_name_${id}`)
       return data
     }
   } catch {
     /* ignore */
   }
 
-  // record unresolved for debugging (record attempted characterIds if available)
+  // If we have a legacy name-only cache, return partial (name known, system unknown)
+  if (cachedName && !isStructureFallbackName(id, cachedName)) {
+    const partial: StructureInfo = { name: cachedName, solar_system_id: 0, type_id: 0 }
+    _structureCache.set(id, partial)
+    return partial
+  }
+
   if (norm.charIds.length > 0) _persistUnresolved(id, norm.charIds)
   else _persistUnresolved(id, [])
 
