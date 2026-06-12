@@ -126,7 +126,24 @@ export default function Assets() {
       const structureInfoMap = new Map<number, { name: string; systemId: number }>()
       await Promise.all(structureIds.map(async id => {
         const info = await getStructureInfo(id, allTokens)
-        if (info) structureInfoMap.set(id, { name: info.name, systemId: info.solar_system_id })
+        if (!info) return
+        let systemId = info.solar_system_id
+        // If system unknown, try to resolve from structure name prefix (e.g. "9F-7PZ - Ssamesh" → "9F-7PZ")
+        if (systemId === 0 && info.name) {
+          const prefix = info.name.split(' - ')[0]?.trim()
+          if (prefix) {
+            try {
+              const res = await fetch(`https://esi.evetech.net/latest/universe/ids/?datasource=tranquility`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([prefix]),
+              })
+              if (res.ok) {
+                const data = await res.json()
+                if (data.systems?.[0]?.id) systemId = data.systems[0].id
+              }
+            } catch { /* ignore */ }
+          }
+        }
+        structureInfoMap.set(id, { name: info.name, systemId })
       }))
 
       const stationInfoMap = new Map<number, { name: string; systemId: number }>()
@@ -233,7 +250,7 @@ export default function Assets() {
         const route = await getRoute(originSystemId, destinationSystemId)
         return [locationId, Math.max(0, route.length - 1)] as const
       } catch {
-        return [locationId, null] as const
+        return [locationId, -1] as const  // -1 = unreachable (wormhole / no gate route)
       }
     })).then(results => {
       if (current !== routeFetchId.current) return
@@ -354,7 +371,7 @@ export default function Assets() {
           const routeCount = routeCounts[locationId]
           const routeLabel = routeCount === null
             ? originSystemId !== null ? 'berekenen…' : ''
-            : routeCount === undefined
+            : routeCount === undefined || routeCount === -1
               ? ''
               : `${routeCount} sprongen`
           const sec = secLabel(locationId)
