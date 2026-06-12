@@ -88,15 +88,20 @@ const ADMIN_CHAR_ID = 1831618559
 function MaintenancePage() {
   return (
     <div style={{
-      minHeight: '100vh', background: '#05050e',
+      minHeight: '100vh', width: '100%',
+      backgroundImage: 'url(/bg.png)',
+      backgroundSize: 'cover', backgroundPosition: 'center',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '1.5rem', fontFamily: 'inherit',
+      gap: '1.5rem', fontFamily: 'inherit', position: 'relative',
     }}>
-      <img src={`https://images.evetech.net/corporations/98652891/logo?size=128`} style={{ width: 80, height: 80, borderRadius: '50%', opacity: 0.7 }} />
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ color: 'var(--blue)', fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.2em', marginBottom: '0.5rem' }}>DUTCH LEGIONS</div>
-        <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', letterSpacing: '0.1em' }}>Dashboard is momenteel in onderhoud.</div>
-        <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginTop: '0.4rem', opacity: 0.6 }}>Kom later terug.</div>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(5,5,14,0.6)' }} />
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
+        <img src={`https://images.evetech.net/corporations/98652891/logo?size=128`} style={{ width: 80, height: 80, borderRadius: '50%' }} />
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.2em', marginBottom: '0.5rem' }}>DUTCH LEGIONS</div>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', letterSpacing: '0.1em' }}>Dashboard is momenteel in onderhoud.</div>
+          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.75rem', marginTop: '0.4rem' }}>Kom later terug.</div>
+        </div>
       </div>
     </div>
   )
