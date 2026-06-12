@@ -43,18 +43,6 @@ export default function Login() {
         filter: 'brightness(0.55) saturate(1.1)',
       }} />
 
-      {/* Blur + cover EVE/DOMINION text */}
-      <div style={{
-        position: 'absolute',
-        left: '50%', top: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '500px', height: '220px',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        background: 'rgba(5,5,14,0.75)',
-        borderRadius: '50%',
-        pointerEvents: 'none',
-      }} />
 
       {/* Edge vignette */}
       <div style={{
