@@ -32,6 +32,7 @@ async function apiDelete(charId: number, id: string) {
 export default function Notes() {
   const { tokens, selectedCharId } = useAuth()
   const charId = selectedCharId ?? tokens[0]?.characterId ?? null
+  const charName = tokens.find(t => t.characterId === charId)?.characterName ?? null
 
   const [notes, setNotes] = useState<Note[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -106,7 +107,7 @@ export default function Notes() {
   return (
     <Layout header={
       <PageHeader
-        title="NOTITIES"
+        title={charName ? `NOTITIES — ${charName}` : 'NOTITIES'}
         right={
           <button
             onClick={addNote}
