@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Heartbeat: update last_seen elke 5 minuten zolang de gebruiker op de site zit
+  // Heartbeat: update last_seen direct bij laden én elke 5 minuten
   useEffect(() => {
     function sendHeartbeat() {
       for (const t of tokensRef.current) {
@@ -91,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }).catch(() => {})
       }
     }
+    sendHeartbeat()
     const id = setInterval(sendHeartbeat, 5 * 60_000)
     return () => clearInterval(id)
   }, [])
