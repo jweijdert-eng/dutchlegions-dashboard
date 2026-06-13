@@ -46,25 +46,39 @@ const PLANET_LABEL: Record<string, string> = {
   temperate: 'Temperate', barren: 'Barren', gas: 'Gas', ice: 'Ice',
   lava: 'Lava', oceanic: 'Oceanic', plasma: 'Plasma', storm: 'Storm',
 }
-const CMD_CENTER_IDS = new Set([
-  2254,2255,2256,2257,2258,2259,2260,2261,
-  2267,2268,2269,2270,2271,2272,2273,2274,2275,
-])
+// PI-structuren classificeren op ESI-group (uit /universe/groups), niet op losse
+// type_id's — die verschillen per planeettype. Extractors/fabrieken herkennen we al
+// aan extractor_details/schematic_id; launchpads (group 1030) en storages (1029)
+// hebben deze complete sets (8 = 1 per planeettype); de rest is een command center.
+const LAUNCHPAD_IDS = new Set([2256, 2542, 2543, 2544, 2552, 2555, 2556, 2557])
+const STORAGE_IDS   = new Set([2257, 2535, 2536, 2541, 2558, 2560, 2561, 2562])
+// Industrie-fabrieken (group 1028) per tier — voor het juiste label
+const ADV_FACTORY_IDS   = new Set([2470, 2472, 2474, 2480, 2482, 2485, 2491, 2493])
+const HITECH_FACTORY_IDS = new Set([2484, 2494])
+
+type PinKind = 'extractor' | 'factory' | 'launchpad' | 'storage' | 'command'
+function pinKind(pin: PlanetPin): PinKind {
+  if (pin.expiry_time != null || pin.extractor_details != null) return 'extractor'
+  if (pin.schematic_id != null) return 'factory'
+  if (LAUNCHPAD_IDS.has(pin.type_id)) return 'launchpad'
+  if (STORAGE_IDS.has(pin.type_id))   return 'storage'
+  return 'command'
+}
 
 // ─── pin styling ─────────────────────────────────────────────────────────────
 
 function getPinStyle(pin: PlanetPin): { color: string; label: string } {
-  if (pin.expiry_time != null)  return { color: '#f5912e', label: 'Extractor' }   // oranje
-  if (pin.schematic_id != null) {
-    if (pin.type_id === 2481)   return { color: '#f0c040', label: 'Basic' }       // geel
-    if (pin.type_id === 2480)   return { color: '#f0c040', label: 'Advanced' }
-    if (pin.type_id === 2484)   return { color: '#f0c040', label: 'Hi-Tech' }
-    return                             { color: '#f0c040', label: 'Factory' }
+  switch (pinKind(pin)) {
+    case 'extractor': return { color: '#f5912e', label: 'Extractor' }   // oranje
+    case 'factory': {
+      const tier = HITECH_FACTORY_IDS.has(pin.type_id) ? 'Hi-Tech'
+        : ADV_FACTORY_IDS.has(pin.type_id) ? 'Advanced' : 'Basic'
+      return { color: '#f0c040', label: tier }                          // geel
+    }
+    case 'launchpad': return { color: '#1fd4c4', label: 'Launchpad' }   // teal
+    case 'storage':   return { color: '#2f8fd6', label: 'Storage' }     // blauw
+    case 'command':   return { color: '#3a8ee6', label: 'Cmd Center' }  // blauw
   }
-  if (CMD_CENTER_IDS.has(pin.type_id)) return { color: '#3a8ee6', label: 'Cmd Center' } // blauw
-  if (pin.type_id === 2542)     return { color: '#1fd4c4', label: 'Launchpad' }   // teal
-  if (pin.type_id === 2541)     return { color: '#2f8fd6', label: 'Storage' }     // blauw
-  return                               { color: '#2f8fd6', label: 'Storage' }
 }
 
 // ─── PI-gebouw-glyphs (RIFT-stijl: witte glyph in gekleurde ring) ──────────────
@@ -88,22 +102,23 @@ const GLYPH = '#e6eef9' // bijna-wit, zoals in-game
 function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
   const vb = '-14 -14 28 28'
   const sw = 1.6
+  const kind = pinKind(pin)
   // Extractor Control Unit → vijfhoek met stip
-  if (pin.expiry_time != null) return (
+  if (kind === 'extractor') return (
     <svg width={size} height={size} viewBox={vb}>
       <polygon points={pentPts(10)} fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round"/>
       <circle r="2.4" fill={GLYPH}/>
     </svg>
   )
   // Industry Facility → tandwiel
-  if (pin.schematic_id != null) return (
+  if (kind === 'factory') return (
     <svg width={size} height={size} viewBox={vb}>
       <polygon points={cogPts(8, 11, 7.5)} fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round"/>
       <circle r="3.4" fill="none" stroke={GLYPH} strokeWidth={sw}/>
     </svg>
   )
   // Launchpad → pijl omhoog
-  if (pin.type_id === 2542) return (
+  if (kind === 'launchpad') return (
     <svg width={size} height={size} viewBox={vb}>
       <g fill="none" stroke={GLYPH} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M0,9 V-8"/>
@@ -112,7 +127,7 @@ function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
     </svg>
   )
   // Command Center → fontein/broadcast
-  if (CMD_CENTER_IDS.has(pin.type_id)) return (
+  if (kind === 'command') return (
     <svg width={size} height={size} viewBox={vb}>
       <g fill="none" stroke={GLYPH} strokeWidth="1.5" strokeLinecap="round">
         <path d="M0,9 V-3"/>
@@ -476,7 +491,7 @@ function ColonyMap({ colony, active }: { colony: ColonyInfo; active: boolean }) 
           const pos = pinPos.get(pin.pin_id)
           if (!pos) return null
           const { color } = getPinStyle(pin)
-          const isCmd = CMD_CENTER_IDS.has(pin.type_id)
+          const isCmd = pinKind(pin) === 'command'
           return (
             <g key={pin.pin_id}>
               <circle cx={pos[0]} cy={pos[1]} r={isCmd?8:6}
