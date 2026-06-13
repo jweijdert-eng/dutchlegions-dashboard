@@ -3,7 +3,6 @@ import { useAuth } from '../auth/AuthContext'
 import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, getSystemInfo, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
-import Location from '../components/Location'
 import { usePageLoading } from '../hooks/usePageLoading'
 
 async function resolveTypeNames(typeIds: number[]): Promise<Map<number, string>> {
@@ -37,6 +36,8 @@ async function resolveTypeNames(typeIds: number[]): Promise<Map<number, string>>
   }
   return result
 }
+
+type OwnedAsset = AssetItem & { owner: number }
 
 type ResolvedAsset = {
   typeId: number
@@ -86,7 +87,7 @@ export default function Assets() {
     const my = ++fetchId.current
     setLoading(true)
     try {
-      const allRaw: (AssetItem & { owner: number })[] = []
+      const allRaw: OwnedAsset[] = []
       const allLocations: Array<{ owner: number; loc: AssetLocation }> = []
       await Promise.all(tokens.map(async t => {
         const raw = await getAssets(t.characterId, t.accessToken).catch(() => [] as AssetItem[])
@@ -127,7 +128,7 @@ export default function Assets() {
         }
       }
 
-      function rootLocation(a: AssetItem): RootLocation {
+      function rootLocation(a: OwnedAsset): RootLocation {
         const loc = locationMap.get(`${a.owner}:${a.item_id}`)
         if (loc) return resolveAssetLocation(loc, a.owner)
         if (a.location_type !== 'item') {
