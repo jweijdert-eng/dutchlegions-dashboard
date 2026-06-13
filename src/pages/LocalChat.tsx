@@ -50,7 +50,6 @@ export default function LocalChat() {
   const [contextMenu,  setContextMenu]  = useState<ContextMenu | null>(null)
   const [filter,       setFilter]       = useState<EsiStanding | null>(null)
 
-  const bottomRef    = useRef<HTMLDivElement>(null)
   const userScrolled = useRef(false)
   const listRef      = useRef<HTMLDivElement>(null)
   const notifiedRef  = useRef(false)
@@ -93,13 +92,15 @@ export default function LocalChat() {
   }, [messages, ownNames])
 
 useEffect(() => {
-    if (!userScrolled.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Nieuwste bovenaan: spring naar boven bij een nieuw bericht, tenzij de gebruiker
+    // naar beneden heeft gescrold om oudere berichten te lezen.
+    if (!userScrolled.current && listRef.current) listRef.current.scrollTop = 0
   }, [messages])
 
   function onScroll() {
     const el = listRef.current
     if (!el) return
-    userScrolled.current = el.scrollHeight - el.scrollTop - el.clientHeight > 80
+    userScrolled.current = el.scrollTop > 80
   }
 
   const closeMenu = useCallback(() => setContextMenu(null), [])
@@ -269,7 +270,7 @@ useEffect(() => {
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
-                {displayed.map((m, i) => {
+                {displayed.slice().reverse().map((m, i) => {
                   const esi      = getEsiStanding(m.sender)
                   const standing = effectiveStanding(m.sender, ownNames, esi, manuals)
                   const count    = senderCounts.get(m.sender) ?? 1
@@ -306,7 +307,6 @@ useEffect(() => {
               </tbody>
             </table>
           )}
-          <div ref={bottomRef} />
         </div>
       </Layout>
 
