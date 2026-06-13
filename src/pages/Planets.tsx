@@ -69,26 +69,19 @@ function pinKind(pin: PlanetPin): PinKind {
 
 function getPinStyle(pin: PlanetPin): { color: string; label: string } {
   switch (pinKind(pin)) {
-    case 'extractor': return { color: '#f5912e', label: 'Extractor' }   // oranje
-    case 'factory': {
-      const tier = HITECH_FACTORY_IDS.has(pin.type_id) ? 'Hi-Tech'
-        : ADV_FACTORY_IDS.has(pin.type_id) ? 'Advanced' : 'Basic'
-      return { color: '#f0c040', label: tier }                          // geel
-    }
-    case 'launchpad': return { color: '#1fd4c4', label: 'Launchpad' }   // teal
+    case 'extractor': return { color: '#1fd4c4', label: 'Extractor' }   // teal
+    case 'factory':
+      if (HITECH_FACTORY_IDS.has(pin.type_id)) return { color: '#f0c040', label: 'Hi-Tech' }  // geel
+      if (ADV_FACTORY_IDS.has(pin.type_id))    return { color: '#f0c040', label: 'Advanced' } // geel
+      return                                          { color: '#f5912e', label: 'Basic' }    // oranje
+    case 'launchpad': return { color: '#2f6fd6', label: 'Launchpad' }   // blauw
     case 'storage':   return { color: '#2f8fd6', label: 'Storage' }     // blauw
-    case 'command':   return { color: '#3a8ee6', label: 'Cmd Center' }  // blauw
+    case 'command':   return { color: '#3a8ee6', label: 'Cmd Center' }  // (ring = kleurensegmenten)
   }
 }
 
 // ─── PI-gebouw-glyphs (RIFT-stijl: witte glyph in gekleurde ring) ──────────────
 
-function pentPts(r: number) {
-  return Array.from({ length: 5 }, (_, i) => {
-    const a = (-90 + i * 72) * Math.PI / 180
-    return `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`
-  }).join(' ')
-}
 function cogPts(teeth: number, ro: number, ri: number) {
   return Array.from({ length: teeth * 2 }, (_, i) => {
     const a = (i * Math.PI / teeth) - Math.PI / 2
@@ -99,15 +92,42 @@ function cogPts(teeth: number, ro: number, ri: number) {
 
 const GLYPH = '#e6eef9' // bijna-wit, zoals in-game
 
+function polar(cx: number, cy: number, r: number, deg: number): [number, number] {
+  const a = (deg - 90) * Math.PI / 180
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+}
+
+// Command Center: meerkleurige segment-ring (zoals RIFT) i.p.v. de gauge
+const CMD_SEG_COLORS = ['#e0463a', '#2ec5d6', '#4ad06a', '#f5a331', '#9b6cf0']
+function CmdRing({ cx, cy, r, active }: { cx: number; cy: number; r: number; active: boolean }) {
+  const seg = 22
+  return (
+    <g opacity={active ? 1 : 0.5}>
+      {Array.from({ length: seg }, (_, i) => {
+        const a0 = (i / seg) * 360
+        const a1 = a0 + (360 / seg) * 0.6
+        const [x0, y0] = polar(cx, cy, r, a0)
+        const [x1, y1] = polar(cx, cy, r, a1)
+        return (
+          <path key={i} d={`M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`}
+            fill="none" stroke={CMD_SEG_COLORS[i % CMD_SEG_COLORS.length]} strokeWidth="2.6"/>
+        )
+      })}
+    </g>
+  )
+}
+
 function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
   const vb = '-14 -14 28 28'
   const sw = 1.6
   const kind = pinKind(pin)
-  // Extractor Control Unit → vijfhoek met stip
+  // Extractor Control Unit → pijl omhoog
   if (kind === 'extractor') return (
     <svg width={size} height={size} viewBox={vb}>
-      <polygon points={pentPts(10)} fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round"/>
-      <circle r="2.4" fill={GLYPH}/>
+      <g fill="none" stroke={GLYPH} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M0,9 V-8"/>
+        <path d="M-6,-2 L0,-9 L6,-2"/>
+      </g>
     </svg>
   )
   // Industry Facility → tandwiel
@@ -117,29 +137,33 @@ function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
       <circle r="3.4" fill="none" stroke={GLYPH} strokeWidth={sw}/>
     </svg>
   )
-  // Launchpad → pijl omhoog
+  // Launchpad → raket
   if (kind === 'launchpad') return (
     <svg width={size} height={size} viewBox={vb}>
-      <g fill="none" stroke={GLYPH} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M0,9 V-8"/>
-        <path d="M-6,-2 L0,-9 L6,-2"/>
+      <g fill="none" stroke={GLYPH} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M0,-11 C 3.4,-6 3.6,-1 3.2,4 L -3.2,4 C -3.6,-1 -3.4,-6 0,-11 Z"/>
+        <path d="M-3.2,2 L -6.2,7 L -3.3,5.5"/>
+        <path d="M3.2,2 L 6.2,7 L 3.3,5.5"/>
+        <path d="M-2,5 L -2,8.5 M2,5 L 2,8.5 M0,4 L 0,9.5"/>
       </g>
+      <circle cx="0" cy="-3" r="1.4" fill={GLYPH}/>
     </svg>
   )
-  // Command Center → fontein/broadcast
+  // Command Center → turbine/ventilator
   if (kind === 'command') return (
     <svg width={size} height={size} viewBox={vb}>
-      <g fill="none" stroke={GLYPH} strokeWidth="1.5" strokeLinecap="round">
-        <path d="M0,9 V-3"/>
-        <path d="M0,-3 C -7,-3 -8,4 -8,9"/>
-        <path d="M0,-3 C 7,-3 8,4 8,9"/>
-        <path d="M0,-3 C -3.5,-4 -4,4 -4,9"/>
-        <path d="M0,-3 C 3.5,-4 4,4 4,9"/>
+      <g stroke={GLYPH} strokeWidth="1" strokeLinecap="round">
+        {Array.from({ length: 14 }, (_, i) => {
+          const [x1, y1] = polar(0, 0, 3.2, (i / 14) * 360)
+          const [x2, y2] = polar(0, 0, 9.5, (i / 14) * 360 + 26)
+          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}/>
+        })}
       </g>
-      <circle cx="0" cy="-5" r="1.8" fill={GLYPH}/>
+      <circle r="3.2" fill="#070c18" stroke={GLYPH} strokeWidth="1"/>
+      <circle r="1" fill={GLYPH}/>
     </svg>
   )
-  // Storage → isometrische kubus
+  // Storage → isometrische kubus (hexagon-silhouet)
   return (
     <svg width={size} height={size} viewBox={vb}>
       <g fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round">
@@ -358,6 +382,7 @@ function PinCircle({ info, active, now }: { info: PinDisplay; active: boolean; n
   // cyclus-voortgang (install_time → expiry_time); andere gebouwen tonen een volle ring.
   const S = 46, r = 19.5, C = 2 * Math.PI * r
   const GAUGE = 0.84, gaugeLen = GAUGE * C, gapLen = (1 - GAUGE) * C
+  const isCmd = pinKind(info.pin) === 'command'
   let progress = 1
   if (pinKind(info.pin) === 'extractor') {
     const inst = info.pin.install_time ? new Date(info.pin.install_time).getTime() : NaN
@@ -379,15 +404,22 @@ function PinCircle({ info, active, now }: { info: PinDisplay; active: boolean; n
         }}>
           {/* donkere disc */}
           <circle cx={S/2} cy={S/2} r={r-2} fill="#070c18"/>
-          {/* gauge-track (volledige boog, gedimd) */}
-          <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
-            strokeDasharray={`${gaugeLen} ${C}`} strokeDashoffset={gapLen / 2}
-            transform={`rotate(-90 ${S/2} ${S/2})`} opacity={0.18}/>
-          {/* voortgang (helder, = progress × gauge) */}
-          <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
-            strokeDasharray={`${progress * gaugeLen} ${C}`} strokeDashoffset={gapLen / 2}
-            transform={`rotate(-90 ${S/2} ${S/2})`}
-            opacity={active ? 0.95 : 0.55} style={{ transition:'stroke-dasharray 0.8s linear' }}/>
+          {isCmd ? (
+            /* Command Center: meerkleurige segment-ring (geen voortgang) */
+            <CmdRing cx={S/2} cy={S/2} r={r} active={active}/>
+          ) : (
+            <>
+              {/* gauge-track (volledige boog, gedimd) */}
+              <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
+                strokeDasharray={`${gaugeLen} ${C}`} strokeDashoffset={gapLen / 2}
+                transform={`rotate(-90 ${S/2} ${S/2})`} opacity={0.18}/>
+              {/* voortgang (helder, = progress × gauge) */}
+              <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
+                strokeDasharray={`${progress * gaugeLen} ${C}`} strokeDashoffset={gapLen / 2}
+                transform={`rotate(-90 ${S/2} ${S/2})`}
+                opacity={active ? 0.95 : 0.55} style={{ transition:'stroke-dasharray 0.8s linear' }}/>
+            </>
+          )}
         </svg>
         {/* witte PI-glyph gecentreerd (RIFT-stijl) */}
         <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
