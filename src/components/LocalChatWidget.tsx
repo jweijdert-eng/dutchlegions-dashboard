@@ -1,22 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
-
-interface ChatMsg {
-  type: 'message'
-  time: string
-  sender: string
-  message: string
-}
-
-interface StatusMsg {
-  type: 'status'
-  file: string | null
-}
-
-type WsMsg = ChatMsg | StatusMsg
+import { useLocalChat } from '../hooks/useLocalChat'
 
 const COLORS = [
   'var(--blue)', '#a78bfa', '#34d399', '#fb923c', '#f472b6', '#38bdf8', '#4ade80',
@@ -55,32 +42,11 @@ export default function LocalChatWidget() {
   const activeToken = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
   const navigate   = useNavigate()
 
-  const [messages,    setMessages]    = useState<ChatMsg[]>([])
-  const [connStatus,  setConnStatus]  = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const { messages, status } = useLocalChat()
   const [manuals,     setManuals]     = useState<Record<string, Standing>>(getStandings)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
-  const wsRef = useRef<WebSocket | null>(null)
 
   const getEsiStanding = useEsiStandings(activeToken)
-
-  useEffect(() => {
-    let alive = true
-    function connect() {
-      if (!alive) return
-      setConnStatus('connecting')
-      const ws = new WebSocket('ws://localhost:8765')
-      wsRef.current = ws
-      ws.onopen  = () => setConnStatus('connected')
-      ws.onclose = () => { setConnStatus('disconnected'); if (alive) setTimeout(connect, 3000) }
-      ws.onerror = () => ws.close()
-      ws.onmessage = e => {
-        const msg = JSON.parse(e.data as string) as WsMsg
-        if (msg.type === 'message') setMessages(prev => [...prev.slice(-49), msg])
-      }
-    }
-    connect()
-    return () => { alive = false; wsRef.current?.close() }
-  }, [])
 
   const closeMenu = useCallback(() => setContextMenu(null), [])
   useEffect(() => {
@@ -102,7 +68,13 @@ export default function LocalChatWidget() {
   }
 
   const recent = messages.slice(-60).reverse()
-  const statusColor = connStatus === 'connected' ? 'var(--green)' : connStatus === 'connecting' ? 'var(--gold)' : 'var(--red)'
+  const statusColor = status === 'watching' ? 'var(--green)' : status === 'no-file' ? 'var(--gold)' : 'var(--red)'
+  const statusLabel =
+    status === 'watching'         ? '● Live'
+    : status === 'no-file'        ? '● Geen logbestand'
+    : status === 'unsupported'    ? '● Niet ondersteund'
+    : status === 'needs-permission' ? '● Toegang nodig'
+    : '● Niet ingesteld'
 
   return (
     <>
@@ -113,13 +85,17 @@ export default function LocalChatWidget() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.875rem', borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
           <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.15em' }}>LOCAL CHAT</span>
           <span style={{ fontSize: '0.68rem', fontWeight: 600, color: statusColor }}>
-            {connStatus === 'connected' ? '● Verbonden' : connStatus === 'connecting' ? '● Verbinden...' : '● Verbroken'}
+            {statusLabel}
           </span>
         </div>
 
         <div style={{ padding: '0.625rem 0.875rem', height: 'calc(100vh - 550px)', overflowY: 'auto', fontSize: '0.68rem', lineHeight: 1.5 }}>
-          {connStatus === 'disconnected' ? (
-            <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '1rem 0' }}>Server offline</div>
+          {status !== 'watching' ? (
+            <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '1rem 0' }}>
+              {status === 'unsupported' ? 'Niet ondersteund in deze browser'
+                : status === 'no-file' ? 'Geen logbestand gevonden'
+                : 'Klik om Local in te stellen'}
+            </div>
           ) : recent.length === 0 ? (
             <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '1rem 0' }}>Wachtend op berichten...</div>
           ) : (
