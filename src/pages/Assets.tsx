@@ -154,9 +154,11 @@ export default function Assets() {
 
       const rootLocations = allRaw.map(a => rootLocation(a))
       const rootIds = [...new Set(rootLocations.map(r => r.id))]
-      const stationIds = rootLocations.filter(r => r.type === 'station').map(r => r.id)
-      const systemIds = rootLocations.filter(r => r.type === 'solar_system').map(r => r.id)
-      const structureIds = rootLocations.filter(r => r.type === 'structure').map(r => r.id)
+      // Ontdubbelen: anders wordt bv. getStructureInfo N× tegelijk aangeroepen voor
+      // dezelfde citadel als er N items in staan (cache is nog leeg bij parallelle start).
+      const stationIds = [...new Set(rootLocations.filter(r => r.type === 'station').map(r => r.id))]
+      const systemIds = [...new Set(rootLocations.filter(r => r.type === 'solar_system').map(r => r.id))]
+      const structureIds = [...new Set(rootLocations.filter(r => r.type === 'structure').map(r => r.id))]
       const typeIds = [...new Set(allRaw.map(a => a.type_id))]
 
       const [typeMap, locationNameMap] = await Promise.all([ resolveTypeNames(typeIds), resolveNames(rootIds) ])

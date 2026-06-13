@@ -244,6 +244,21 @@ function _persistUnresolved(id: number, charIds: number[]) {
   } catch { /* ignore */ }
 }
 
+// True als deze structuur recent al met (minstens) deze characters tevergeefs is
+// geprobeerd → de mislukte netwerk-calls overslaan bij een volgende load.
+const _UNRESOLVED_TTL = 12 * 3600 * 1000 // 12 uur
+function _triedAllRecently(id: number, charIds: number[]): boolean {
+  if (charIds.length === 0) return false
+  try {
+    const raw = localStorage.getItem('unresolved_structures')
+    if (!raw) return false
+    const map = JSON.parse(raw) as Record<string, { chars: number[]; lastSeen: number }>
+    const entry = map[String(id)]
+    if (!entry || Date.now() - entry.lastSeen > _UNRESOLVED_TTL) return false
+    return charIds.every(c => entry.chars.includes(c))
+  } catch { return false }
+}
+
 function _normalizeTokens(tokens?: string | string[] | TokenData[] | TokenData) {
   if (!tokens) return { tokens: [] as string[], charIds: [] as number[] }
   if (typeof tokens === 'string') return { tokens: [tokens], charIds: [] }
@@ -283,6 +298,18 @@ export async function getStructureInfo(id: number, tokens?: string | string[] | 
   }
 
   const norm = _normalizeTokens(tokens)
+
+  // Recent al met al deze characters tevergeefs geprobeerd? Sla de mislukte calls over
+  // (scheelt N+1 ESI-calls per ontoegankelijke citadel bij elke herlaad).
+  if (_triedAllRecently(id, norm.charIds)) {
+    if (cachedName && !isStructureFallbackName(id, cachedName)) {
+      const partial: StructureInfo = { name: cachedName, solar_system_id: 0, type_id: 0 }
+      _structureCache.set(id, partial)
+      return partial
+    }
+    return null
+  }
+
   for (const token of norm.tokens) {
     try {
       const res = await esiFetch(`${BASE}/universe/structures/${id}/?datasource=tranquility`, {
