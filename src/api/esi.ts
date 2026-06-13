@@ -742,19 +742,25 @@ export async function getSystemInfo(id: number): Promise<SystemInfo | null> {
     }
     _sysCache.set(id, info)
 
-    if (!_consCache.has(sys.constellation_id)) {
-      const cons = await esiGet<{ name: string; region_id: number }>(`/universe/constellations/${sys.constellation_id}/`)
-      _consCache.set(sys.constellation_id, cons)
-    }
-    const cons = _consCache.get(sys.constellation_id)!
-    info.constellation_name = cons.name
-    info.region_id = cons.region_id
+    // Constellation/region zijn aanvullend — als die calls falen (bv. rate-limit
+    // bij veel systemen tegelijk) mag de al opgehaalde security_status niet verloren gaan.
+    try {
+      if (!_consCache.has(sys.constellation_id)) {
+        const cons = await esiGet<{ name: string; region_id: number }>(`/universe/constellations/${sys.constellation_id}/`)
+        _consCache.set(sys.constellation_id, cons)
+      }
+      const cons = _consCache.get(sys.constellation_id)
+      if (cons) {
+        info.constellation_name = cons.name
+        info.region_id = cons.region_id
 
-    if (!_regCache.has(cons.region_id)) {
-      const reg = await esiGet<{ name: string }>(`/universe/regions/${cons.region_id}/`)
-      _regCache.set(cons.region_id, reg.name)
-    }
-    info.region_name = _regCache.get(cons.region_id) ?? null
+        if (!_regCache.has(cons.region_id)) {
+          const reg = await esiGet<{ name: string }>(`/universe/regions/${cons.region_id}/`)
+          _regCache.set(cons.region_id, reg.name)
+        }
+        info.region_name = _regCache.get(cons.region_id) ?? null
+      }
+    } catch { /* constellation/region optioneel — security blijft behouden */ }
 
     return info
   } catch { return null }

@@ -322,8 +322,11 @@ export default function Assets() {
     const sysId = locationSystemMap[locationId]
     const sec = sysId !== undefined ? securityMap[sysId] : undefined
     if (sec === undefined) return null
-    const display = Math.max(0.1, sec).toFixed(1)
-    return { label: display, color: secColor(sec) }
+    // EVE-afronding op 1 decimaal; kleine positieve trueSec toont CCP als 0.1 (lowsec),
+    // nullsec (≤ 0.0) toont de echte waarde, incl. negatief.
+    const rounded = Math.round(sec * 10) / 10
+    const shown = sec > 0 && rounded <= 0 ? 0.1 : rounded
+    return { label: shown.toFixed(1), color: secColor(sec) }
   }
 
   function toggle(loc: string) {
