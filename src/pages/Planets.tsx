@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -8,7 +8,28 @@ import {
 import Layout, { PageHeader } from '../components/Layout'
 import SolarSystem from '../components/SolarSystem'
 import EveImage from '../components/EveImage'
+import StatCard from '../components/StatCard'
 import { usePageLoading } from '../hooks/usePageLoading'
+
+// ─── market prices (fuzzwork, Jita / The Forge sell-min) ───────────────────────
+
+async function fetchPrices(typeIds: number[]): Promise<Map<number, number>> {
+  if (typeIds.length === 0) return new Map()
+  try {
+    const r = await fetch(
+      `https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${typeIds.join(',')}`,
+      { signal: AbortSignal.timeout(6000) },
+    )
+    if (!r.ok) return new Map()
+    const data = await r.json() as Record<string, { buy: { max: number }; sell: { min: number } }>
+    const map = new Map<number, number>()
+    for (const [idStr, agg] of Object.entries(data)) map.set(parseInt(idStr), agg.sell.min)
+    return map
+  } catch { return new Map() }
+}
+
+// Drempel waarbinnen een kolonie als "verloopt binnenkort" geldt (uren)
+const SOON_MS = 12 * 3600 * 1000
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -120,6 +141,11 @@ function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
 interface SchematicInfo {
   schematic_name: string; cycle_time: number
   outputTypeId: number | null; outputQty: number; outputName: string | null
+  inputTypeIds: number[]
+}
+interface ProductFlow {
+  typeId: number; name: string | null
+  perHour: number; valuePerHour: number
 }
 interface PinDisplay {
   pin: PlanetPin
@@ -133,6 +159,7 @@ interface PinDisplay {
 interface ColonyInfo {
   planet: Planet
   planetTypeId: number | null
+  charId: number; charName: string
   system: string; systemId: number
   pinDisplays: PinDisplay[]
   extractors: PlanetPin[]
@@ -140,6 +167,8 @@ interface ColonyInfo {
   extractedResources: string[]
   links: PlanetLink[]
   routes: PlanetRoute[]
+  storedValue: number          // ISK-waarde van alle pin-contents
+  production: ProductFlow[]     // eindproducten van deze kolonie (per uur)
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -178,6 +207,12 @@ function fmt(n: number): string {
   if (n >= 1_000_000) return (n/1_000_000).toFixed(1)+'M'
   if (n >= 1_000)     return (n/1_000).toFixed(1)+'K'
   return n.toLocaleString()
+}
+function isk(n: number): string {
+  if (n >= 1e9) return (n/1e9).toFixed(2)+'B'
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M'
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K'
+  return Math.round(n).toString()
 }
 
 // ─── planet image ─────────────────────────────────────────────────────────────
@@ -542,14 +577,17 @@ function RouteFlow({ colony }: { colony: ColonyInfo }) {
 
 // ─── colony card (owns live timer) ───────────────────────────────────────────
 
-function ColonyCard({ colony: c, mapOpen, onToggleMap }: {
-  colony: ColonyInfo; mapOpen: boolean; onToggleMap: () => void
+function ColonyCard({ colony: c, multiChar, mapOpen, onToggleMap }: {
+  colony: ColonyInfo; multiChar: boolean; mapOpen: boolean; onToggleMap: () => void
 }) {
   const now           = useNow(1000)
   const isExpired     = !!(c.earliestExpiry && c.earliestExpiry.getTime() < now)
   const hasExtractors = c.extractors.length > 0
   const active        = hasExtractors && !isExpired
+  const soon          = active && !!c.earliestExpiry && c.earliestExpiry.getTime() - now < SOON_MS
   const color         = PLANET_COLOR[c.planet.planet_type] ?? '#888'
+  const outputValueHr = c.production.reduce((s, p) => s + p.valuePerHour, 0)
+  const expColor      = isExpired ? '#e05555' : soon ? '#f5912e' : '#3ecf6e'
 
   const progressPct = active && c.earliestExpiry ? (() => {
     const total   = c.earliestExpiry.getTime() - new Date(c.planet.last_update).getTime()
@@ -560,8 +598,8 @@ function ColonyCard({ colony: c, mapOpen, onToggleMap }: {
   return (
     <div style={{
       background:'linear-gradient(160deg, #090e1c 0%, #060a14 100%)',
-      border:`1px solid ${isExpired?'#3a1515':active?'#0d2a1a':'#131c30'}`,
-      borderTop:`2px solid ${isExpired?'#e05555':active?'#1a5c38':'#1a2540'}`,
+      border:`1px solid ${isExpired?'#3a1515':soon?'#3a2a10':active?'#0d2a1a':'#131c30'}`,
+      borderTop:`2px solid ${isExpired?'#e05555':soon?'#f5912e':active?'#1a5c38':'#1a2540'}`,
       borderRadius:4, overflow:'hidden',
     }}>
 
@@ -578,6 +616,7 @@ function ColonyCard({ colony: c, mapOpen, onToggleMap }: {
           </div>
           <div style={{ fontSize:'0.58rem', color:'var(--text-dim)', marginTop:'0.15rem' }}>
             {c.planet.num_pins} pins · {c.extractors.length} extractors · {c.links.length} links · {c.routes.length} routes
+            {multiChar && <> · <span style={{ color:'#5b7bb5' }}>{c.charName}</span></>}
           </div>
         </div>
         <div style={{ textAlign:'right', flexShrink:0 }}>
@@ -586,12 +625,17 @@ function ColonyCard({ colony: c, mapOpen, onToggleMap }: {
               <div style={{ fontSize:'0.55rem', color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.06em' }}>
                 {isExpired ? 'Verlopen' : 'Expires in'}
               </div>
-              <div style={{ fontSize:'0.8rem', fontWeight:700, marginTop:'0.1rem', color:isExpired?'#e05555':'#3ecf6e', fontVariantNumeric:'tabular-nums' }}>
+              <div style={{ fontSize:'0.8rem', fontWeight:700, marginTop:'0.1rem', color:expColor, fontVariantNumeric:'tabular-nums' }}>
                 {c.earliestExpiry ? timeRemaining(c.earliestExpiry, now) : '—'}
               </div>
             </>
           ) : (
             <div style={{ fontSize:'0.6rem', color:'var(--text-dim)' }}>Geen extractors</div>
+          )}
+          {c.storedValue > 0 && (
+            <div style={{ fontSize:'0.6rem', color:'#f0c040', fontWeight:600, marginTop:'0.25rem', fontVariantNumeric:'tabular-nums' }}>
+              {isk(c.storedValue)} ISK
+            </div>
           )}
         </div>
       </div>
@@ -629,6 +673,31 @@ function ColonyCard({ colony: c, mapOpen, onToggleMap }: {
       {/* Route flow strip */}
       <RouteFlow colony={c}/>
 
+      {/* Productie-output (eindproducten per uur) */}
+      {c.production.length > 0 && (
+        <div style={{ padding:'0.4rem 0.875rem 0.55rem', borderTop:'1px solid #0a1422' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.3rem' }}>
+            <span style={{ fontSize:'0.55rem', color:'#3a5080', textTransform:'uppercase', letterSpacing:'0.06em' }}>Output</span>
+            {outputValueHr > 0 && (
+              <span style={{ fontSize:'0.6rem', color:'#3ecf6e', fontWeight:600 }}>{isk(outputValueHr)} ISK/u</span>
+            )}
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+            {c.production.map(p => (
+              <div key={p.typeId} style={{ display:'flex', alignItems:'center', gap:'0.35rem' }}>
+                <EveImage category="types" id={p.typeId} variation="icon" size={32} px={18}/>
+                <span style={{ fontSize:'0.62rem', color:'#c8d8f0', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {p.name ?? `Type ${p.typeId}`}
+                </span>
+                <span style={{ fontSize:'0.6rem', color:'#8899bb', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>
+                  {fmt(Math.round(p.perHour))}/u
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Map toggle */}
       <div style={{ padding:'0.3rem 0.875rem', borderTop:'1px solid #0a1422' }}>
         <button
@@ -652,12 +721,17 @@ function ColonyCard({ colony: c, mapOpen, onToggleMap }: {
 
 // ─── main page ────────────────────────────────────────────────────────────────
 
+type SortKey = 'expiry' | 'value' | 'output' | 'char' | 'system'
+type FilterKey = 'all' | 'active' | 'expired'
+
 export default function Planets() {
   const { activeTokens: tokens } = useAuth()
   const [colonies,   setColonies]   = useState<ColonyInfo[]>([])
   const [loading,    setLoading]    = useState(true)
   const [authErrors, setAuthErrors] = useState<{ charName: string; status: number }[]>([])
   const [showMap,    setShowMap]    = useState<Record<number, boolean>>({})
+  const [sort,       setSort]       = useState<SortKey>('expiry')
+  const [filter,     setFilter]     = useState<FilterKey>('all')
   usePageLoading(loading)
   const fetchId = useRef(0)
 
@@ -667,13 +741,13 @@ export default function Planets() {
     setLoading(true); setColonies([]); setAuthErrors([])
 
     async function load() {
-      const allPlanets: (Planet & { token: string; charId: number })[] = []
+      const allPlanets: (Planet & { token: string; charId: number; charName: string })[] = []
       const errs: { charName: string; status: number }[] = []
 
       await Promise.all(tokens.map(async t => {
         try {
           const list = await getPlanets(t.characterId, t.accessToken)
-          allPlanets.push(...list.map(p => ({ ...p, token: t.accessToken, charId: t.characterId })))
+          allPlanets.push(...list.map(p => ({ ...p, token: t.accessToken, charId: t.characterId, charName: t.characterName })))
         } catch (e) {
           const status = parseInt((e as Error).message.match(/:\s*(\d+)$/)?.[1] ?? '0')
           errs.push({ charName: t.characterName, status })
@@ -704,7 +778,8 @@ export default function Planets() {
         const s = await getSchematic(id)
         if (s) {
           const output = (s.pins ?? []).find(p => !p.is_input)
-          schematics.set(id, { schematic_name: s.schematic_name, cycle_time: s.cycle_time, outputTypeId: output?.type_id ?? null, outputQty: output?.quantity ?? 0, outputName: null })
+          const inputs = (s.pins ?? []).filter(p => p.is_input).map(p => p.type_id)
+          schematics.set(id, { schematic_name: s.schematic_name, cycle_time: s.cycle_time, outputTypeId: output?.type_id ?? null, outputQty: output?.quantity ?? 0, outputName: null, inputTypeIds: inputs })
           if (output?.type_id) outputTypeIds.push(output.type_id)
         }
       }))
@@ -726,6 +801,12 @@ export default function Planets() {
       const itemNames = await resolveNames([...allItemIds]).catch(() => new Map<number, string>())
       if (myId !== fetchId.current) return
 
+      // Marktprijzen voor alle content-items + schematic-outputs (Jita sell)
+      const priceIds = new Set<number>(allItemIds)
+      for (const info of schematics.values()) if (info.outputTypeId) priceIds.add(info.outputTypeId)
+      const prices = await fetchPrices([...priceIds])
+      if (myId !== fetchId.current) return
+
       const resolved: ColonyInfo[] = details.map(({ planet, detail }) => {
         const extractors = detail.pins.filter(p => p.expiry_time != null)
         const factories  = detail.pins
@@ -742,6 +823,37 @@ export default function Planets() {
             .filter((id): id is number => id != null)
             .map(id => itemNames.get(id) ?? `Type ${id}`)
         )]
+
+        // Opgeslagen ISK-waarde: alle pin-contents tegen Jita sell
+        let storedValue = 0
+        for (const pin of detail.pins) {
+          for (const c of pin.contents ?? []) storedValue += (prices.get(c.type_id) ?? 0) * c.amount
+        }
+
+        // Eindproducten: outputs die niet als input door een fabriek in dezelfde
+        // kolonie verbruikt worden (sluit tussenproducten P1→P2→… uit). Bij
+        // extract-only kolonies = de geëxtraheerde P0-grondstof.
+        const consumed = new Set<number>()
+        for (const f of factories) f.schematic?.inputTypeIds.forEach(id => consumed.add(id))
+        const perHourByType = new Map<number, number>()
+        for (const f of factories) {
+          const s = f.schematic
+          if (s?.outputTypeId && !consumed.has(s.outputTypeId) && s.cycle_time > 0)
+            perHourByType.set(s.outputTypeId, (perHourByType.get(s.outputTypeId) ?? 0) + (s.outputQty * 3600) / s.cycle_time)
+        }
+        for (const e of extractors) {
+          const pid = e.extractor_details?.product_type_id
+          const qpc = e.extractor_details?.qty_per_cycle
+          const ct  = e.extractor_details?.cycle_time
+          if (pid && !consumed.has(pid) && qpc && ct && ct > 0)
+            perHourByType.set(pid, (perHourByType.get(pid) ?? 0) + (qpc * 3600) / ct)
+        }
+        const production: ProductFlow[] = [...perHourByType.entries()]
+          .map(([typeId, perHour]) => ({
+            typeId, name: itemNames.get(typeId) ?? null,
+            perHour, valuePerHour: perHour * (prices.get(typeId) ?? 0),
+          }))
+          .sort((a, b) => b.valuePerHour - a.valuePerHour)
 
         const pinDisplays: PinDisplay[] = detail.pins.map(pin => {
           const factory = factoryByPinId.get(pin.pin_id)
@@ -769,17 +881,15 @@ export default function Planets() {
         return {
           planet,
           planetTypeId: PLANET_TYPE_ID[planet.planet_type] ?? null,
+          charId: planet.charId, charName: planet.charName,
           system: nameMap.get(planet.solar_system_id) ?? `System ${planet.solar_system_id}`,
           systemId: planet.solar_system_id,
           pinDisplays, extractors, earliestExpiry: earliest,
           extractedResources,
           links:  detail.links  ?? [],
           routes: detail.routes ?? [],
+          storedValue, production,
         }
-      }).sort((a, b) => {
-        if (!a.earliestExpiry) return 1
-        if (!b.earliestExpiry) return -1
-        return a.earliestExpiry.getTime() - b.earliestExpiry.getTime()
       })
 
       setColonies(resolved)
@@ -789,14 +899,61 @@ export default function Planets() {
     load()
   }, [tokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
 
-  const nExpired = colonies.filter(c => c.earliestExpiry && c.earliestExpiry < new Date()).length
-  const nActive  = colonies.filter(c => c.earliestExpiry && c.earliestExpiry >= new Date()).length
+  const now = useNow(1000)
+
+  // ─── aggregaten ─────────────────────────────────────────────────────────────
+  const nExpired = colonies.filter(c => c.earliestExpiry && c.earliestExpiry.getTime() <  now).length
+  const nActive  = colonies.filter(c => c.earliestExpiry && c.earliestExpiry.getTime() >= now).length
+  const totalStored = colonies.reduce((s, c) => s + c.storedValue, 0)
+  const totalOutputHr = colonies.reduce((s, c) => s + c.production.reduce((a, p) => a + p.valuePerHour, 0), 0)
+
+  // Kolonies die binnenkort leeglopen (actief + binnen drempel), oplopend
+  const soon = colonies
+    .filter(c => c.earliestExpiry && c.earliestExpiry.getTime() >= now && c.earliestExpiry.getTime() - now < SOON_MS)
+    .sort((a, b) => a.earliestExpiry!.getTime() - b.earliestExpiry!.getTime())
+
+  // ─── sorteren / filteren ────────────────────────────────────────────────────
+  const visible = useMemo(() => {
+    const filtered = colonies.filter(c => {
+      if (filter === 'active')  return c.earliestExpiry && c.earliestExpiry.getTime() >= now
+      if (filter === 'expired') return !c.earliestExpiry || c.earliestExpiry.getTime() < now
+      return true
+    })
+    const exp = (c: ColonyInfo) => c.earliestExpiry?.getTime() ?? Infinity
+    const cmp: Record<SortKey, (a: ColonyInfo, b: ColonyInfo) => number> = {
+      expiry: (a, b) => exp(a) - exp(b),
+      value:  (a, b) => b.storedValue - a.storedValue,
+      output: (a, b) => b.production.reduce((s, p) => s + p.valuePerHour, 0) - a.production.reduce((s, p) => s + p.valuePerHour, 0),
+      char:   (a, b) => a.charName.localeCompare(b.charName) || exp(a) - exp(b),
+      system: (a, b) => a.system.localeCompare(b.system) || exp(a) - exp(b),
+    }
+    return [...filtered].sort(cmp[sort])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colonies, sort, filter, Math.floor(now / 1000)])
+
+  const multiChar = new Set(colonies.map(c => c.charId)).size > 1
 
   return (
     <Layout header={
       <PageHeader
         title="Planets"
         sub={loading ? 'Laden...' : `${colonies.length} colonies · ${nExpired} verlopen · ${nActive} actief`}
+        right={!loading && colonies.length > 0 ? (
+          <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
+            <Segmented
+              value={filter} onChange={v => setFilter(v as FilterKey)}
+              options={[['all','Alle'],['active','Actief'],['expired','Verlopen']]}
+            />
+            <Segmented
+              value={sort} onChange={v => setSort(v as SortKey)}
+              options={[
+                ['expiry','Verloop'],['value','Waarde'],['output','Output'],
+                ...(multiChar ? [['char','Char'] as [string,string]] : []),
+                ['system','Systeem'],
+              ]}
+            />
+          </div>
+        ) : undefined}
       />
     }>
       {loading && (
@@ -820,17 +977,89 @@ export default function Planets() {
       )}
 
       {!loading && colonies.length > 0 && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:'0.75rem' }}>
-          {colonies.map(c => (
-            <ColonyCard
-              key={c.planet.planet_id}
-              colony={c}
-              mapOpen={showMap[c.planet.planet_id] ?? false}
-              onToggleMap={() => setShowMap(prev => ({ ...prev, [c.planet.planet_id]: !(prev[c.planet.planet_id] ?? false) }))}
-            />
-          ))}
-        </div>
+        <>
+          {/* Aggregaat-stats */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))', gap:'0.6rem', marginBottom:'0.75rem' }}>
+            <StatCard title="KOLONIES" value={String(colonies.length)}
+              sub={`${nActive} actief · ${nExpired} verlopen`}
+              accentColor={nExpired > 0 ? 'var(--red)' : 'var(--green)'} />
+            <StatCard title="OPGESLAGEN WAARDE" value={`${isk(totalStored)} ISK`}
+              sub="Jita sell · alle pins" accentColor="#f0c040"
+              valueColor={totalStored > 0 ? '#f0c040' : undefined} />
+            <StatCard title="PRODUCTIE / UUR" value={`${isk(totalOutputHr)} ISK`}
+              sub="Eindproducten, alle kolonies" accentColor="#3ecf6e" />
+            <StatCard title="VERLOOPT BINNENKORT" value={String(soon.length)}
+              sub={`Binnen ${SOON_MS / 3600000}u`}
+              accentColor={soon.length > 0 ? '#f5912e' : 'var(--border)'}
+              valueColor={soon.length > 0 ? '#f5912e' : undefined} />
+          </div>
+
+          {/* Verloop-waarschuwingen */}
+          {soon.length > 0 && (
+            <div style={{
+              marginBottom:'0.75rem', background:'rgba(245,145,46,0.07)',
+              border:'1px solid rgba(245,145,46,0.3)', borderRadius:4, overflow:'hidden',
+            }}>
+              <div style={{ padding:'0.45rem 0.875rem', borderBottom:'1px solid rgba(245,145,46,0.18)', fontSize:'0.62rem', fontWeight:700, color:'#f5912e', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+                ⚠ {soon.length} extractor{soon.length>1?'s lopen':' loopt'} binnenkort leeg
+              </div>
+              <div style={{ display:'flex', flexDirection:'column' }}>
+                {soon.map(c => (
+                  <div key={c.planet.planet_id} style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.35rem 0.875rem', fontSize:'0.7rem', borderTop:'1px solid rgba(245,145,46,0.08)' }}>
+                    <span style={{ color:PLANET_COLOR[c.planet.planet_type] ?? '#888', fontWeight:600, minWidth:64 }}>
+                      {PLANET_LABEL[c.planet.planet_type] ?? c.planet.planet_type}
+                    </span>
+                    <span style={{ color:'var(--text)', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {c.system}{multiChar && <span style={{ color:'var(--text-dim)' }}> · {c.charName}</span>}
+                    </span>
+                    <span style={{ color:'#f5912e', fontWeight:700, fontVariantNumeric:'tabular-nums', flexShrink:0 }}>
+                      {timeRemaining(c.earliestExpiry!, now)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {visible.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'2rem', color:'var(--text-dim)', fontSize:'0.78rem' }}>
+              Geen kolonies in dit filter
+            </div>
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:'0.75rem' }}>
+              {visible.map(c => (
+                <ColonyCard
+                  key={c.planet.planet_id}
+                  colony={c}
+                  multiChar={multiChar}
+                  mapOpen={showMap[c.planet.planet_id] ?? false}
+                  onToggleMap={() => setShowMap(prev => ({ ...prev, [c.planet.planet_id]: !(prev[c.planet.planet_id] ?? false) }))}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </Layout>
+  )
+}
+
+// ─── sort/filter segmented control ─────────────────────────────────────────────
+
+function Segmented({ value, onChange, options }: {
+  value: string; onChange: (v: string) => void; options: [string, string][]
+}) {
+  return (
+    <div style={{ display:'flex', border:'1px solid var(--border)', borderRadius:3, overflow:'hidden' }}>
+      {options.map(([v, label], i) => (
+        <button key={v} onClick={() => onChange(v)} style={{
+          background: value === v ? 'rgba(0,180,216,0.15)' : 'transparent',
+          color: value === v ? 'var(--blue)' : 'var(--text-dim)',
+          border:'none', borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
+          padding:'0.25rem 0.55rem', fontSize:'0.62rem', fontWeight:600, cursor:'pointer',
+          letterSpacing:'0.04em', textTransform:'uppercase',
+        }}>{label}</button>
+      ))}
+    </div>
   )
 }
