@@ -8,6 +8,7 @@ import Layout, { PageHeader } from './components/Layout'
 import { AlertsProvider } from './context/AlertsContext'
 import { LoadingProvider } from './context/LoadingContext'
 import { LayoutModeProvider, useLayoutMode } from './context/LayoutModeContext'
+import { useSiteSettings } from './hooks/useSiteSettings'
 
 const lz = <T extends React.ComponentType>(f: () => Promise<{ default: T }>) =>
   lazy(() => f().catch(() => { window.location.reload(); return new Promise<never>(() => {}) }))
@@ -80,6 +81,16 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function AdminRoute({ children }: { children: ReactNode }) {
   const { tokens } = useAuth()
   return tokens.some(t => t.characterId === ADMIN_CHAR_ID) ? <>{children}</> : <Navigate to="/" replace />
+}
+
+// Local Chat: toegankelijk voor ingelogde members zolang de admin de setting
+// 'local_chat' aan heeft staan (default aan); de admin kan altijd.
+function LocalChatRoute({ children }: { children: ReactNode }) {
+  const { tokens } = useAuth()
+  const settings = useSiteSettings()
+  if (tokens.length === 0) return <Navigate to="/" replace />
+  const isAdmin = tokens.some(t => t.characterId === ADMIN_CHAR_ID)
+  return (settings.local_chat !== false || isAdmin) ? <>{children}</> : <Navigate to="/" replace />
 }
 
 function PageFallback() {
@@ -158,12 +169,12 @@ function AppRoutes() {
       <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
       <Route path="/notes"      element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
-      <Route path="/local"      element={<AdminRoute><LocalChat /></AdminRoute>} />
+      <Route path="/local"      element={<LocalChatRoute><LocalChat /></LocalChatRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
       <Route path="/ratting"    element={<ProtectedRoute><Ratting /></ProtectedRoute>} />
       <Route path="/hauling"    element={<ProtectedRoute><Hauling /></ProtectedRoute>} />
       <Route path="/assets"     element={<ProtectedRoute><Assets /></ProtectedRoute>} />
-      <Route path="/admin"      element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+      <Route path="/admin"      element={<AdminRoute><Admin /></AdminRoute>} />
       <Route path="/login"      element={<Login />} />
       <Route path="/debug/unresolved" element={<ProtectedRoute><DebugUnresolved /></ProtectedRoute>} />
       <Route path="*"          element={<Navigate to="/" replace />} />
