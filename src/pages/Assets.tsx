@@ -60,6 +60,11 @@ function fmtFlag(f: string) {
   return FLAG_LABEL[f] ?? f.replace(/([A-Z])/g, ' $1').trim()
 }
 
+// Modules die in een schip gefit zitten (Hi/Med/Lo/Rig slots) — niet tonen in de
+// asset-lijst; het schip zelf blijft wel staan.
+const FITTED_SLOT_RE = /^(Hi|Med|Lo|Rig|SubSystem)Slot\d+$/
+const isFittedSlot = (flag: string) => FITTED_SLOT_RE.test(flag)
+
 export default function Assets() {
   const { tokens: allTokens, activeTokens } = useAuth()
   const [selectedChar, setSelectedChar] = useState<number | 'all'>('all')
@@ -191,8 +196,8 @@ export default function Assets() {
         ...[...structureInfoMap.entries()].map(([id, info]) => [id, info.name] as [number, string]),
       ])
 
-      // build resolved items
-      const resolved: ResolvedAsset[] = allRaw.map(a => {
+      // build resolved items (gefitte modules in slots niet tonen; boom is al opgebouwd)
+      const resolved: ResolvedAsset[] = allRaw.filter(a => !isFittedSlot(a.location_flag)).map(a => {
         const root = rootLocation(a)
         return {
           typeId: a.type_id,
