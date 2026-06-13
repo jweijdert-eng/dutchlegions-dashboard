@@ -316,11 +316,19 @@ export default function Assets() {
     return m
   }, [filtered])
 
-  function secColor(sec: number | undefined) {
-    if (sec === undefined) return 'var(--text-dim)'
-    if (sec >= 0.5) return '#3ecf6e'
-    if (sec >= 0.1) return '#f97316'
-    return '#e05555'
+  // EVE-security-kleurgradiënt, afgerond per 0.1 (zelfde tinten als in-game)
+  function secColor(shown: number) {
+    if (shown >= 1.0) return '#2FEFEF' // 1.0  cyaan
+    if (shown >= 0.9) return '#48F0C0' // 0.9
+    if (shown >= 0.8) return '#00EF47' // 0.8
+    if (shown >= 0.7) return '#00F000' // 0.7
+    if (shown >= 0.6) return '#8FEF2F' // 0.6
+    if (shown >= 0.5) return '#EFEF00' // 0.5  geel
+    if (shown >= 0.4) return '#D77700' // 0.4
+    if (shown >= 0.3) return '#F06000' // 0.3
+    if (shown >= 0.2) return '#F04800' // 0.2
+    if (shown >= 0.1) return '#D73000' // 0.1
+    return '#F00000'                   // ≤ 0.0  null-sec / rood
   }
 
   function secLabel(locationId: number) {
@@ -331,7 +339,7 @@ export default function Assets() {
     // nullsec (≤ 0.0) toont de echte waarde, incl. negatief.
     const rounded = Math.round(sec * 10) / 10
     const shown = sec > 0 && rounded <= 0 ? 0.1 : rounded
-    return { label: shown.toFixed(1), color: secColor(sec) }
+    return { label: shown.toFixed(1), color: secColor(shown) }
   }
 
   function toggle(loc: string) {
