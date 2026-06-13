@@ -31,18 +31,20 @@ interface SiteMember {
   blocked: number
 }
 
-type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance'
+type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance' | 'local_chat'
 
 const SETTING_LABELS: Record<SettingKey, string> = {
   maintenance_mode: 'Onderhoudsmodus',
   require_corp:     'Alleen Dutch Legions corp',
   require_alliance: 'Alleen Insidious alliance',
+  local_chat:       'Local Chat zichtbaar voor members',
 }
 
 const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
   maintenance_mode: false,
   require_corp:     false,
   require_alliance: false,
+  local_chat:       true,
 }
 
 export default function Admin() {

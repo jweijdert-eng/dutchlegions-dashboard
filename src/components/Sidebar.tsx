@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useLayoutMode } from '../context/LayoutModeContext'
 
 import { useAlerts } from '../context/useAlerts'
+import { useSiteSettings } from '../hooks/useSiteSettings'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
 import SolarSystem from './SolarSystem'
 import EveImage from './EveImage'
@@ -356,6 +357,9 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const { tokens, removeToken, selectedCharId, setSelectedCharId, mainCharId, setMainCharId } = useAuth()
   const { previewMode } = useLayoutMode()
   const alerts = useAlerts()
+  const settings = useSiteSettings()
+  const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
+  const isAdminChar = tokens.some(t => t.characterId === 1831618559)
   const [nav, setNav] = useState<NavItem[]>(loadNav)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -554,32 +558,46 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           </SortableContext>
         </DndContext>
 
-        {/* Admin + Local Chat — alleen zichtbaar voor character 1831618559, niet in preview */}
-        {tokens.some(t => t.characterId === 1831618559) && !previewMode && (
+        {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
+        {localChatOn && (
+          <NavLink
+            to="/local"
+            title={collapsed ? 'Local Chat' : undefined}
+            style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: '0.65rem',
+              padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              textDecoration: 'none',
+              background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+              borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+              color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+            })}
+          >
+            <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⌁</span>
+            {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Local Chat</span>}
+          </NavLink>
+        )}
+
+        {/* Admin — alleen het admin-character, niet in preview */}
+        {isAdminChar && !previewMode && (
           <>
             <div style={{ height: 1, background: 'var(--border)', margin: collapsed ? '0.4rem 0.5rem' : '0.4rem 1rem' }} />
-            {([
-              { to: '/local', icon: '⌁', label: 'Local Chat' },
-              { to: '/admin', icon: '⚑', label: 'Admin' },
-            ] as const).map(({ to, icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                title={collapsed ? label : undefined}
-                style={({ isActive }) => ({
-                  display: 'flex', alignItems: 'center', gap: '0.65rem',
-                  padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  textDecoration: 'none',
-                  background: isActive ? 'rgba(224,85,85,0.07)' : 'transparent',
-                  borderLeft: `2px solid ${isActive ? 'var(--red)' : 'transparent'}`,
-                  color: isActive ? 'var(--red)' : 'rgba(224,85,85,0.6)',
-                })}
-              >
-                <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
-                {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1 }}>{label}</span>}
-              </NavLink>
-            ))}
+            <NavLink
+              to="/admin"
+              title={collapsed ? 'Admin' : undefined}
+              style={({ isActive }) => ({
+                display: 'flex', alignItems: 'center', gap: '0.65rem',
+                padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                textDecoration: 'none',
+                background: isActive ? 'rgba(224,85,85,0.07)' : 'transparent',
+                borderLeft: `2px solid ${isActive ? 'var(--red)' : 'transparent'}`,
+                color: isActive ? 'var(--red)' : 'rgba(224,85,85,0.6)',
+              })}
+            >
+              <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⚑</span>
+              {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1 }}>Admin</span>}
+            </NavLink>
           </>
         )}
       </div>
