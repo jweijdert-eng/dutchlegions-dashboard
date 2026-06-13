@@ -68,7 +68,7 @@ function loadNav(): NavItem[] {
   } catch { return DEFAULT_NAV }
 }
 
-function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null }) {
+function SortableNavItem({ item, badgeCount, collapsed }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.path })
   const { editMode } = useLayoutMode()
   const count = badgeCount(item.badge)
@@ -77,16 +77,19 @@ function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: 
       <NavLink
         to={item.path}
         end={item.path === '/'}
+        title={collapsed ? item.label : undefined}
         style={({ isActive }) => ({
           display: 'flex', alignItems: 'center', gap: '0.65rem',
-          padding: '0.55rem 1rem', textDecoration: 'none',
+          padding: collapsed ? '0.6rem 0' : '0.55rem 1rem',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          position: 'relative', textDecoration: 'none',
           background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
           borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
           color: isActive ? 'var(--blue)' : 'var(--text-dim)',
           userSelect: 'none',
         })}
       >
-        {editMode && (
+        {editMode && !collapsed && (
           <span
             {...attributes} {...listeners}
             style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
@@ -94,8 +97,11 @@ function SortableNavItem({ item, badgeCount }: { item: NavItem; badgeCount: (b: 
           >⠿</span>
         )}
         <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-        <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>
-        <Badge count={count} />
+        {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>}
+        {!collapsed && <Badge count={count} />}
+        {collapsed && (count ?? 0) > 0 && (
+          <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />
+        )}
       </NavLink>
     </div>
   )
@@ -353,6 +359,13 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const [nav, setNav] = useState<NavItem[]>(loadNav)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
+  // Inklapbaar op desktop (op mobiel is het altijd een volledige drawer)
+  const [collapsedRaw, setCollapsedRaw] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
+  const collapsed = !mobile && collapsedRaw
+  function toggleCollapsed() {
+    setCollapsedRaw(c => { localStorage.setItem('sidebar_collapsed', c ? '0' : '1'); return !c })
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -436,59 +449,63 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
 
   return (
     <nav style={{
-      width: mobile ? 230 : 200,
+      width: mobile ? 230 : collapsed ? 58 : 200,
       background: 'var(--surface)',
       borderRight: '1px solid var(--border)',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
       height: '100vh',
+      transition: mobile ? 'transform 0.25s ease' : 'width 0.18s ease',
       ...(mobile
         ? {
             position: 'fixed' as const, top: 0, left: 0, bottom: 0, zIndex: 200,
             transform: open ? 'translateX(0)' : 'translateX(-100%)',
-            transition: 'transform 0.25s ease',
             boxShadow: open ? '4px 0 24px rgba(0,0,0,0.5)' : 'none',
           }
         : { position: 'sticky' as const, top: 0 }),
     }}>
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: mobile ? '0.7rem 1rem' : '1.1rem 1rem', borderBottom: '1px solid var(--border)' }}>
-        <NavLink to="/" end style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          {selectedCorpId ? (
-            <EveImage
-              category="corporations"
-              id={selectedCorpId}
-              variation="logo"
-              size={32}
-              px={26}
-              style={{ borderRadius: 4, border: '1px solid rgba(0,180,216,0.2)', background: 'var(--surface)', width: 32, height: 32, flexShrink: 0 }}
-            />
-          ) : (
-            <span style={{ color: 'var(--blue)', fontSize: 18 }}>⬡</span>
-          )}
-          <div>
-            <div style={{ color: 'var(--blue)', fontWeight: 700, fontSize: '0.78rem', letterSpacing: '0.18em' }}>EVE</div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '0.6rem', letterSpacing: '0.12em' }}>DASHBOARD</div>
-          </div>
-        </NavLink>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', padding: mobile ? '0.7rem 1rem' : collapsed ? '1.1rem 0' : '1.1rem 1rem', borderBottom: '1px solid var(--border)' }}>
+        {!collapsed && (
+          <NavLink to="/" end style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            {selectedCorpId ? (
+              <EveImage
+                category="corporations"
+                id={selectedCorpId}
+                variation="logo"
+                size={32}
+                px={26}
+                style={{ borderRadius: 4, border: '1px solid rgba(0,180,216,0.2)', background: 'var(--surface)', width: 32, height: 32, flexShrink: 0 }}
+              />
+            ) : (
+              <span style={{ color: 'var(--blue)', fontSize: 18 }}>⬡</span>
+            )}
+            <div>
+              <div style={{ color: 'var(--blue)', fontWeight: 700, fontSize: '0.78rem', letterSpacing: '0.18em' }}>EVE</div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.6rem', letterSpacing: '0.12em' }}>DASHBOARD</div>
+            </div>
+          </NavLink>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <button
-            onClick={() => { clearEsiCache(); window.location.reload() }}
-            title="ESI data herladen"
-            style={{
-              background: 'rgba(0,180,216,0.07)',
-              border: '1px solid rgba(0,180,216,0.2)',
-              borderRadius: 3,
-              color: 'var(--blue)',
-              cursor: 'pointer',
-              padding: '0.25rem 0.4rem',
-              lineHeight: 1,
-              fontSize: '0.85rem',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.18)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.07)' }}
-          >↻</button>
+          {!collapsed && (
+            <button
+              onClick={() => { clearEsiCache(); window.location.reload() }}
+              title="ESI data herladen"
+              style={{
+                background: 'rgba(0,180,216,0.07)',
+                border: '1px solid rgba(0,180,216,0.2)',
+                borderRadius: 3,
+                color: 'var(--blue)',
+                cursor: 'pointer',
+                padding: '0.25rem 0.4rem',
+                lineHeight: 1,
+                fontSize: '0.85rem',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.18)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.07)' }}
+            >↻</button>
+          )}
           {mobile && (
             <button
               onClick={onClose}
@@ -505,15 +522,34 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
               }}
             >✕</button>
           )}
+          {!mobile && (
+            <button
+              onClick={toggleCollapsed}
+              title={collapsed ? 'Menu uitklappen' : 'Menu inklappen'}
+              aria-label={collapsed ? 'Menu uitklappen' : 'Menu inklappen'}
+              style={{
+                background: 'rgba(0,180,216,0.07)',
+                border: '1px solid rgba(0,180,216,0.2)',
+                borderRadius: 3,
+                color: 'var(--blue)',
+                cursor: 'pointer',
+                padding: '0.25rem 0.45rem',
+                lineHeight: 1,
+                fontSize: '0.8rem',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.18)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.07)' }}
+            >{collapsed ? '»' : '«'}</button>
+          )}
         </div>
       </div>
 
       {/* Nav */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.4rem 0' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.4rem 0' }}>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={nav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {nav.map(item => (
-              <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} />
+              <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed} />
             ))}
           </SortableContext>
         </DndContext>
@@ -521,7 +557,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
         {/* Admin + Local Chat — alleen zichtbaar voor character 1831618559, niet in preview */}
         {tokens.some(t => t.characterId === 1831618559) && !previewMode && (
           <>
-            <div style={{ height: 1, background: 'var(--border)', margin: '0.4rem 1rem' }} />
+            <div style={{ height: 1, background: 'var(--border)', margin: collapsed ? '0.4rem 0.5rem' : '0.4rem 1rem' }} />
             {([
               { to: '/local', icon: '⌁', label: 'Local Chat' },
               { to: '/admin', icon: '⚑', label: 'Admin' },
@@ -529,16 +565,19 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
               <NavLink
                 key={to}
                 to={to}
+                title={collapsed ? label : undefined}
                 style={({ isActive }) => ({
                   display: 'flex', alignItems: 'center', gap: '0.65rem',
-                  padding: '0.55rem 1rem', textDecoration: 'none',
+                  padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  textDecoration: 'none',
                   background: isActive ? 'rgba(224,85,85,0.07)' : 'transparent',
                   borderLeft: `2px solid ${isActive ? 'var(--red)' : 'transparent'}`,
                   color: isActive ? 'var(--red)' : 'rgba(224,85,85,0.6)',
                 })}
               >
                 <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1 }}>{label}</span>
+                {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1 }}>{label}</span>}
               </NavLink>
             ))}
           </>
@@ -546,7 +585,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
       </div>
 
       {/* Externe links */}
-      <div style={{ borderTop: '1px solid var(--border)', padding: '0.5rem 0.5rem 0.35rem' }}>
+      <div style={{ borderTop: '1px solid var(--border)', padding: collapsed ? '0.5rem 0.4rem 0.35rem' : '0.5rem 0.5rem 0.35rem' }}>
         {[
           { label: 'Insidious Auth',         url: 'https://auth.insidiousevil.org/',     color: '#e05555' },
           { label: 'Dutch Legions',           url: 'https://dutchlegions.nl/dashboard/', color: '#f0a030' },
@@ -557,8 +596,9 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
             href={url}
             target="_blank"
             rel="noreferrer"
+            title={collapsed ? label : undefined}
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: '0.4rem',
               padding: '0.3rem 0.55rem', marginBottom: '0.25rem',
               textDecoration: 'none', borderRadius: 2,
               background: `${color}0d`,
@@ -580,23 +620,37 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
             }}
           >
             <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>↗</span>
-            {label}
+            {!collapsed && label}
           </a>
         ))}
       </div>
 
 
-      {/* Account dropdown */}
-      <AccountDropdown
-        tokens={tokens}
-        charData={charData}
-        selectedCharId={selectedCharId}
-        setSelectedCharId={setSelectedCharId}
-        mainCharId={mainCharId}
-        setMainCharId={setMainCharId}
-        removeToken={removeToken}
-        alerts={alerts}
-      />
+      {/* Account dropdown — bij ingeklapt: portret klikken klapt eerst uit */}
+      {collapsed ? (
+        <div
+          onClick={toggleCollapsed}
+          title="Account — klik om uit te klappen"
+          style={{ borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center', padding: '0.55rem 0', cursor: 'pointer' }}
+        >
+          {selectedCharId ? (
+            <EveImage category="characters" id={selectedCharId} variation="portrait" size={32} px={28} round style={{ border: '1px solid var(--blue)', display: 'block' }} />
+          ) : (
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,180,216,0.15)', border: '1px solid rgba(0,180,216,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', color: 'var(--blue)' }}>⊞</div>
+          )}
+        </div>
+      ) : (
+        <AccountDropdown
+          tokens={tokens}
+          charData={charData}
+          selectedCharId={selectedCharId}
+          setSelectedCharId={setSelectedCharId}
+          mainCharId={mainCharId}
+          setMainCharId={setMainCharId}
+          removeToken={removeToken}
+          alerts={alerts}
+        />
+      )}
     </nav>
   )
 }
