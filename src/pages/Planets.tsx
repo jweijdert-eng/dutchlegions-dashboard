@@ -46,73 +46,6 @@ function getPinStyle(pin: PlanetPin): { color: string; label: string } {
   return                               { color: '#00d4e8', label: 'Storage' }
 }
 
-// ─── SVG building icons ───────────────────────────────────────────────────────
-
-function hexPts(r: number) {
-  return Array.from({ length: 6 }, (_, i) => {
-    const a = (i * 60 - 90) * Math.PI / 180
-    return `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`
-  }).join(' ')
-}
-function gearPts(teeth: number, ro: number, ri: number) {
-  return Array.from({ length: teeth * 2 }, (_, i) => {
-    const a = (i * Math.PI / teeth) - Math.PI / 2
-    const r = i % 2 === 0 ? ro : ri
-    return `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`
-  }).join(' ')
-}
-
-function BuildingIconSVG({ pin, size, c }: { pin: PlanetPin; size: number; c: string }) {
-  const vb = '-14 -14 28 28'
-  if (CMD_CENTER_IDS.has(pin.type_id)) return (
-    <svg width={size} height={size} viewBox={vb}>
-      <circle r="12" fill="none" stroke={c} strokeWidth="1.8" opacity="0.9"/>
-      <circle r="7"  fill="none" stroke={c} strokeWidth="1.2" opacity="0.6"/>
-      {([[0,-12],[12,0],[0,12],[-12,0]] as [number,number][]).map(([x,y],i) =>
-        <circle key={i} cx={x} cy={y} r="2" fill={c}/>
-      )}
-      <circle r="2.5" fill={c} opacity="0.9"/>
-    </svg>
-  )
-  if (pin.expiry_time != null) {
-    const verts = Array.from({length:6},(_,i)=>{
-      const a=(i*60-90)*Math.PI/180; return [12*Math.cos(a),12*Math.sin(a)] as [number,number]
-    })
-    return (
-      <svg width={size} height={size} viewBox={vb}>
-        <polygon points={hexPts(12)}  fill="none" stroke={c} strokeWidth="2"   opacity="0.95"/>
-        <polygon points={hexPts(7.5)} fill="none" stroke={c} strokeWidth="1.2" opacity="0.55"/>
-        {verts.map(([x,y],i) => <circle key={i} cx={x} cy={y} r="1.8" fill={c}/>)}
-        <circle r="2.2" fill={c} opacity="0.8"/>
-      </svg>
-    )
-  }
-  if (pin.schematic_id != null) {
-    const teeth = pin.type_id === 2484 ? 8 : pin.type_id === 2480 ? 7 : 6
-    return (
-      <svg width={size} height={size} viewBox={vb}>
-        <polygon points={gearPts(teeth,12.5,8)} fill="none" stroke={c} strokeWidth="1.8" opacity="0.95"/>
-        <circle r="5" fill="none" stroke={c} strokeWidth="1.3" opacity="0.85"/>
-        <circle r="2" fill={c} opacity="0.85"/>
-      </svg>
-    )
-  }
-  if (pin.type_id === 2542) return (
-    <svg width={size} height={size} viewBox={vb}>
-      <circle r="12" fill="none" stroke={c} strokeWidth="1.5" opacity="0.55"/>
-      <polygon points="0,-11 6,-2 3,-2 3,8 -3,8 -3,-2 -6,-2" fill={c} opacity="0.9"/>
-    </svg>
-  )
-  return (
-    <svg width={size} height={size} viewBox={vb}>
-      <circle r="12" fill="none" stroke={c} strokeWidth="1.5" opacity="0.55"/>
-      <polygon points="0,-9 7,-5 0,-1 -7,-5"  fill="none" stroke={c} strokeWidth="1.4"/>
-      <polygon points="-7,-5 -7,5 0,9 0,-1"   fill="none" stroke={c} strokeWidth="1.4"/>
-      <polygon points="0,-1 0,9 7,5 7,-5"     fill="none" stroke={c} strokeWidth="1.4"/>
-    </svg>
-  )
-}
-
 // ─── interfaces ───────────────────────────────────────────────────────────────
 
 interface SchematicInfo {
@@ -318,9 +251,9 @@ function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
             transform={`rotate(-90 ${S/2} ${S/2})`}
             opacity={active ? 0.95 : 0.55}/>
         </svg>
-        {/* glyph gecentreerd */}
+        {/* echte EVE type-icon gecentreerd */}
         <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <BuildingIconSVG pin={info.pin} size={22} c={color}/>
+          <EveImage category="types" id={info.pin.type_id} variation="icon" size={64} px={30} round style={{ background:'transparent' }}/>
         </div>
         {/* product-badge rechtsonder */}
         {info.productTypeId && (

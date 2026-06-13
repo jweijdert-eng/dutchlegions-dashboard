@@ -23,7 +23,6 @@ await ctx.route('**esi.evetech.net/**', route => {
   if (p.includes('/universe/names/')) { const ids=JSON.parse(route.request().postData()||'[]'); return route.fulfill(J(ids.map(id=>({id,name:`Name ${id}`,category:'inventory_type'})))) }
   return route.fulfill(J([]))
 })
-ctx.route('**images.evetech.net/**', r => r.fulfill({ status:404, headers:{'access-control-allow-origin':'*'}, body:'' }))
 const page = await ctx.newPage()
 page.on('pageerror', e => console.log('PAGE ERROR:', e.message))
 await page.goto(`${APP}/planets`, { waitUntil:'networkidle' }).catch(()=>{})
