@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, getSystemInfo, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
+import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, getSystemSecurity, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -232,8 +232,8 @@ export default function Assets() {
       const uniqueSystems = [...new Set(Object.values(locationsToSystems))].filter(Boolean)
       const secEntries = await Promise.all(
         uniqueSystems.map(async sysId => {
-          const info = await getSystemInfo(sysId).catch(() => null)
-          return [sysId, info?.security_status ?? null] as const
+          const sec = await getSystemSecurity(sysId).catch(() => null)
+          return [sysId, sec] as const
         })
       )
       const secMap: Record<number, number> = {}

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-core'
 const APP = `http://localhost:${process.env.PORT ?? 8081}`
-const N = 25
+const N = Number(process.env.N ?? 25)
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 1300, height: 1200 } })
 await ctx.addInitScript(() => localStorage.setItem('eve_tokens', JSON.stringify([{ accessToken: 'f', refreshToken: 'f', expiresAt: Date.now()+7200000, characterId: 90000001, characterName: 'Desk Tester' }])))
@@ -32,7 +32,7 @@ await ctx.route('**esi.evetech.net/**', route => {
 const page = await ctx.newPage()
 page.on('pageerror', e => console.log('PAGE ERROR:', e.message))
 await page.goto(`${APP}/assets`, { waitUntil: 'networkidle' }).catch(()=>{})
-await page.waitForTimeout(6000)
+await page.waitForTimeout(Number(process.env.WAIT ?? 6000))
 const body = await page.locator('body').innerText()
 console.log(`alle ${N} locaties geladen:`, body.includes(`${N} locaties`))
 console.log('GEEN "Onbekende" locaties (alles resolved):', !body.includes('Onbekende'))

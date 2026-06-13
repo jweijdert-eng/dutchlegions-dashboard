@@ -775,6 +775,18 @@ export async function getSystemInfo(id: number): Promise<SystemInfo | null> {
   } catch { return null }
 }
 
+// Lichtgewicht: alléén de security_status (1 call), zonder de extra constellation/
+// region-calls van getSystemInfo. Voor lijsten met veel systemen (bv. Assets) scheelt
+// dat ~3× zoveel ESI-verkeer en voorkomt het dat de resolutie "blijft laden".
+export async function getSystemSecurity(id: number): Promise<number | null> {
+  const cached = _sysCache.get(id)
+  if (cached) return cached.security_status
+  try {
+    const sys = await esiGet<{ security_status: number }>(`/universe/systems/${id}/`)
+    return sys.security_status
+  } catch { return null }
+}
+
 export const getRoute = (originSystemId: number, destinationSystemId: number, flag = 'shortest') =>
   esiGet<number[]>(`/route/${originSystemId}/${destinationSystemId}/?flag=${flag}`)
 
