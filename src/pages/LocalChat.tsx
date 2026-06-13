@@ -1,22 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
 import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
-
-interface ChatMsg {
-  type: 'message'
-  time: string
-  sender: string
-  message: string
-}
-
-interface StatusMsg {
-  type: 'status'
-  file: string | null
-}
-
-type WsMsg = ChatMsg | StatusMsg
+import { useLocalChat } from '../hooks/useLocalChat'
 
 const TD: React.CSSProperties = { padding: '0.28rem 0.6rem', verticalAlign: 'top' }
 
@@ -53,12 +40,10 @@ interface ContextMenu { x: number; y: number; name: string }
 
 export default function LocalChat() {
   const { tokens, mainCharId } = useAuth()
-  const ownNames    = tokens.map(t => t.characterName)
+  const ownNames    = useMemo(() => tokens.map(t => t.characterName), [tokens])
   const activeToken = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
 
-  const [messages,     setMessages]     = useState<ChatMsg[]>([])
-  const [connStatus,   setConnStatus]   = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
-  const [file,         setFile]         = useState<string | null>(null)
+  const { messages, status, fileName: file, connect, clear } = useLocalChat()
   const [search,       setSearch]       = useState('')
   const [onlyMentions, setOnlyMentions] = useState(false)
   const [manuals,      setManuals]      = useState<Record<string, Standing>>(getStandings)
@@ -66,49 +51,46 @@ export default function LocalChat() {
   const [filter,       setFilter]       = useState<EsiStanding | null>(null)
 
   const bottomRef    = useRef<HTMLDivElement>(null)
-  const wsRef        = useRef<WebSocket | null>(null)
   const userScrolled = useRef(false)
   const listRef      = useRef<HTMLDivElement>(null)
-  const seenSenders  = useRef<Map<string, number>>(new Map())
   const notifiedRef  = useRef(false)
+  const lastSigRef   = useRef<string | null>(null)
 
   const getEsiStanding = useEsiStandings(activeToken)
 
-  useEffect(() => {
-    let alive = true
-    function connect() {
-      if (!alive) return
-      setConnStatus('connecting')
-      const ws = new WebSocket('ws://localhost:8765')
-      wsRef.current = ws
-      ws.onopen  = () => setConnStatus('connected')
-      ws.onclose = () => { setConnStatus('disconnected'); if (alive) setTimeout(connect, 3000) }
-      ws.onerror = () => ws.close()
-      ws.onmessage = e => {
-        const msg = JSON.parse(e.data as string) as WsMsg
-        if (msg.type === 'status') {
-          setFile(msg.file)
-        } else {
-          seenSenders.current.set(msg.sender, (seenSenders.current.get(msg.sender) ?? 0) + 1)
-          const isMention = ownNames.some(n =>
-            msg.message.toLowerCase().includes(n.toLowerCase()) ||
-            msg.sender.toLowerCase() === n.toLowerCase()
-          )
-          if (isMention && Notification.permission === 'granted') {
-            new Notification(`Local: ${msg.sender}`, { body: msg.message, icon: '/favicon.ico' })
-          }
-          setMessages(prev => [...prev.slice(-999), msg])
-        }
-      }
-    }
+  // Aantal berichten per speler — afgeleid van de huidige berichtenlijst
+  const senderCounts = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const msg of messages) m.set(msg.sender, (m.get(msg.sender) ?? 0) + 1)
+    return m
+  }, [messages])
 
+  // Vraag éénmalig om notificatie-toestemming
+  useEffect(() => {
     if (Notification.permission === 'default' && !notifiedRef.current) {
       notifiedRef.current = true
       Notification.requestPermission()
     }
-    connect()
-    return () => { alive = false; wsRef.current?.close() }
   }, [])
+
+  // Desktop-notificatie bij een nieuwe mention (alleen voor écht nieuwe berichten,
+  // niet voor de history die al in het bestand stond bij openen)
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (!last) return
+    const sig = `${last.time}|${last.sender}|${last.message}`
+    if (lastSigRef.current === sig) return
+    const wasInitial = lastSigRef.current === null
+    lastSigRef.current = sig
+    if (wasInitial) return
+    const isMention = ownNames.some(n =>
+      last.message.toLowerCase().includes(n.toLowerCase()) ||
+      last.sender.toLowerCase() === n.toLowerCase()
+    )
+    if (isMention && Notification.permission === 'granted') {
+      new Notification(`Local: ${last.sender}`, { body: last.message, icon: '/favicon.ico' })
+    }
+  }, [messages, ownNames])
 
 useEffect(() => {
     if (!userScrolled.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -168,9 +150,14 @@ useEffect(() => {
     )
   }
 
-  const statusColor = connStatus === 'connected' ? 'var(--green)' : connStatus === 'connecting' ? 'var(--gold)' : 'var(--red)'
-  const statusLabel = connStatus === 'connected' ? '● Verbonden' : connStatus === 'connecting' ? '● Verbinden...' : '● Verbroken'
-  const uniqueSenders = seenSenders.current.size
+  const statusColor = status === 'watching' ? 'var(--green)' : status === 'no-file' ? 'var(--gold)' : 'var(--red)'
+  const statusLabel =
+    status === 'watching'         ? '● Live'
+    : status === 'no-file'        ? '● Geen logbestand'
+    : status === 'unsupported'    ? '● Niet ondersteund'
+    : status === 'needs-permission' ? '● Toegang nodig'
+    : '● Niet verbonden'
+  const uniqueSenders = senderCounts.size
 
   return (
     <>
@@ -185,7 +172,7 @@ useEffect(() => {
               )}
               {messages.length > 0 && (
                 <button
-                  onClick={() => { setMessages([]); seenSenders.current.clear(); userScrolled.current = false }}
+                  onClick={() => { clear(); userScrolled.current = false }}
                   style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)' }}
                 >Wissen</button>
               )}
@@ -194,12 +181,32 @@ useEffect(() => {
           }
         />
       }>
-        {connStatus === 'disconnected' && (
+        {status === 'unsupported' && (
           <div style={{ background: 'rgba(224,85,85,0.08)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--red)', lineHeight: 1.6 }}>
-            Geen verbinding. Start de lokale server:<br />
-            <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.15rem 0.4rem', borderRadius: 2, fontSize: '0.72rem' }}>
-              localserver/start.bat
-            </code>
+            Je browser ondersteunt het lezen van lokale bestanden niet. Gebruik <strong>Chrome</strong> of <strong>Edge</strong> om Local chat live te volgen.
+          </div>
+        )}
+
+        {(status === 'idle' || status === 'needs-permission') && (
+          <div style={{ background: 'rgba(0,180,216,0.06)', border: '1px solid rgba(0,180,216,0.3)', borderRadius: 3, padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--text)', lineHeight: 1.6 }}>
+            <div style={{ marginBottom: '0.55rem' }}>
+              {status === 'needs-permission'
+                ? 'Geef opnieuw toegang tot je EVE Chatlogs-map om Local live te volgen.'
+                : 'Kies éénmalig je EVE Chatlogs-map. Daarna wordt de map onthouden en gaat het automatisch — geen server of installatie nodig.'}
+            </div>
+            <button
+              onClick={() => { connect().catch(() => {}) }}
+              style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', color: 'var(--blue)' }}
+            >{status === 'needs-permission' ? 'Toegang opnieuw geven' : 'Kies Chatlogs-map'}</button>
+            <div style={{ marginTop: '0.55rem', fontSize: '0.65rem', color: 'var(--text-dim)' }}>
+              Locatie: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs</code>
+            </div>
+          </div>
+        )}
+
+        {status === 'no-file' && (
+          <div style={{ background: 'rgba(240,192,64,0.08)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--gold)', lineHeight: 1.6 }}>
+            Geen <code>Local_*.txt</code> in de gekozen map gevonden. Zorg dat in EVE het loggen van chat aanstaat en dat je het Local-kanaal open hebt gehad.
           </div>
         )}
 
@@ -253,9 +260,11 @@ useEffect(() => {
         >
           {displayed.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem', padding: '3rem' }}>
-              {connStatus === 'connected'
+              {status === 'watching'
                 ? (search || onlyMentions || filter ? 'Geen resultaten' : 'Wachtend op berichten in Local...')
-                : 'Geen verbinding'}
+                : status === 'no-file' ? 'Geen logbestand in de gekozen map'
+                : status === 'unsupported' ? 'Niet ondersteund in deze browser'
+                : 'Nog geen Chatlogs-map gekozen'}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -263,7 +272,7 @@ useEffect(() => {
                 {displayed.map((m, i) => {
                   const esi      = getEsiStanding(m.sender)
                   const standing = effectiveStanding(m.sender, ownNames, esi, manuals)
-                  const count    = seenSenders.current.get(m.sender) ?? 1
+                  const count    = senderCounts.get(m.sender) ?? 1
                   const isMention = standing !== 'own' && ownNames.some(n => m.message.toLowerCase().includes(n.toLowerCase()))
                   const bg       = rowBg(standing, isMention, i % 2 === 1)
                   const color    = standingColor(standing, hashColor(m.sender))

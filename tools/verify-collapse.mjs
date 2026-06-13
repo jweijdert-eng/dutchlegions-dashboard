@@ -2,7 +2,7 @@
 // icoontjes blijven, voorkeur blijft bewaard (localStorage), uitklappen herstelt.
 import { chromium } from 'playwright-core'
 
-const APP = 'http://localhost:8081'
+const APP = `http://localhost:${process.env.PORT ?? 8081}`
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } })
 await ctx.addInitScript(() => localStorage.setItem('eve_tokens', JSON.stringify([{ accessToken: 'f', refreshToken: 'f', expiresAt: Date.now() + 7200000, characterId: 90000001, characterName: 'Desk Tester' }])))
