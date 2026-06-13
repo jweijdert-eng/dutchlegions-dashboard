@@ -7,10 +7,36 @@ export function clearEsiCache() { _cache.clear() }
 
 const _sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// Gelijktijdigheidslimiet: ESI error-limit (420) slaat toe bij een burst van
+// honderden requests (bv. veel asset-locaties tegelijk). Door max N tegelijk te
+// laten lopen blijven we onder de limiet i.p.v. een storm aan retries te triggeren.
+const _MAX_CONCURRENT = 16
+let _active = 0
+const _waiters: Array<() => void> = []
+async function _acquire(): Promise<void> {
+  if (_active < _MAX_CONCURRENT) { _active++; return }
+  await new Promise<void>(resolve => _waiters.push(resolve))
+  // Slot is direct overgedragen door _release — _active is al verrekend.
+}
+function _release(): void {
+  const next = _waiters.shift()
+  if (next) next()      // geef het slot door zonder de teller te wijzigen
+  else _active--        // niemand wacht → slot vrijgeven
+}
+
 // Fetch met retry/backoff op transiente ESI-fouten (420 error-limited, 5xx, netwerk).
 // Andere 4xx (403/404/422) worden direct teruggegeven — dat zijn echte fouten, geen
 // rate-limiting. Voorkomt dat bij veel locaties tegelijk namen/security wegvallen.
 async function esiFetch(url: string, init?: RequestInit, attempts = 4): Promise<Response> {
+  await _acquire()
+  try {
+    return await _esiFetchInner(url, init, attempts)
+  } finally {
+    _release()
+  }
+}
+
+async function _esiFetchInner(url: string, init?: RequestInit, attempts = 4): Promise<Response> {
   let last: Response | undefined
   for (let i = 0; i < attempts; i++) {
     let res: Response
@@ -161,55 +187,13 @@ export async function getAssets(id: number, token: string): Promise<AssetItem[]>
   return results
 }
 
-export async function getAssetLocations(characterId: number, token: string): Promise<AssetLocation[]> {
-  try {
-    const res = await fetch(`${BASE}/characters/${characterId}/assets/locations/?datasource=tranquility`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) return []
-    const body = await res.json()
-
-    function normalize(loc: any): AssetLocation | null {
-      if (!loc || typeof loc !== 'object') return null
-      const itemId = Number(loc.item_id ?? loc.itemId)
-      const locationId = Number(loc.location_id ?? loc.locationId)
-      const locationType = typeof loc.location_type === 'string'
-        ? loc.location_type
-        : typeof loc.locationType === 'string'
-          ? loc.locationType
-          : 'other'
-      if (!Number.isInteger(itemId) || Number.isNaN(locationId)) return null
-      return {
-        item_id: itemId,
-        location_id: locationId,
-        location_flag: typeof loc.location_flag === 'string' ? loc.location_flag : '',
-        location_type: locationType as AssetLocation['location_type'],
-      }
-    }
-
-    if (Array.isArray(body)) {
-      return body.map(normalize).filter((loc): loc is AssetLocation => loc !== null)
-    }
-    if (body && typeof body === 'object') {
-      return Object.entries(body).flatMap(([key, value]) => {
-        if (typeof value === 'object') {
-          const location = normalize(value)
-          return location ? [location] : []
-        }
-        const itemId = Number(key)
-        const locationId = Number(value)
-        if (!Number.isInteger(itemId) || Number.isNaN(locationId)) return []
-        return [{
-          item_id: itemId,
-          location_id: locationId,
-          location_flag: '',
-          location_type: 'other',
-        }]
-      })
-    }
-  } catch {
-    // ignore errors and fall back to local resolution
-  }
+// ESI's /characters/{id}/assets/locations/ is POST-only en geeft uitsluitend posities
+// (x,y,z) terug — géén location_id, dus onbruikbaar voor onze locatie-boom. De vorige
+// GET-implementatie leverde altijd 405 (vrat error-budget). Nesting (items in
+// containers/schepen) wordt al volledig opgelost via de parent-chain in Assets, dus
+// dit is bewust een no-op.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function getAssetLocations(_characterId: number, _token: string): Promise<AssetLocation[]> {
   return []
 }
 
