@@ -33,17 +33,86 @@ const CMD_CENTER_IDS = new Set([
 // ─── pin styling ─────────────────────────────────────────────────────────────
 
 function getPinStyle(pin: PlanetPin): { color: string; label: string } {
-  if (pin.expiry_time != null)  return { color: '#f97316', label: 'Extractor' }
+  if (pin.expiry_time != null)  return { color: '#f5912e', label: 'Extractor' }   // oranje
   if (pin.schematic_id != null) {
-    if (pin.type_id === 2481)   return { color: '#f97316', label: 'Basic' }
+    if (pin.type_id === 2481)   return { color: '#f0c040', label: 'Basic' }       // geel
     if (pin.type_id === 2480)   return { color: '#f0c040', label: 'Advanced' }
     if (pin.type_id === 2484)   return { color: '#f0c040', label: 'Hi-Tech' }
     return                             { color: '#f0c040', label: 'Factory' }
   }
-  if (CMD_CENTER_IDS.has(pin.type_id)) return { color: '#3ecf6e', label: 'Cmd Center' }
-  if (pin.type_id === 2542)     return { color: '#00d4e8', label: 'Launchpad' }
-  if (pin.type_id === 2541)     return { color: '#0099cc', label: 'Storage' }
-  return                               { color: '#00d4e8', label: 'Storage' }
+  if (CMD_CENTER_IDS.has(pin.type_id)) return { color: '#3a8ee6', label: 'Cmd Center' } // blauw
+  if (pin.type_id === 2542)     return { color: '#1fd4c4', label: 'Launchpad' }   // teal
+  if (pin.type_id === 2541)     return { color: '#2f8fd6', label: 'Storage' }     // blauw
+  return                               { color: '#2f8fd6', label: 'Storage' }
+}
+
+// ─── PI-gebouw-glyphs (RIFT-stijl: witte glyph in gekleurde ring) ──────────────
+
+function pentPts(r: number) {
+  return Array.from({ length: 5 }, (_, i) => {
+    const a = (-90 + i * 72) * Math.PI / 180
+    return `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`
+  }).join(' ')
+}
+function cogPts(teeth: number, ro: number, ri: number) {
+  return Array.from({ length: teeth * 2 }, (_, i) => {
+    const a = (i * Math.PI / teeth) - Math.PI / 2
+    const r = i % 2 === 0 ? ro : ri
+    return `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`
+  }).join(' ')
+}
+
+const GLYPH = '#e6eef9' // bijna-wit, zoals in-game
+
+function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
+  const vb = '-14 -14 28 28'
+  const sw = 1.6
+  // Extractor Control Unit → vijfhoek met stip
+  if (pin.expiry_time != null) return (
+    <svg width={size} height={size} viewBox={vb}>
+      <polygon points={pentPts(10)} fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round"/>
+      <circle r="2.4" fill={GLYPH}/>
+    </svg>
+  )
+  // Industry Facility → tandwiel
+  if (pin.schematic_id != null) return (
+    <svg width={size} height={size} viewBox={vb}>
+      <polygon points={cogPts(8, 11, 7.5)} fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round"/>
+      <circle r="3.4" fill="none" stroke={GLYPH} strokeWidth={sw}/>
+    </svg>
+  )
+  // Launchpad → pijl omhoog
+  if (pin.type_id === 2542) return (
+    <svg width={size} height={size} viewBox={vb}>
+      <g fill="none" stroke={GLYPH} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M0,9 V-8"/>
+        <path d="M-6,-2 L0,-9 L6,-2"/>
+      </g>
+    </svg>
+  )
+  // Command Center → fontein/broadcast
+  if (CMD_CENTER_IDS.has(pin.type_id)) return (
+    <svg width={size} height={size} viewBox={vb}>
+      <g fill="none" stroke={GLYPH} strokeWidth="1.5" strokeLinecap="round">
+        <path d="M0,9 V-3"/>
+        <path d="M0,-3 C -7,-3 -8,4 -8,9"/>
+        <path d="M0,-3 C 7,-3 8,4 8,9"/>
+        <path d="M0,-3 C -3.5,-4 -4,4 -4,9"/>
+        <path d="M0,-3 C 3.5,-4 4,4 4,9"/>
+      </g>
+      <circle cx="0" cy="-5" r="1.8" fill={GLYPH}/>
+    </svg>
+  )
+  // Storage → isometrische kubus
+  return (
+    <svg width={size} height={size} viewBox={vb}>
+      <g fill="none" stroke={GLYPH} strokeWidth={sw} strokeLinejoin="round">
+        <polygon points="0,-10 9,-5 0,0 -9,-5"/>
+        <path d="M-9,-5 V6 L0,11 V0"/>
+        <path d="M9,-5 V6 L0,11"/>
+      </g>
+    </svg>
+  )
 }
 
 // ─── interfaces ───────────────────────────────────────────────────────────────
@@ -251,9 +320,9 @@ function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
             transform={`rotate(-90 ${S/2} ${S/2})`}
             opacity={active ? 0.95 : 0.55}/>
         </svg>
-        {/* echte EVE type-icon gecentreerd */}
+        {/* witte PI-glyph gecentreerd (RIFT-stijl) */}
         <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <EveImage category="types" id={info.pin.type_id} variation="icon" size={64} px={30} round style={{ background:'transparent' }}/>
+          <PiGlyph pin={info.pin} size={22}/>
         </div>
         {/* product-badge rechtsonder */}
         {info.productTypeId && (
