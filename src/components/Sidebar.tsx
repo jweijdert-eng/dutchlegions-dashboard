@@ -346,7 +346,7 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
   )
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobile = false, open = false, onClose }: { mobile?: boolean; open?: boolean; onClose?: () => void } = {}) {
   const { tokens, removeToken, selectedCharId, setSelectedCharId, mainCharId, setMainCharId } = useAuth()
   const { previewMode } = useLayoutMode()
   const alerts = useAlerts()
@@ -436,18 +436,24 @@ export default function Sidebar() {
 
   return (
     <nav style={{
-      width: 200,
+      width: mobile ? 230 : 200,
       background: 'var(--surface)',
       borderRight: '1px solid var(--border)',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
       height: '100vh',
-      position: 'sticky',
-      top: 0,
+      ...(mobile
+        ? {
+            position: 'fixed' as const, top: 0, left: 0, bottom: 0, zIndex: 200,
+            transform: open ? 'translateX(0)' : 'translateX(-100%)',
+            transition: 'transform 0.25s ease',
+            boxShadow: open ? '4px 0 24px rgba(0,0,0,0.5)' : 'none',
+          }
+        : { position: 'sticky' as const, top: 0 }),
     }}>
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.1rem 1rem', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: mobile ? '0.7rem 1rem' : '1.1rem 1rem', borderBottom: '1px solid var(--border)' }}>
         <NavLink to="/" end style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           {selectedCorpId ? (
             <EveImage
@@ -466,22 +472,40 @@ export default function Sidebar() {
             <div style={{ color: 'var(--text-dim)', fontSize: '0.6rem', letterSpacing: '0.12em' }}>DASHBOARD</div>
           </div>
         </NavLink>
-        <button
-          onClick={() => { clearEsiCache(); window.location.reload() }}
-          title="ESI data herladen"
-          style={{
-            background: 'rgba(0,180,216,0.07)',
-            border: '1px solid rgba(0,180,216,0.2)',
-            borderRadius: 3,
-            color: 'var(--blue)',
-            cursor: 'pointer',
-            padding: '0.25rem 0.4rem',
-            lineHeight: 1,
-            fontSize: '0.85rem',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.18)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.07)' }}
-        >↻</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <button
+            onClick={() => { clearEsiCache(); window.location.reload() }}
+            title="ESI data herladen"
+            style={{
+              background: 'rgba(0,180,216,0.07)',
+              border: '1px solid rgba(0,180,216,0.2)',
+              borderRadius: 3,
+              color: 'var(--blue)',
+              cursor: 'pointer',
+              padding: '0.25rem 0.4rem',
+              lineHeight: 1,
+              fontSize: '0.85rem',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.18)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,180,216,0.07)' }}
+          >↻</button>
+          {mobile && (
+            <button
+              onClick={onClose}
+              aria-label="Menu sluiten"
+              style={{
+                background: 'rgba(224,85,85,0.07)',
+                border: '1px solid rgba(224,85,85,0.2)',
+                borderRadius: 3,
+                color: 'var(--red)',
+                cursor: 'pointer',
+                padding: '0.25rem 0.5rem',
+                lineHeight: 1,
+                fontSize: '0.95rem',
+              }}
+            >✕</button>
+          )}
+        </div>
       </div>
 
       {/* Nav */}

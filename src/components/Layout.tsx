@@ -1,6 +1,8 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import LoadingBar from './LoadingBar'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 interface PageHeaderProps {
   title: string
@@ -17,6 +19,8 @@ export function PageHeader({ title, sub, right }: PageHeaderProps) {
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
+      gap: '0.5rem',
+      flexWrap: 'wrap',
       flexShrink: 0,
     }}>
       <div>
@@ -35,13 +39,66 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, header, mainStyle }: LayoutProps) {
+  const isMobile = useIsMobile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const location = useLocation()
+
+  // Sluit de drawer bij navigatie
+  useEffect(() => { setDrawerOpen(false) }, [location.pathname])
+
+  // Voorkom scrollen achter de open drawer
+  useEffect(() => {
+    if (isMobile && drawerOpen) {
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = '' }
+    }
+  }, [isMobile, drawerOpen])
+
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100%', overflow: 'hidden', background: 'var(--bg)' }}>
-      <Sidebar />
+      {isMobile ? (
+        <>
+          {drawerOpen && (
+            <div
+              onClick={() => setDrawerOpen(false)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 150 }}
+            />
+          )}
+          <Sidebar mobile open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+        </>
+      ) : (
+        <Sidebar />
+      )}
+
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
         <LoadingBar />
+
+        {/* Mobiele topbalk met hamburger */}
+        {isMobile && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.6rem',
+            padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)',
+            background: 'var(--surface)', flexShrink: 0,
+          }}>
+            <button
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Menu openen"
+              style={{
+                display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
+                width: 34, height: 34, padding: 8,
+                background: 'rgba(0,180,216,0.07)', border: '1px solid rgba(0,180,216,0.25)',
+                borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              {[0, 1, 2].map(i => <span key={i} style={{ height: 2, background: 'var(--blue)', borderRadius: 2 }} />)}
+            </button>
+            <span style={{ color: 'var(--blue)', fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.16em' }}>EVE</span>
+            <span style={{ color: 'var(--text-dim)', fontSize: '0.6rem', letterSpacing: '0.1em' }}>DASHBOARD</span>
+          </div>
+        )}
+
         {header}
-        <main style={{ flex: 1, overflowY: 'auto', padding: '0.875rem 1.25rem 1.5rem', ...mainStyle }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0.6rem 0.7rem 1.5rem' : '0.875rem 1.25rem 1.5rem', ...mainStyle }}>
           {children}
         </main>
       </div>

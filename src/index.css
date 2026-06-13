@@ -32,6 +32,36 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--blue); }
 
+/* ─── Mobiel: laat brede card-grids inklappen ─────────────────────────────────
+   De pagina's gebruiken inline-stijlen; een stylesheet-regel met !important
+   verslaat een normale inline-declaratie, dus zo passen we ze globaal aan. */
+@media (max-width: 720px) {
+  div[style*="repeat(4, 1fr)"],
+  div[style*="repeat(3, 1fr)"],
+  div[style*="repeat(6, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  /* Brede auto-fill kaarten (character/skills) naar één kolom */
+  div[style*="minmax(340px"],
+  div[style*="minmax(420px"],
+  div[style*="minmax(180px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 440px) {
+  div[style*="repeat(6, 1fr)"],
+  div[style*="minmax(150px"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Brede tabellen: laat de scroll-container horizontaal scrollen i.p.v. de
+   hele pagina te laten overlopen. */
+@media (max-width: 720px) {
+  div[style*="overflowY"] { overflow-x: auto; }
+}
+
 @keyframes loadbar-slide {
   0%   { left: -45%; }
   100% { left: 100%; }
