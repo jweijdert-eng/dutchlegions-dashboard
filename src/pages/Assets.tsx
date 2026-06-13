@@ -200,7 +200,7 @@ export default function Assets() {
           quantity: a.quantity,
           flag: fmtFlag(a.location_flag),
           locationId: root.id,
-          locationName: locationNames.get(root.id) ?? (root.id >= 1_000_000_000_000 ? `\x00struct:${root.id}` : String(root.id)),
+          locationName: locationNames.get(root.id) ?? (root.type === 'structure' ? `\x00struct:${root.id}` : `\x00loc:${root.id}`),
           ownerCharId: a.owner,
         }
       })
@@ -214,7 +214,7 @@ export default function Assets() {
         else merged.set(key, { ...r })
       }
 
-      const isUnknown = (loc: string) => loc.startsWith('\x00struct:')
+      const isUnknown = (loc: string) => loc.startsWith('\x00struct:') || loc.startsWith('\x00loc:')
       const final = [...merged.values()].sort((a, b) => {
         const au = isUnknown(a.locationName), bu = isUnknown(b.locationName)
         if (au !== bu) return au ? 1 : -1
@@ -399,9 +399,11 @@ export default function Assets() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {[...groups.entries()].map(([loc, { locationId, items }]) => {
-          const unknown = loc.startsWith('\x00struct:')
-          const structId = unknown ? loc.slice('\x00struct:'.length) : null
-          const displayName = unknown ? 'Onbekende structuur' : loc
+          const isStruct = loc.startsWith('\x00struct:')
+          const isLoc = loc.startsWith('\x00loc:')
+          const unknown = isStruct || isLoc
+          const structId = isStruct ? loc.slice('\x00struct:'.length) : isLoc ? loc.slice('\x00loc:'.length) : null
+          const displayName = isStruct ? 'Onbekende structuur' : isLoc ? 'Onbekende locatie' : loc
           const open = !collapsed[loc]
           const qty = items.reduce((s, it) => s + it.quantity, 0)
           const routeCount = routeCounts[locationId]

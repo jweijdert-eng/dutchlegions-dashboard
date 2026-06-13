@@ -5,13 +5,38 @@ import type { TokenData } from '../auth/sso'
 const _cache = new Map<string, { data: unknown; expires: number }>()
 export function clearEsiCache() { _cache.clear() }
 
+const _sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+// Fetch met retry/backoff op transiente ESI-fouten (420 error-limited, 5xx, netwerk).
+// Andere 4xx (403/404/422) worden direct teruggegeven — dat zijn echte fouten, geen
+// rate-limiting. Voorkomt dat bij veel locaties tegelijk namen/security wegvallen.
+async function esiFetch(url: string, init?: RequestInit, attempts = 4): Promise<Response> {
+  let last: Response | undefined
+  for (let i = 0; i < attempts; i++) {
+    let res: Response
+    try {
+      res = await fetch(url, init)
+    } catch (e) {
+      if (i === attempts - 1) throw e
+      await _sleep(Math.min(2000, 250 * 2 ** i) + Math.random() * 150)
+      continue
+    }
+    if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 420)) return res
+    last = res
+    if (i === attempts - 1) break
+    const ra = parseInt(res.headers.get('retry-after') ?? '')
+    await _sleep(Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 5000) : Math.min(2000, 250 * 2 ** i) + Math.random() * 150)
+  }
+  return last!
+}
+
 async function esiGet<T>(path: string, token?: string): Promise<T> {
   const key = `${token?.slice(-20) ?? ''}:${path}`
   const hit = _cache.get(key)
   if (hit && hit.expires > Date.now()) return hit.data as T
 
   const sep = path.includes('?') ? '&' : '?'
-  const res = await fetch(`${BASE}${path}${sep}datasource=tranquility`, {
+  const res = await esiFetch(`${BASE}${path}${sep}datasource=tranquility`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!res.ok) throw new Error(`ESI ${path}: ${res.status}`)
@@ -276,7 +301,7 @@ export async function getStructureInfo(id: number, tokens?: string | string[] | 
   const norm = _normalizeTokens(tokens)
   for (const token of norm.tokens) {
     try {
-      const res = await fetch(`${BASE}/universe/structures/${id}/?datasource=tranquility`, {
+      const res = await esiFetch(`${BASE}/universe/structures/${id}/?datasource=tranquility`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -290,7 +315,7 @@ export async function getStructureInfo(id: number, tokens?: string | string[] | 
   }
 
   try {
-    const res = await fetch(`${BASE}/universe/structures/${id}/?datasource=tranquility`)
+    const res = await esiFetch(`${BASE}/universe/structures/${id}/?datasource=tranquility`)
     if (res.ok) {
       const data = await res.json() as StructureInfo
       _structureCache.set(id, data)
@@ -774,7 +799,7 @@ const INT32_MAX = 2_147_483_647
 async function _namesBatch(ids: number[], out: Map<number, string>): Promise<void> {
   if (ids.length === 0) return
   try {
-    const res = await fetch(`${BASE}/universe/names/?datasource=tranquility`, {
+    const res = await esiFetch(`${BASE}/universe/names/?datasource=tranquility`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ids),
