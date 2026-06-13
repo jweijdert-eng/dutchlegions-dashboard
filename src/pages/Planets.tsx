@@ -209,6 +209,17 @@ function timeRemaining(d: Date, now = Date.now()): string {
   if (m > 0)    return `${m}m ${s}s`
   return `${s}s`
 }
+// Hoelang geleden een tijdstip was (bv. "3u 12m geleden")
+function timeSince(d: Date, now = Date.now()): string {
+  const diff = now - d.getTime()
+  if (diff <= 0) return 'net'
+  const days = Math.floor(diff / 86400000)
+  const h    = Math.floor((diff % 86400000) / 3600000)
+  const m    = Math.floor((diff % 3600000) / 60000)
+  if (days > 0) return `${days}d ${h}u`
+  if (h > 0)    return `${h}u ${m}m`
+  return `${m}m`
+}
 function Stars({ level }: { level: number }) {
   return (
     <span style={{ display:'inline-flex', gap:2 }}>
@@ -337,17 +348,23 @@ function PinTooltip({ info, color, label, anchorRect }: {
   )
 }
 
-function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
+function PinCircle({ info, active, now }: { info: PinDisplay; active: boolean; now: number }) {
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const { color, label } = getPinStyle(info.pin)
   const opacity = active ? 1 : 0.35
 
-  // Ronde voortgangs-ring met gat onderaan (zoals de referentie-afbeelding). De
-  // fractie varieert per pin zodat de ringen levendig/gevarieerd ogen.
+  // Functionele gauge-ring (gat onderaan). Voor extractors vult de ring met de echte
+  // cyclus-voortgang (install_time → expiry_time); andere gebouwen tonen een volle ring.
   const S = 46, r = 19.5, C = 2 * Math.PI * r
-  const arcFrac = 0.62 + (info.pin.pin_id % 31) / 100   // ~0.62 .. 0.92
-  const gapLen  = (1 - arcFrac) * C
+  const GAUGE = 0.84, gaugeLen = GAUGE * C, gapLen = (1 - GAUGE) * C
+  let progress = 1
+  if (pinKind(info.pin) === 'extractor') {
+    const inst = info.pin.install_time ? new Date(info.pin.install_time).getTime() : NaN
+    const exp  = info.pin.expiry_time  ? new Date(info.pin.expiry_time).getTime()  : NaN
+    progress = (isFinite(inst) && isFinite(exp) && exp > inst)
+      ? Math.min(1, Math.max(0, (now - inst) / (exp - inst))) : 1
+  }
 
   return (
     <div
@@ -362,13 +379,15 @@ function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
         }}>
           {/* donkere disc */}
           <circle cx={S/2} cy={S/2} r={r-2} fill="#070c18"/>
-          {/* faint volledige track */}
-          <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" opacity={0.15}/>
-          {/* heldere arc met gat onderaan */}
+          {/* gauge-track (volledige boog, gedimd) */}
           <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
-            strokeDasharray={`${arcFrac * C} ${C}`} strokeDashoffset={gapLen / 2}
+            strokeDasharray={`${gaugeLen} ${C}`} strokeDashoffset={gapLen / 2}
+            transform={`rotate(-90 ${S/2} ${S/2})`} opacity={0.18}/>
+          {/* voortgang (helder, = progress × gauge) */}
+          <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
+            strokeDasharray={`${progress * gaugeLen} ${C}`} strokeDashoffset={gapLen / 2}
             transform={`rotate(-90 ${S/2} ${S/2})`}
-            opacity={active ? 0.95 : 0.55}/>
+            opacity={active ? 0.95 : 0.55} style={{ transition:'stroke-dasharray 0.8s linear' }}/>
         </svg>
         {/* witte PI-glyph gecentreerd (RIFT-stijl) */}
         <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -387,7 +406,7 @@ function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
         )}
       </div>
 
-      <span style={{fontSize:'0.46rem',color:active?color:'#3a4060',textTransform:'uppercase',letterSpacing:'0.04em',maxWidth:48,textAlign:'center',lineHeight:1.1}}>
+      <span style={{fontSize:'0.52rem',color:active?color:'#3a4060',textTransform:'uppercase',letterSpacing:'0.04em',maxWidth:48,textAlign:'center',lineHeight:1.1}}>
         {label}
       </span>
 
@@ -638,10 +657,10 @@ function ColonyCard({ colony: c, multiChar, mapOpen, onToggleMap }: {
           {hasExtractors ? (
             <>
               <div style={{ fontSize:'0.55rem', color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-                {isExpired ? 'Verlopen' : 'Expires in'}
+                {isExpired ? 'Verlopen sinds' : 'Expires in'}
               </div>
               <div style={{ fontSize:'0.8rem', fontWeight:700, marginTop:'0.1rem', color:expColor, fontVariantNumeric:'tabular-nums' }}>
-                {c.earliestExpiry ? timeRemaining(c.earliestExpiry, now) : '—'}
+                {c.earliestExpiry ? (isExpired ? `${timeSince(c.earliestExpiry, now)} geleden` : timeRemaining(c.earliestExpiry, now)) : '—'}
               </div>
             </>
           ) : (
@@ -680,7 +699,7 @@ function ColonyCard({ colony: c, multiChar, mapOpen, onToggleMap }: {
       {c.pinDisplays.length > 0 && (
         <div style={{ padding:'0.65rem 0.875rem 0.5rem', display:'flex', flexWrap:'wrap', gap:'0.55rem' }}>
           {c.pinDisplays.map((info, i) => (
-            <PinCircle key={i} info={info} active={active}/>
+            <PinCircle key={i} info={info} active={active} now={now}/>
           ))}
         </div>
       )}
@@ -1041,15 +1060,16 @@ export default function Planets() {
               Geen kolonies in dit filter
             </div>
           ) : (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:'0.75rem' }}>
+            <div style={{ columnWidth:'330px', columnGap:'0.75rem' }}>
               {visible.map(c => (
-                <ColonyCard
-                  key={c.planet.planet_id}
-                  colony={c}
-                  multiChar={multiChar}
-                  mapOpen={showMap[c.planet.planet_id] ?? false}
-                  onToggleMap={() => setShowMap(prev => ({ ...prev, [c.planet.planet_id]: !(prev[c.planet.planet_id] ?? false) }))}
-                />
+                <div key={c.planet.planet_id} style={{ breakInside:'avoid', marginBottom:'0.75rem' }}>
+                  <ColonyCard
+                    colony={c}
+                    multiChar={multiChar}
+                    mapOpen={showMap[c.planet.planet_id] ?? false}
+                    onToggleMap={() => setShowMap(prev => ({ ...prev, [c.planet.planet_id]: !(prev[c.planet.planet_id] ?? false) }))}
+                  />
+                </div>
               ))}
             </div>
           )}
