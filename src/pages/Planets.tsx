@@ -149,20 +149,29 @@ function PiGlyph({ pin, size }: { pin: PlanetPin; size: number }) {
       <circle cx="0" cy="-3" r="1.4" fill={GLYPH}/>
     </svg>
   )
-  // Command Center → turbine/ventilator
-  if (kind === 'command') return (
-    <svg width={size} height={size} viewBox={vb}>
-      <g stroke={GLYPH} strokeWidth="1" strokeLinecap="round">
-        {Array.from({ length: 14 }, (_, i) => {
-          const [x1, y1] = polar(0, 0, 3.2, (i / 14) * 360)
-          const [x2, y2] = polar(0, 0, 9.5, (i / 14) * 360 + 26)
-          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}/>
-        })}
-      </g>
-      <circle r="3.2" fill="#070c18" stroke={GLYPH} strokeWidth="1"/>
-      <circle r="1" fill={GLYPH}/>
-    </svg>
-  )
+  // Command Center → turbofan (dichte gebogen bladen + hub)
+  if (kind === 'command') {
+    const blades = 12
+    return (
+      <svg width={size} height={size} viewBox={vb}>
+        <circle r="10" fill="none" stroke={GLYPH} strokeWidth="1" opacity="0.7"/>
+        <g>
+          {Array.from({ length: blades }, (_, i) => {
+            const a = (i / blades) * 360
+            const [rx, ry] = polar(0, 0, 9.6, a)
+            const [hx, hy] = polar(0, 0, 2.6, a - 52)
+            const [mx, my] = polar(0, 0, 6.6, a - 16)
+            return (
+              <path key={i} d={`M ${rx} ${ry} Q ${mx} ${my} ${hx} ${hy} L 0 0 Z`}
+                fill={GLYPH} opacity={i % 2 ? 0.5 : 0.92}/>
+            )
+          })}
+        </g>
+        <circle r="2.8" fill="#070c18" stroke={GLYPH} strokeWidth="1"/>
+        <circle r="1" fill={GLYPH}/>
+      </svg>
+    )
+  }
   // Storage → isometrische kubus (hexagon-silhouet)
   return (
     <svg width={size} height={size} viewBox={vb}>
