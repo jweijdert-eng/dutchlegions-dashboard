@@ -419,7 +419,7 @@ export default function Admin() {
 
                 {!sdeServerUp && (
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>
-                    Start de lokale server: <code style={{ color: 'var(--blue)' }}>localserver/start.bat</code>
+                    Start de lokale server: <code style={{ color: 'var(--blue)' }}>cd local-chat-server &amp;&amp; node server.js</code>
                   </div>
                 )}
               </div>
