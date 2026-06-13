@@ -4,6 +4,8 @@ import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
 import { useLayoutMode } from '../context/LayoutModeContext'
 import { LOCAL } from '../components/Sidebar'
+import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
+import EveImage from '../components/EveImage'
 
 const ADMIN_CHAR_ID = 1831618559
 
@@ -31,6 +33,14 @@ interface SiteMember {
   blocked: number
 }
 
+interface MemberOrg {
+  corpId: number
+  corpName: string
+  allianceId?: number
+  allianceName?: string
+  allianceTicker?: string
+}
+
 type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance' | 'local_chat'
 
 const SETTING_LABELS: Record<SettingKey, string> = {
@@ -54,6 +64,7 @@ export default function Admin() {
   const [tab, setTab] = useState<'stats' | 'members' | 'settings' | 'sde'>('stats')
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [members, setMembers] = useState<SiteMember[]>([])
+  const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
   const [sde, setSde] = useState<SdeStatus | null>(null)
@@ -97,7 +108,9 @@ export default function Admin() {
     setLoading(true)
     try {
       const r = await fetch('/api/members.php')
-      setMembers(await r.json())
+      const list = await r.json() as SiteMember[]
+      setMembers(list)
+      fetchMemberOrgs(list)
     } catch { /* ignore */ }
     setLoading(false)
   }
@@ -105,8 +118,37 @@ export default function Admin() {
   async function refreshMembers() {
     try {
       const r = await fetch('/api/members.php')
-      setMembers(await r.json())
+      const list = await r.json() as SiteMember[]
+      setMembers(list)
+      fetchMemberOrgs(list)
     } catch { /* ignore */ }
+  }
+
+  // Corp/alliance per member ophalen via publieke ESI (geen token nodig)
+  async function fetchMemberOrgs(list: SiteMember[]) {
+    const infos = await Promise.all(list.map(async m => {
+      const info = await getCharacterInfo(m.character_id).catch(() => null)
+      return { charId: m.character_id, corpId: info?.corporation_id ?? null, allianceId: info?.alliance_id ?? null }
+    }))
+    const corpIds = [...new Set(infos.map(i => i.corpId).filter((x): x is number => x != null))]
+    const allyIds = [...new Set(infos.map(i => i.allianceId).filter((x): x is number => x != null))]
+    const [corpMap, allyMap] = await Promise.all([
+      Promise.all(corpIds.map(async id => [id, await getCorporation(id).catch(() => null)] as const)).then(e => new Map(e)),
+      Promise.all(allyIds.map(async id => [id, await getAlliance(id).catch(() => null)] as const)).then(e => new Map(e)),
+    ])
+    const result: Record<number, MemberOrg> = {}
+    for (const i of infos) {
+      if (i.corpId == null) continue
+      const ally = i.allianceId != null ? allyMap.get(i.allianceId) : null
+      result[i.charId] = {
+        corpId: i.corpId,
+        corpName: corpMap.get(i.corpId)?.name ?? `Corp ${i.corpId}`,
+        allianceId: i.allianceId ?? undefined,
+        allianceName: ally?.name,
+        allianceTicker: ally?.ticker,
+      }
+    }
+    setOrgs(result)
   }
 
   async function deleteMember(charId: number) {
@@ -247,7 +289,7 @@ export default function Admin() {
 
         {/* Member Beheer */}
         {tab === 'members' && !loading && (
-          <div style={{ maxWidth: 500 }}>
+          <div style={{ maxWidth: 580 }}>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.75rem', letterSpacing: '0.08em' }}>
               {members.length} LEDEN — automatisch bijgewerkt bij inloggen
             </div>
@@ -260,6 +302,7 @@ export default function Admin() {
                 {members.map((m, i) => {
                   const online = isOnline(m.last_seen)
                   const blocked = !!m.blocked
+                  const org = orgs[m.character_id]
                   return (
                     <div key={m.character_id} style={{
                       display: 'flex', alignItems: 'center', gap: '0.75rem',
@@ -275,6 +318,10 @@ export default function Admin() {
                           width={32} height={32}
                           style={{ borderRadius: '50%', display: 'block', filter: blocked ? 'grayscale(1)' : 'none' }}
                         />
+                        {org?.corpId && (
+                          <EveImage category="corporations" id={org.corpId} variation="logo" size={32} px={14}
+                            style={{ position: 'absolute', top: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
+                        )}
                         <div style={{
                           position: 'absolute', bottom: 0, right: 0,
                           width: 9, height: 9, borderRadius: '50%',
@@ -282,7 +329,15 @@ export default function Admin() {
                           border: '1.5px solid var(--surface)',
                         }} />
                       </div>
-                      <span style={{ flex: 1 }}>{m.name}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
+                        {org && (
+                          <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {org.corpName}
+                            {org.allianceName && <span style={{ color: 'var(--gold)' }}> · {org.allianceName}</span>}
+                          </div>
+                        )}
+                      </div>
                       {blocked && (
                         <span style={{ fontSize: '0.6rem', color: 'var(--red)', fontWeight: 700, letterSpacing: '0.06em' }}>GEBLOKKEERD</span>
                       )}
