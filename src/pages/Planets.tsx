@@ -289,7 +289,13 @@ function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const { color, label } = getPinStyle(info.pin)
-  const opacity = active ? 1 : 0.3
+  const opacity = active ? 1 : 0.35
+
+  // Ronde voortgangs-ring met gat onderaan (zoals de referentie-afbeelding). De
+  // fractie varieert per pin zodat de ringen levendig/gevarieerd ogen.
+  const S = 46, r = 19.5, C = 2 * Math.PI * r
+  const arcFrac = 0.62 + (info.pin.pin_id % 31) / 100   // ~0.62 .. 0.92
+  const gapLen  = (1 - arcFrac) * C
 
   return (
     <div
@@ -298,29 +304,33 @@ function PinCircle({ info, active }: { info: PinDisplay; active: boolean }) {
       onMouseEnter={() => ref.current && setAnchorRect(ref.current.getBoundingClientRect())}
       onMouseLeave={() => setAnchorRect(null)}
     >
-      <div style={{
-        width:44, height:44, borderRadius:'50%',
-        border:`2px solid ${color}${active?'cc':'33'}`,
-        boxShadow: active ? `0 0 10px ${color}55, inset 0 0 10px #000c` : 'inset 0 0 10px #000c',
-        background:`radial-gradient(circle at 38% 32%, ${color}${active?'20':'0a'} 0%, #080d18 70%)`,
-        display:'flex', alignItems:'center', justifyContent:'center',
-        position:'relative', cursor:'default', opacity, transition:'opacity 0.2s, box-shadow 0.2s',
-      }}>
-        <div style={{
-          width:34, height:34, borderRadius:'50%',
-          border:`1px solid ${color}${active?'44':'18'}`,
-          display:'flex', alignItems:'center', justifyContent:'center',
+      <div style={{ position:'relative', width:S, height:S, opacity, transition:'opacity 0.2s', cursor:'default' }}>
+        <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} style={{
+          display:'block', filter: active ? `drop-shadow(0 0 5px ${color}aa)` : 'none',
         }}>
-          <BuildingIconSVG pin={info.pin} size={28} c={color}/>
+          {/* donkere disc */}
+          <circle cx={S/2} cy={S/2} r={r-2} fill="#070c18"/>
+          {/* faint volledige track */}
+          <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" opacity={0.15}/>
+          {/* heldere arc met gat onderaan */}
+          <circle cx={S/2} cy={S/2} r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
+            strokeDasharray={`${arcFrac * C} ${C}`} strokeDashoffset={gapLen / 2}
+            transform={`rotate(-90 ${S/2} ${S/2})`}
+            opacity={active ? 0.95 : 0.55}/>
+        </svg>
+        {/* glyph gecentreerd */}
+        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <BuildingIconSVG pin={info.pin} size={22} c={color}/>
         </div>
+        {/* product-badge rechtsonder */}
         {info.productTypeId && (
           <div style={{
-            position:'absolute', bottom:-3, right:-3,
-            width:18, height:18, borderRadius:'50%',
+            position:'absolute', bottom:-1, right:-1,
+            width:17, height:17, borderRadius:'50%',
             background:'#090e1c', border:`1px solid ${color}88`,
             display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden',
           }}>
-            <EveImage category="types" id={info.productTypeId} variation="icon" size={32} px={15}/>
+            <EveImage category="types" id={info.productTypeId} variation="icon" size={32} px={14}/>
           </div>
         )}
       </div>
