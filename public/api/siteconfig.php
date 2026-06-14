@@ -4,8 +4,8 @@ cors();
 
 $pdo = getDB();
 
-// Toegestane accentkleuren (hex) — server valideert tegen deze lijst.
-$ACCENTS = ['#00b4d8', '#22d3ee', '#3ecf6e', '#f0c040', '#a78bfa', '#f472b6', '#f97316', '#e05555'];
+// Accentkleur: elke geldige 6-cijferige hex (#rrggbb). Leeg = standaardthema.
+function valid_hex(string $c): bool { return (bool)preg_match('/^#[0-9a-fA-F]{6}$/', $c); }
 
 // GET: publieke site-config (accentkleur + handige links) — voor iedereen leesbaar.
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) $rows[$r['key']] = $r['value'];
 
         $accent = $rows['theme_accent'] ?? '';
-        if (!in_array($accent, $ACCENTS, true)) $accent = '';   // leeg = standaardthema
+        if (!valid_hex($accent)) $accent = '';   // leeg = standaardthema
 
         $links = [];
         if (!empty($rows['corp_links'])) {
@@ -36,8 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
     }
     try {
-        $accent = (string)($data['accent'] ?? '');
-        if ($accent !== '' && !in_array($accent, $ACCENTS, true)) $accent = '';
+        $accent = strtolower(trim((string)($data['accent'] ?? '')));
+        if (!valid_hex($accent)) $accent = '';
 
         // Links saneren: max 12, alleen label + http(s)-url.
         $links = [];

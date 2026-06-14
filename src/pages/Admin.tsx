@@ -10,10 +10,12 @@ import { fetchSiteConfig, applyAccent, type CorpLink } from '../hooks/useSiteCon
 const ADMIN_CHAR_ID = 1831618559
 
 const ACCENTS = [
-  { hex: '#00b4d8', name: 'Blauw' }, { hex: '#22d3ee', name: 'Cyaan' },
-  { hex: '#3ecf6e', name: 'Groen' }, { hex: '#f0c040', name: 'Goud' },
-  { hex: '#a78bfa', name: 'Paars' }, { hex: '#f472b6', name: 'Roze' },
+  { hex: '#00b4d8', name: 'Blauw' },  { hex: '#22d3ee', name: 'Cyaan' },
+  { hex: '#14b8a6', name: 'Teal' },   { hex: '#3ecf6e', name: 'Groen' },
+  { hex: '#84cc16', name: 'Lime' },   { hex: '#f0c040', name: 'Goud' },
   { hex: '#f97316', name: 'Oranje' }, { hex: '#e05555', name: 'Rood' },
+  { hex: '#f472b6', name: 'Roze' },   { hex: '#ec4899', name: 'Magenta' },
+  { hex: '#a78bfa', name: 'Paars' },  { hex: '#6366f1', name: 'Indigo' },
 ]
 
 interface ActivityData {
@@ -692,11 +694,14 @@ export default function Admin() {
 
             {/* Thema / accentkleur */}
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>🎨 Accentkleur</div>
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>De accentkleur van de hele site (voor iedereen).</div>
-              <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>🎨 Accentkleur</span>
+                <span style={{ fontSize: '0.66rem', fontFamily: 'monospace', color: 'var(--text-dim)' }}>{(accent || '#00b4d8').toUpperCase()}</span>
+              </div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>De accentkleur van de hele site (voor iedereen). Kies een preset of een eigen kleur.</div>
+              <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 {ACCENTS.map(a => {
-                  const active = (accent || '#00b4d8') === a.hex
+                  const active = (accent || '#00b4d8').toLowerCase() === a.hex
                   return (
                     <button key={a.hex} onClick={() => pickAccent(a.hex)} title={a.name} style={{
                       width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', background: a.hex,
@@ -705,8 +710,24 @@ export default function Admin() {
                     }} />
                   )
                 })}
+                {/* Eigen kleur via native color-picker */}
+                <label title="Eigen kleur" style={{
+                  width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', position: 'relative', overflow: 'hidden',
+                  border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red)',
+                }}>
+                  <span style={{ fontSize: '0.85rem', color: '#fff', textShadow: '0 0 3px #000', lineHeight: 1 }}>+</span>
+                  <input type="color" value={accent || '#00b4d8'} onChange={e => pickAccent(e.target.value)}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', border: 'none', padding: 0 }} />
+                </label>
               </div>
-              {cfgSaved && <div style={{ fontSize: '0.6rem', color: 'var(--green)', marginTop: '0.5rem' }}>✓ Opgeslagen</div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.7rem' }}>
+                <button onClick={() => pickAccent('')} style={{
+                  background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)',
+                  fontSize: '0.66rem', padding: '0.25rem 0.6rem', cursor: 'pointer',
+                }}>↺ Standaard (blauw)</button>
+                {cfgSaved && <span style={{ fontSize: '0.62rem', color: 'var(--green)' }}>✓ Opgeslagen</span>}
+              </div>
             </div>
 
             {/* Handige links */}
