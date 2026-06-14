@@ -58,6 +58,7 @@ export default function Admin() {
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
+  const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
 
   useEffect(() => {
     if (tab === 'stats') fetchActivity()
@@ -68,10 +69,17 @@ export default function Admin() {
 
   async function fetchBpInfo() {
     try {
-      const r = await fetch('/blueprints.json', { cache: 'no-cache' })
-      const d = await r.json() as Record<string, unknown>
+      const d = await fetch('/blueprints.json', { cache: 'no-cache' }).then(r => r.json()) as Record<string, unknown>
       setBpCount(Object.keys(d).length)
     } catch { setBpCount(null) }
+    // Versie + live update-check
+    const ver = await fetch('/sde-version.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null)
+    let latest: number | null = null
+    try {
+      const txt = await fetch('https://developers.eveonline.com/static-data/tranquility/latest.jsonl').then(r => r.text())
+      latest = JSON.parse(txt.trim().split('\n')[0]).buildNumber ?? null
+    } catch { /* CORS/offline — geen live check */ }
+    setSdeVer({ build: ver?.build ?? null, releaseDate: ver?.releaseDate ?? null, latest })
   }
 
   async function fetchActivity() {
@@ -414,6 +422,22 @@ export default function Admin() {
                 </div>
               )}
 
+              {sdeVer?.build != null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                    SDE build <strong style={{ color: 'var(--text)' }}>#{sdeVer.build}</strong>
+                    {sdeVer.releaseDate && ` · ${new Date(sdeVer.releaseDate).toLocaleDateString('nl', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                  </span>
+                  {sdeVer.latest != null && sdeVer.latest > sdeVer.build ? (
+                    <span style={{ fontSize: '0.62rem', background: 'rgba(240,192,64,0.15)', border: '1px solid rgba(240,192,64,0.4)', color: 'var(--gold)', borderRadius: 2, padding: '0.05rem 0.4rem', fontWeight: 700 }}>
+                      update beschikbaar (#{sdeVer.latest})
+                    </span>
+                  ) : sdeVer.latest != null ? (
+                    <span style={{ fontSize: '0.62rem', color: 'var(--green)', fontWeight: 600 }}>✓ actueel</span>
+                  ) : null}
+                </div>
+              )}
+
               <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.7 }}>
                 De SDE-data wordt nu <strong>met de site meegeleverd</strong> (geen lokale server meer nodig):
                 <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>blueprints.json</code>
@@ -425,7 +449,7 @@ export default function Admin() {
               </div>
 
               <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '0.75rem', lineHeight: 1.6 }}>
-                Bijwerken bij een nieuwe SDE: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>python tools/build-sde.py</code>, daarna committen + pushen.
+                Een wekelijkse GitHub Action draait <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>build-sde.py</code> en deployt automatisch bij een nieuwe SDE. Handmatig: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>python tools/build-sde.py</code> → commit + push.
               </div>
             </div>
           </div>

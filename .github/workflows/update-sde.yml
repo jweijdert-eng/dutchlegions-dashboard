@@ -1,0 +1,71 @@
+name: Update SDE
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # elke maandag 06:00 UTC
+  workflow_dispatch: {}     # handmatig te starten
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Genereer SDE-bundles uit de nieuwste SDE
+        run: python tools/build-sde.py
+
+      - name: Is er iets gewijzigd?
+        id: diff
+        run: |
+          if [ -n "$(git status --porcelain public/)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Geen SDE-wijziging — niets te doen."
+          fi
+
+      - name: Commit bundels
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/blueprints.json public/type-names.json public/schematics.json public/sde-version.json
+          git commit -m "chore: SDE-bundels automatisch bijgewerkt"
+          git push
+
+      # Zelf bouwen + deployen (de auto-commit triggert de gewone deploy-workflow niet)
+      - uses: actions/setup-node@v4
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+        if: steps.diff.outputs.changed == 'true'
+
+      - run: npx vite build
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          VITE_EVE_CLIENT_ID: ${{ secrets.VITE_EVE_CLIENT_ID }}
+          VITE_EVE_REDIRECT_URI: ${{ secrets.VITE_EVE_REDIRECT_URI }}
+
+      - name: Upload via FTP
+        if: steps.diff.outputs.changed == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /public_html/
+          protocol: ftp
+          port: 21
+          dangerous-clean-slate: false

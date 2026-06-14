@@ -7,9 +7,11 @@ Output (compact, meegedeployd met de site → geen lokale server nodig):
   public/type-names.json  { typeId: "Naam" }                                  (published types, en)
   public/schematics.json  { id: { schematic_name, cycle_time, pins:[{type_id,is_input,quantity}] } } (PI)
 """
-import io, json, sys, tarfile, urllib.request, os
+import io, json, tarfile, urllib.request, os
+from datetime import datetime, timezone
 
 URL = 'https://data.everef.net/reference-data/reference-data-latest.tar.xz'
+LATEST = 'https://developers.eveonline.com/static-data/tranquility/latest.jsonl'
 PUB = os.path.join(os.path.dirname(__file__), '..', 'public')
 
 print('Downloaden EVE Ref reference-data (~14MB)...')
@@ -58,5 +60,16 @@ for sid, s in sch.items():
              for p in (s.get('products') or {}).values()]
     out_sch[sid] = {'schematic_name': s['name']['en'], 'cycle_time': s['cycle_time'], 'pins': pins}
 write('schematics.json', out_sch)
+
+# SDE-versie (officiële build) — voor weergave + update-detectie
+ver = json.loads(urllib.request.urlopen(LATEST, timeout=30).read().decode().splitlines()[0])
+version = {
+    'build': ver.get('buildNumber'),
+    'releaseDate': ver.get('releaseDate'),
+    'generatedAt': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+}
+with open(os.path.join(PUB, 'sde-version.json'), 'w', encoding='utf-8') as f:
+    json.dump(version, f, ensure_ascii=False)
+print(f'  sde-version.json: build #{version["build"]} ({version["releaseDate"]})')
 
 print('Klaar.')
