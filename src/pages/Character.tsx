@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
-  getCharacterInfo, getSkillsInfo, getCorporation, getWallet,
+  getCharacterInfo, getSkillsInfo, getCorporation, getWallet, getCorpHistory,
   getClones, getImplants, getCharacterAttributes, getStationInfo, getStructureName, resolveNames,
-  type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes,
+  type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes, type SkillsInfo,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
@@ -34,14 +34,23 @@ function fmtDate(date?: string) {
   return new Date(date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-type Tab = 'overview' | 'implants' | 'clones' | 'attributes'
+type Tab = 'overview' | 'stats' | 'history' | 'implants' | 'clones' | 'attributes'
 
 interface CharData {
   info: CharacterInfo
   corp: CorporationInfo | null
   allianceName: string | null
   totalSP: number
+  skillsInfo: SkillsInfo | null
   wallet: number
+}
+
+interface SkillStats {
+  total: number; unallocated: number; count: number; atV: number
+  top: { id: number; sp: number; level: number; name: string }[]
+}
+interface HistoryEntry {
+  corpId: number; corpName: string; start: string; end: string | null; days: number
 }
 
 interface ImplantData {
@@ -77,6 +86,8 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
   const [implants, setImplants] = useState<ImplantData[] | null>(null)
   const [cloneData, setCloneData] = useState<CloneData | null>(null)
   const [attrs, setAttrs]       = useState<CharacterAttributes | null>(null)
+  const [skillStats, setSkillStats] = useState<SkillStats | null>(null)
+  const [history, setHistory]   = useState<HistoryEntry[] | null>(null)
   const [loading, setLoading]   = useState(true)
   usePageLoading(loading)
   const [tabLoading, setTabLoading] = useState(false)
@@ -97,7 +108,7 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
         getCorporation(info.corporation_id).catch(() => null),
         info.alliance_id ? resolveNames([info.alliance_id]) : Promise.resolve(new Map<number, string>()),
       ])
-      setData({ info, corp: corpRes, allianceName: info.alliance_id ? (allianceNames.get(info.alliance_id) ?? null) : null, totalSP: skills?.total_sp ?? 0, wallet })
+      setData({ info, corp: corpRes, allianceName: info.alliance_id ? (allianceNames.get(info.alliance_id) ?? null) : null, totalSP: skills?.total_sp ?? 0, skillsInfo: skills, wallet })
       setLoading(false)
     }
     load()
@@ -153,8 +164,41 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
     setTabLoading(false)
   }
 
+  async function loadStats() {
+    if (skillStats) return
+    const sk = data?.skillsInfo?.skills
+    if (!sk || sk.length === 0) { setSkillStats({ total: data?.totalSP ?? 0, unallocated: data?.skillsInfo?.unallocated_sp ?? 0, count: 0, atV: 0, top: [] }); return }
+    setTabLoading(true)
+    const top = [...sk].sort((a, b) => b.skillpoints_in_skill - a.skillpoints_in_skill).slice(0, 10)
+    const names = await resolveNames(top.map(s => s.skill_id))
+    setSkillStats({
+      total: data?.skillsInfo?.total_sp ?? 0,
+      unallocated: data?.skillsInfo?.unallocated_sp ?? 0,
+      count: sk.length,
+      atV: sk.filter(s => s.trained_skill_level === 5).length,
+      top: top.map(s => ({ id: s.skill_id, sp: s.skillpoints_in_skill, level: s.trained_skill_level, name: names.get(s.skill_id) ?? `Skill ${s.skill_id}` })),
+    })
+    setTabLoading(false)
+  }
+
+  async function loadHistory() {
+    if (history) return
+    setTabLoading(true)
+    const raw = await getCorpHistory(token.characterId).catch(() => [])
+    const sorted = [...raw].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime())
+    const corpNames = await resolveNames([...new Set(sorted.map(h => h.corporation_id))])
+    setHistory(sorted.map((h, i) => {
+      const end = i === 0 ? null : sorted[i - 1].start_date
+      const days = Math.floor(((end ? new Date(end).getTime() : Date.now()) - new Date(h.start_date).getTime()) / 86400000)
+      return { corpId: h.corporation_id, corpName: corpNames.get(h.corporation_id) ?? `Corp ${h.corporation_id}`, start: h.start_date, end, days }
+    }))
+    setTabLoading(false)
+  }
+
   function handleTab(t: Tab) {
     setTab(t)
+    if (t === 'stats')      loadStats()
+    if (t === 'history')    loadHistory()
     if (t === 'implants')   loadImplants()
     if (t === 'clones')     loadClones()
     if (t === 'attributes') loadAttributes()
@@ -198,6 +242,8 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
           <TabButton label="OVERVIEW"    active={tab === 'overview'}    onClick={() => handleTab('overview')} />
+          <TabButton label="STATS"       active={tab === 'stats'}       onClick={() => handleTab('stats')} />
+          <TabButton label="HISTORIE"    active={tab === 'history'}     onClick={() => handleTab('history')} />
           <TabButton label="IMPLANTS"    active={tab === 'implants'}    onClick={() => handleTab('implants')} />
           <TabButton label="KLONEN"      active={tab === 'clones'}      onClick={() => handleTab('clones')} />
           <TabButton label="ATTRIBUTEN"  active={tab === 'attributes'}  onClick={() => handleTab('attributes')} />
@@ -225,6 +271,66 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
               </div>
             ))}
           </div>
+        )}
+
+        {/* Stats (skills/SP) */}
+        {tab === 'stats' && !tabLoading && skillStats && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+              {[
+                { label: 'Totaal SP',          value: fmtSP(skillStats.total),       color: 'var(--gold)' },
+                { label: 'Niet toegewezen SP', value: fmtSP(skillStats.unallocated), color: skillStats.unallocated > 0 ? 'var(--blue)' : 'var(--text-dim)' },
+                { label: 'Geleerde skills',    value: String(skillStats.count),      color: 'var(--text)' },
+                { label: 'Skills op level V',  value: String(skillStats.atV),        color: 'var(--green)' },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ background: 'rgba(15,15,34,0.5)', border: '1px solid var(--border)', borderRadius: 2, padding: '0.5rem 0.75rem' }}>
+                  <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.2rem' }}>{label.toUpperCase()}</div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            {skillStats.top.length > 0 && (
+              <>
+                <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.5rem' }}>HOOGSTE SKILLS</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  {skillStats.top.map(s => {
+                    const max = skillStats.top[0].sp || 1
+                    return (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: 150, fontSize: '0.7rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                        <div style={{ flex: 1, height: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.max(3, (s.sp / max) * 100)}%`, background: 'linear-gradient(90deg, var(--gold), #f5d97a)', borderRadius: 2 }} />
+                        </div>
+                        <span style={{ width: 92, fontSize: '0.62rem', color: 'var(--text-dim)', textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{fmtSP(s.sp)} · L{s.level}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Corp-historie */}
+        {tab === 'history' && !tabLoading && history && (
+          history.length === 0
+            ? <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>Geen corp-historie</div>
+            : <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {history.map((h, i) => (
+                  <div key={`${h.corpId}-${h.start}`} style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', padding: '0.5rem 0', borderBottom: i < history.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <EveImage category="corporations" id={h.corpId} variation="logo" size={32} px={28} style={{ borderRadius: 3, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {h.corpName}
+                        {i === 0 && <span style={{ fontSize: '0.52rem', color: 'var(--green)', border: '1px solid rgba(62,207,110,0.4)', borderRadius: 2, padding: '0 0.3rem', letterSpacing: '0.06em' }}>HUIDIG</span>}
+                      </div>
+                      <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
+                        {fmtDate(h.start)} — {h.end ? fmtDate(h.end) : 'heden'} · {h.days >= 365 ? `${(h.days / 365).toFixed(1)} jr` : `${h.days} dgn`}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
         )}
 
         {/* Implants */}

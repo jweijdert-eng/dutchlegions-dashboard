@@ -151,10 +151,25 @@ export interface CharacterInfo {
   security_status: number
 }
 
+export interface SkillEntry {
+  skill_id: number
+  skillpoints_in_skill: number
+  active_skill_level: number
+  trained_skill_level: number
+}
 export interface SkillsInfo {
   total_sp: number
   unallocated_sp?: number
+  skills?: SkillEntry[]
 }
+
+export interface CorpHistoryEntry {
+  record_id: number
+  corporation_id: number
+  start_date: string
+  is_deleted?: boolean
+}
+export const getCorpHistory = (id: number) => esiGet<CorpHistoryEntry[]>(`/characters/${id}/corporationhistory/`)
 
 export interface CorporationInfo {
   name: string
