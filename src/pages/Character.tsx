@@ -456,7 +456,7 @@ export default function Character() {
   const { activeTokens: tokens, tokens: allTokens } = useAuth()
   return (
     <Layout header={<PageHeader title="Character" sub={`${tokens.length} account${tokens.length !== 1 ? 's' : ''}`} />}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '0.875rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(460px, 1fr))', gap: '0.875rem' }}>
         {tokens.map(t => <CharCard key={t.characterId} token={t} allTokens={allTokens} />)}
       </div>
     </Layout>
