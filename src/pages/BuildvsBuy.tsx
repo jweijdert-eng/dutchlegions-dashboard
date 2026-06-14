@@ -30,7 +30,21 @@ interface FuzzAgg {
   sell: { max: number; min: number }
 }
 
-const LOCAL_SERVER = 'http://localhost:8765'
+// Blueprint-data (manufacturing) uit de SDE, gebundeld als /blueprints.json en met de
+// site mee-gedeployd — geen lokale server nodig. Compact: { bpId: { m:[[matId,qty]], p:[prodId,qty] } }
+type CompactBp = { m: [number, number][]; p: [number, number] }
+let _bpCache: Record<string, CompactBp> | null = null
+let _bpInflight: Promise<Record<string, CompactBp>> | null = null
+function loadBlueprints(): Promise<Record<string, CompactBp>> {
+  if (_bpCache) return Promise.resolve(_bpCache)
+  if (!_bpInflight) {
+    _bpInflight = fetch('/blueprints.json')
+      .then(r => (r.ok ? r.json() : {}))
+      .then((d: Record<string, CompactBp>) => { _bpCache = d; return d })
+      .catch(() => ({}))
+  }
+  return _bpInflight
+}
 
 function fmtISK(v: number) {
   if (!isFinite(v) || v === 0) return '—'
@@ -47,18 +61,19 @@ function applyME(qty: number, me: number): number {
 }
 
 async function fetchBlueprintData(bpTypeId: number): Promise<{ materials: SdeMaterial[]; product: SdeProduct | null; serverOffline: boolean; sdeError: string | null }> {
-  try {
-    const r = await fetch(`${LOCAL_SERVER}/blueprint/${bpTypeId}`, { signal: AbortSignal.timeout(8000) })
-    if (!r.ok) throw new Error(`status ${r.status}`)
-    const data = await r.json() as { materials: SdeMaterial[]; products: SdeProduct[]; error: string | null }
-    return {
-      materials:     data.materials ?? [],
-      product:       (data.products ?? [])[0] ?? null,
-      serverOffline: false,
-      sdeError:      data.error ?? null,
-    }
-  } catch {
-    return { materials: [], product: null, serverOffline: true, sdeError: null }
+  const bps = await loadBlueprints()
+  if (Object.keys(bps).length === 0) {
+    return { materials: [], product: null, serverOffline: true, sdeError: null }   // data niet geladen
+  }
+  const bp = bps[String(bpTypeId)]
+  if (!bp) {
+    return { materials: [], product: null, serverOffline: false, sdeError: `Geen manufacturing-recept voor type ${bpTypeId}` }
+  }
+  return {
+    materials: bp.m.map(([mat, qty]) => ({ typeid: bpTypeId, materialtypeid: mat, quantity: qty })),
+    product:   { typeid: bpTypeId, producttypeid: bp.p[0], quantity: bp.p[1] },
+    serverOffline: false,
+    sdeError: null,
   }
 }
 
@@ -97,14 +112,6 @@ export default function BuildvsBuy() {
   const [product, setProduct]           = useState<ProductInfo | null>(null)
   const [sdeError, setSdeError]         = useState<string | null>(null)
   const [serverOffline, setServerOffline] = useState(false)
-  const [sdeStatus, setSdeStatus]       = useState<{ loaded: boolean; count: number; path: string; error: string | null } | null>(null)
-
-  useEffect(() => {
-    fetch(`${LOCAL_SERVER}/sde-status`, { signal: AbortSignal.timeout(3000) })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => setSdeStatus(d))
-      .catch(() => setSdeStatus(null))
-  }, [])
 
   useEffect(() => {
     if (tokens.length === 0) return
@@ -292,24 +299,7 @@ export default function BuildvsBuy() {
 
           {serverOffline && (
             <div style={{ background: 'rgba(224,85,85,0.08)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--red)', lineHeight: 1.7 }}>
-              Kan de lokale server niet bereiken. Start hem eerst:<br />
-              <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.15rem 0.4rem', borderRadius: 2, fontSize: '0.72rem' }}>
-                cd local-chat-server &amp;&amp; node server.js
-              </code>
-            </div>
-          )}
-
-          {sdeStatus && !sdeStatus.loaded && (
-            <div style={{ background: 'rgba(240,192,64,0.08)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--gold)', lineHeight: 1.8 }}>
-              <strong>SDE niet geladen</strong> — {sdeStatus.error}<br />
-              Extraheer de SDE zip naar: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>{sdeStatus.path.replace(/[\\/]fsd[\\/]blueprints\.yaml$/, '')}</code><br />
-              <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Download via de sidebar ↓ knop, extraheer, herstart de server.</span>
-            </div>
-          )}
-
-          {sdeStatus?.loaded && (
-            <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
-              SDE geladen · {sdeStatus.count.toLocaleString()} blueprints
+              Kan de blueprint-data niet laden. Probeer de pagina te verversen.
             </div>
           )}
 
