@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -71,41 +71,77 @@ function loadNav(): NavItem[] {
   } catch { return DEFAULT_NAV }
 }
 
-function SortableNavItem({ item, badgeCount, collapsed }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean }) {
+type SubItem = { label: string; to: string; corp: boolean }
+const KILLS_SUBITEMS: SubItem[] = [
+  { label: 'Mijn killboard', to: '/kills',            corp: false },
+  { label: 'Corp killboard', to: '/kills?board=corp', corp: true },
+]
+
+function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean; subItems?: SubItem[] }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.path })
   const { editMode } = useLayoutMode()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
   const count = badgeCount(item.badge)
+  const hasSub = !!subItems && subItems.length > 0 && !collapsed
+  const onThisRoute = location.pathname === item.path
+  const [open, setOpen] = useState(onThisRoute)
+  useEffect(() => { if (onThisRoute) setOpen(true) }, [onThisRoute])
+
+  const rowStyle = (isActive: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: '0.65rem',
+    padding: collapsed ? '0.6rem 0' : '0.55rem 1rem',
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    position: 'relative', textDecoration: 'none',
+    background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+    borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+    color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+    userSelect: 'none',
+  })
+
+  const dragHandle = editMode && !collapsed && (
+    <span {...attributes} {...listeners}
+      style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
+      title="Versleep om volgorde te wijzigen">⠿</span>
+  )
+
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}>
       <NavLink
         to={item.path}
         end={item.path === '/'}
         title={collapsed ? item.label : undefined}
-        style={({ isActive }) => ({
-          display: 'flex', alignItems: 'center', gap: '0.65rem',
-          padding: collapsed ? '0.6rem 0' : '0.55rem 1rem',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          position: 'relative', textDecoration: 'none',
-          background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
-          borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-          color: isActive ? 'var(--blue)' : 'var(--text-dim)',
-          userSelect: 'none',
-        })}
+        onClick={() => { if (hasSub) setOpen(true) }}
+        style={({ isActive }) => rowStyle(isActive)}
       >
-        {editMode && !collapsed && (
-          <span
-            {...attributes} {...listeners}
-            style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
-            title="Versleep om volgorde te wijzigen"
-          >⠿</span>
-        )}
+        {dragHandle}
         <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
         {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>}
-        {!collapsed && <Badge count={count} />}
+        {hasSub && (
+          <span onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(o => !o) }}
+            style={{ fontSize: '0.6rem', color: 'var(--text-dim)', cursor: 'pointer', padding: '0 0.2rem' }}>{open ? '▾' : '▸'}</span>
+        )}
+        {!collapsed && !hasSub && <Badge count={count} />}
         {collapsed && (count ?? 0) > 0 && (
           <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />
         )}
       </NavLink>
+
+      {hasSub && open && subItems!.map(s => {
+        const active = onThisRoute && ((searchParams.get('board') === 'corp') === s.corp)
+        return (
+          <NavLink key={s.to} to={s.to} style={{
+            display: 'flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.4rem 1rem 0.4rem 2.5rem', textDecoration: 'none', fontSize: '0.72rem',
+            background: active ? 'rgba(0,180,216,0.07)' : 'transparent',
+            borderLeft: `2px solid ${active ? 'var(--blue)' : 'transparent'}`,
+            color: active ? 'var(--blue)' : 'var(--text-dim)',
+          }}>
+            <span style={{ fontSize: '0.5rem', opacity: 0.7 }}>{s.corp ? '👥' : '◈'}</span>
+            {s.label}
+          </NavLink>
+        )
+      })}
     </div>
   )
 }
@@ -543,7 +579,8 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={nav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {nav.map(item => (
-              <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed} />
+              <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
+                subItems={item.path === '/kills' ? KILLS_SUBITEMS : undefined} />
             ))}
           </SortableContext>
         </DndContext>

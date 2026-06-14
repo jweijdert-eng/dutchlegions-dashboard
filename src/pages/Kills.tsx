@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { getKillmailDetail, resolveNames, getCharacterInfo, getCorporation } from '../api/esi'
 import { getKills, getLosses, getCorpKills, getCorpLosses } from '../api/zkillboard'
@@ -111,8 +112,11 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 export default function Kills() {
   const { activeTokens: tokens, mainCharId } = useAuth()
-  const [scope, setScope]   = useState<'me' | 'corp'>('corp')
-  const [view, setView]     = useState<'list' | 'analyse'>('analyse')
+  const [searchParams] = useSearchParams()
+  const scope: 'me' | 'corp' = searchParams.get('board') === 'corp' ? 'corp' : 'me'
+  const [view, setView]     = useState<'list' | 'analyse'>(scope === 'corp' ? 'analyse' : 'list')
+  // Bij wisselen van killboard (via de zijbalk) de passende weergave kiezen.
+  useEffect(() => { setView(scope === 'corp' ? 'analyse' : 'list') }, [scope])
   const [corp, setCorp]     = useState<{ id: number; name: string } | null>(null)
   const [entries, setEntries]     = useState<KillEntry[]>([])
   const [loading, setLoading]     = useState(true)
@@ -272,10 +276,6 @@ export default function Kills() {
         sub={loading ? 'Laden...' : `${kills.length}K · ${losses.length}L · ${eff}% ISK efficiëntie`}
         right={
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden', marginRight: '0.2rem' }}>
-              <button onClick={() => setScope('corp')} style={{ ...btnStyle(scope === 'corp'), border: 'none', borderRadius: 0 }}>Corp</button>
-              <button onClick={() => setScope('me')}   style={{ ...btnStyle(scope === 'me'),   border: 'none', borderRadius: 0 }}>Mij</button>
-            </div>
             <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden', marginRight: '0.2rem' }}>
               <button onClick={() => setView('analyse')} style={{ ...btnStyle(view === 'analyse', 'var(--gold)'), border: 'none', borderRadius: 0 }}>Analyse</button>
               <button onClick={() => setView('list')}    style={{ ...btnStyle(view === 'list'),    border: 'none', borderRadius: 0 }}>Lijst</button>
