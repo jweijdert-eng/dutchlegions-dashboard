@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import Login from './pages/Login'
 import Callback from './pages/Callback'
@@ -135,8 +135,27 @@ function MaintenancePage() {
   )
 }
 
+// Registreer page views (1× per pagina per sessie) voor de feature-gebruik-stats
+function usePageTracking() {
+  const location = useLocation()
+  const { tokens, mainCharId } = useAuth()
+  useEffect(() => {
+    const charId = mainCharId ?? tokens[0]?.characterId
+    const page = location.pathname
+    if (!charId || !page || page === '/login') return
+    const key = `pv:${page}`
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+    fetch('/api/pageview.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: charId, page }),
+    }).catch(() => {})
+  }, [location.pathname, tokens, mainCharId])
+}
+
 function AppRoutes() {
   useKeybinds()
+  usePageTracking()
   const { tokens } = useAuth()
   const { previewMode } = useLayoutMode()
   const [maintenance, setMaintenance] = useState(false)

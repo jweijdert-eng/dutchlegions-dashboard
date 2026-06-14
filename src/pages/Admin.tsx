@@ -53,6 +53,14 @@ const SETTING_LABELS: Record<SettingKey, string> = {
   local_chat:       'Local Chat zichtbaar voor members',
 }
 
+const PAGE_LABELS: Record<string, string> = {
+  '/': 'Dashboard', '/overview': 'Overzicht', '/character': 'Character', '/wallet': 'Wallet',
+  '/market': 'Market', '/kills': 'Kills', '/ratting': 'Ratting', '/hauling': 'Hauling',
+  '/industry': 'Industry', '/mining': 'Mining', '/planets': 'Planets', '/mail': 'Mail',
+  '/fittings': 'Fittings', '/skills': 'Skills', '/blueprints': 'Blueprints', '/contracts': 'Contracts',
+  '/buildvsbuy': 'Build vs Buy', '/assets': 'Assets', '/notes': 'Notities', '/local': 'Local Chat', '/admin': 'Admin',
+}
+
 function fmtDT(s: string | null | undefined): string {
   if (!s) return '—'
   const d = new Date(s)
@@ -77,6 +85,7 @@ export default function Admin() {
   const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
   const [tab, setTab] = useState<'stats' | 'members' | 'settings' | 'sde'>('stats')
   const [activity, setActivity] = useState<ActivityData | null>(null)
+  const [pageStats, setPageStats] = useState<{ page: string; views: number; users: number }[]>([])
   const [members, setMembers] = useState<SiteMember[]>([])
   const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
   const [detailMember, setDetailMember] = useState<SiteMember | null>(null)
@@ -132,8 +141,12 @@ export default function Admin() {
   async function fetchActivity() {
     setLoading(true)
     try {
-      const r = await fetch('/api/activity.php')
-      setActivity(await r.json())
+      const [act, pv] = await Promise.all([
+        fetch('/api/activity.php').then(r => r.json()),
+        fetch('/api/pageview.php').then(r => (r.ok ? r.json() : [])).catch(() => []),
+      ])
+      setActivity(act)
+      setPageStats(Array.isArray(pv) ? pv : [])
     } catch { /* ignore */ }
     setLoading(false)
   }
@@ -326,6 +339,32 @@ export default function Admin() {
                     <Bar dataKey="count" fill="var(--blue)" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              )}
+            </div>
+
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.1em', margin: '1.5rem 0 0.75rem' }}>MEEST BEZOCHTE PAGINA'S — LAATSTE 30 DAGEN</div>
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 4, padding: '1rem' }}>
+              {pageStats.length === 0 ? (
+                <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', textAlign: 'center', padding: '1.5rem 0' }}>Nog geen paginadata verzameld.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {pageStats.slice(0, 15).map(p => {
+                    const max = pageStats[0].views || 1
+                    return (
+                      <div key={p.page} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span style={{ width: 92, fontSize: '0.68rem', color: 'var(--text)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {PAGE_LABELS[p.page] ?? p.page}
+                        </span>
+                        <div style={{ flex: 1, height: 14, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.max(2, (p.views / max) * 100)}%`, background: 'linear-gradient(90deg, var(--blue), #7dd3fc)', borderRadius: 2 }} />
+                        </div>
+                        <span style={{ width: 78, fontSize: '0.62rem', color: 'var(--text-dim)', textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                          {p.views} · {p.users}×👤
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
           </div>
