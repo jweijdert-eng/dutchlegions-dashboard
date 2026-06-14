@@ -102,6 +102,9 @@ export default function Admin() {
   const [patInput, setPatInput] = useState('')
   const [showPatField, setShowPatField] = useState(false)
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null)
+  const [updating, setUpdating] = useState(false)
+  const [updatePct, setUpdatePct] = useState(0)
+  const [updateStart, setUpdateStart] = useState(0)
 
   useEffect(() => {
     if (tab === 'stats') fetchActivity()
@@ -153,16 +156,47 @@ export default function Admin() {
   }
 
   async function runUpdate() {
-    if (!adminToken) return
+    if (!adminToken || updating) return
     if (!hasPat) { setShowPatField(true); return }
-    setTriggerMsg('Starten…')
+    setTriggerMsg(null)
     const r = await fetch('/api/sde-trigger.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ characterId: adminToken.characterId, action: 'run' }),
     }).then(r => r.json()).catch(() => ({ error: 'netwerkfout' }))
-    setTriggerMsg(r.ok ? '✓ Gestart — over ~2 min live' : `Mislukt: ${r.error ?? ''}`)
-    setTimeout(() => setTriggerMsg(null), 6000)
+    if (r.ok) {
+      setUpdateStart(Date.now()); setUpdatePct(3); setUpdating(true)
+    } else {
+      setTriggerMsg(`Mislukt: ${r.error ?? ''}`); setTimeout(() => setTriggerMsg(null), 6000)
+    }
   }
+
+  // Poll de workflow-status terwijl de update loopt (voedt de laadbalk)
+  useEffect(() => {
+    if (!updating || !adminToken) return
+    let alive = true
+    const tick = async () => {
+      if (!alive) return
+      const elapsed = (Date.now() - updateStart) / 1000
+      setUpdatePct(p => Math.min(95, Math.max(p, Math.round((elapsed / 130) * 100))))
+      const r = await fetch('/api/sde-trigger.php', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: adminToken.characterId, action: 'status' }),
+      }).then(res => res.json()).catch(() => null)
+      if (!alive) return
+      const fresh = r?.created_at && new Date(r.created_at).getTime() >= updateStart - 20000
+      if (fresh && r.status === 'completed') {
+        setUpdating(false); setUpdatePct(100)
+        setTriggerMsg(r.conclusion === 'success' ? '✓ Klaar! Ververs de pagina voor de nieuwe data.' : `CI mislukt (${r.conclusion ?? '?'})`)
+        if (r.conclusion === 'success') fetchBpInfo()
+      } else if (elapsed > 360) {
+        setUpdating(false); setTriggerMsg('Time-out — check GitHub Actions.')
+      }
+    }
+    tick()
+    const id = setInterval(tick, 4000)
+    return () => { alive = false; clearInterval(id) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updating, updateStart, adminToken])
 
   async function fetchActivity() {
     setLoading(true)
@@ -590,17 +624,27 @@ export default function Admin() {
               <div style={{ marginTop: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                 <button
                   onClick={runUpdate}
-                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.8rem', cursor: 'pointer' }}
-                >↻ Nu bijwerken</button>
+                  disabled={updating}
+                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.8rem', cursor: updating ? 'default' : 'pointer', opacity: updating ? 0.6 : 1 }}
+                >{updating ? '⏳ Bezig…' : '↻ Nu bijwerken'}</button>
                 {!hasPat && (
                   <button onClick={() => setShowPatField(s => !s)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.65rem', cursor: 'pointer', textDecoration: 'underline' }}>
                     GitHub-token instellen
                   </button>
                 )}
                 {triggerMsg && (
-                  <span style={{ fontSize: '0.65rem', color: triggerMsg.startsWith('✓') ? 'var(--green)' : triggerMsg.startsWith('Starten') ? 'var(--text-dim)' : 'var(--red)' }}>{triggerMsg}</span>
+                  <span style={{ fontSize: '0.65rem', color: triggerMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{triggerMsg}</span>
                 )}
               </div>
+
+              {(updating || updatePct === 100) && (
+                <div style={{ marginTop: '0.55rem' }}>
+                  <div style={{ height: 6, background: 'rgba(0,180,216,0.12)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${updatePct}%`, background: updatePct === 100 ? 'linear-gradient(90deg,#1a5c38,#3ecf6e)' : 'linear-gradient(90deg, var(--blue), #7dd3fc)', borderRadius: 3, transition: 'width 0.6s ease' }} />
+                  </div>
+                  {updating && <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>Bouwen + deployen… ({updatePct}%)</div>}
+                </div>
+              )}
 
               {showPatField && (
                 <div style={{ marginTop: '0.6rem' }}>

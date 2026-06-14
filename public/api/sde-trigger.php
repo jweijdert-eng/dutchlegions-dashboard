@@ -56,6 +56,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // Status van de laatste workflow-run (voor de laadbalk)
+    if ($action === 'status') {
+        $token = pat($pdo);
+        if ($token === '') { http_response_code(400); echo json_encode(['error' => 'Geen GitHub-token ingesteld']); exit; }
+        $ch = curl_init('https://api.github.com/repos/' . GITHUB_REPO . '/actions/workflows/update-sde.yml/runs?per_page=1');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $token,
+                'Accept: application/vnd.github+json',
+                'X-GitHub-Api-Version: 2022-11-28',
+                'User-Agent: dutchlegions-dashboard',
+            ],
+        ]);
+        $resp = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code === 200) {
+            $run = (json_decode($resp, true)['workflow_runs'][0]) ?? null;
+            echo json_encode($run
+                ? ['status' => $run['status'], 'conclusion' => $run['conclusion'], 'created_at' => $run['created_at'], 'url' => $run['html_url']]
+                : ['status' => null]);
+        } else { http_response_code(502); echo json_encode(['error' => "GitHub gaf HTTP $code"]); }
+        exit;
+    }
+
     http_response_code(400); echo json_encode(['error' => 'Onbekende actie']);
     exit;
 }
