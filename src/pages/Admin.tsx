@@ -415,13 +415,17 @@ export default function Admin() {
               )}
 
               <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.7 }}>
-                De blueprint-data (manufacturing) wordt nu <strong>met de site meegeleverd</strong> als
-                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>public/blueprints.json</code>
-                — geen lokale server meer nodig. Build vs Buy werkt zo voor iedereen op de live-site.
+                De SDE-data wordt nu <strong>met de site meegeleverd</strong> (geen lokale server meer nodig):
+                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>blueprints.json</code>
+                (Build vs Buy),
+                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>type-names.json</code>
+                (alle item-namen) en
+                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>schematics.json</code>
+                (PI). Namen worden zo direct opgelost zonder ESI-rate-limits.
               </div>
 
               <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '0.75rem', lineHeight: 1.6 }}>
-                Bijwerken bij een nieuwe SDE: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>node tools/build-blueprints.mjs</code>, daarna committen + pushen.
+                Bijwerken bij een nieuwe SDE: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>python tools/build-sde.py</code>, daarna committen + pushen.
               </div>
             </div>
           </div>

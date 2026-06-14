@@ -5,6 +5,15 @@ import type { TokenData } from '../auth/sso'
 const _cache = new Map<string, { data: unknown; expires: number }>()
 export function clearEsiCache() { _cache.clear() }
 
+// Gebundelde SDE-data uit public/*.json (meegedeployd met de site, één keer geladen).
+const _bundles: Record<string, Promise<Record<string, unknown>>> = {}
+function loadBundle<T = Record<string, unknown>>(file: string): Promise<T> {
+  if (!_bundles[file]) {
+    _bundles[file] = fetch(`/${file}`).then(r => (r.ok ? r.json() : {})).catch(() => ({}))
+  }
+  return _bundles[file] as Promise<T>
+}
+
 const _sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 // Gelijktijdigheidslimiet: ESI error-limit (420) slaat toe bij een burst van
@@ -448,6 +457,10 @@ const _schematicCache = new Map<number, Schematic>()
 
 export async function getSchematic(id: number): Promise<Schematic | null> {
   if (_schematicCache.has(id)) return _schematicCache.get(id)!
+  // Gebundelde SDE PI-schematics eerst
+  const bundle = await loadBundle<Record<string, Schematic>>('schematics.json')
+  const fromBundle = bundle[String(id)]
+  if (fromBundle) { _schematicCache.set(id, fromBundle); return fromBundle }
   try {
     const data = await esiGet<Schematic>(`/universe/schematics/${id}/`)
     _schematicCache.set(id, data)
@@ -1059,11 +1072,21 @@ export const getFleetWings   = (fleetId: number, token: string) =>
   esiGet<FleetWing[]>(`/fleets/${fleetId}/wings/`, token)
 
 export async function resolveNames(ids: number[]): Promise<Map<number, string>> {
-  // /universe/names/ only accepts int32 — filter out player structure IDs (> 2^31)
-  const safe = [...new Set(ids.filter(id => id > 0 && id <= INT32_MAX))]
-  if (safe.length === 0) return new Map()
   const result = new Map<number, string>()
-  // Process in chunks of 1000 (ESI limit per request)
+  const uniq = [...new Set(ids.filter(id => id > 0))]
+  if (uniq.length === 0) return result
+
+  // Gebundelde SDE type-namen eerst — dekt vrijwel alle inventory-types, geen ESI nodig.
+  const typeNames = await loadBundle<Record<string, string>>('type-names.json')
+  const missing: number[] = []
+  for (const id of uniq) {
+    const n = typeNames[String(id)]
+    if (n) result.set(id, n)
+    else missing.push(id)
+  }
+
+  // ESI voor de rest (stations/systemen/etc.); /universe/names/ accepteert alleen int32.
+  const safe = missing.filter(id => id <= INT32_MAX)
   for (let i = 0; i < safe.length; i += 1000) {
     await _namesBatch(safe.slice(i, i + 1000), result)
   }
