@@ -31,8 +31,6 @@ function Sparkline({ values }: { values: number[] }) {
   )
 }
 
-const LOCAL = 'http://localhost:8765'
-export { LOCAL }
 
 type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' }
 

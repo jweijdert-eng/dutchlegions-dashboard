@@ -613,7 +613,6 @@ export default function Dashboard() {
     })
   }, [])
 
-  const [sdeInfo, setSdeInfo] = useState<{ build: number | null; loaded: boolean; count: number; update: boolean } | null>(null)
   const [esiStatus, setEsiStatus] = useState<{ players: number; server_version: string; vip: boolean } | null>(null)
 
   useEffect(() => {
@@ -626,18 +625,6 @@ export default function Dashboard() {
     fetchEsiStatus()
     const interval = setInterval(fetchEsiStatus, 60_000)
     return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    fetch('http://localhost:8765/sde-status', { signal: AbortSignal.timeout(2000) })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setSdeInfo({
-        build:  d.version?.installed ?? null,
-        loaded: d.loaded ?? false,
-        count:  d.count ?? 0,
-        update: d.version?.updateAvailable ?? false,
-      }))
-      .catch(() => {})
   }, [])
 
   const [phase1Loading, setPhase1Loading] = useState(true)
