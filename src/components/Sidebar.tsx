@@ -8,6 +8,7 @@ import { useLayoutMode } from '../context/LayoutModeContext'
 
 import { useAlerts } from '../context/useAlerts'
 import { useSiteSettings } from '../hooks/useSiteSettings'
+import { useSiteConfig } from '../hooks/useSiteConfig'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
 import SolarSystem from './SolarSystem'
 import EveImage from './EveImage'
@@ -33,6 +34,9 @@ function Sparkline({ values }: { values: number[] }) {
 
 
 type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' }
+
+// Kleurpalet voor door admin beheerde links (cyclisch toegekend).
+const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
 
 const DEFAULT_NAV: NavItem[] = [
   { label: 'Dashboard',   path: '/',           icon: '▣', badge: null },
@@ -343,6 +347,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const { previewMode } = useLayoutMode()
   const alerts = useAlerts()
   const settings = useSiteSettings()
+  const siteConfig = useSiteConfig()   // accentkleur (auto toegepast) + handige links
   const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
   const isAdminChar = tokens.some(t => t.characterId === 1831618559)
   const [nav, setNav] = useState<NavItem[]>(loadNav)
@@ -587,13 +592,16 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
         )}
       </div>
 
-      {/* Externe links */}
+      {/* Externe links — door admin beheerd (siteconfig); anders de standaardlinks */}
       <div style={{ borderTop: '1px solid var(--border)', padding: collapsed ? '0.5rem 0.4rem 0.35rem' : '0.5rem 0.5rem 0.35rem' }}>
-        {[
-          { label: 'Insidious Auth',         url: 'https://auth.insidiousevil.org/',     color: '#e05555' },
-          { label: 'Dutch Legions',           url: 'https://dutchlegions.nl/dashboard/', color: '#f0a030' },
-          { label: 'Dutch Legions - Logistics', url: 'https://procurer.space/',          color: '#4ade80' },
-        ].map(({ label, url, color }) => (
+        {(siteConfig.links.length > 0
+          ? siteConfig.links.map((l, i) => ({ label: l.label, url: l.url, color: LINK_COLORS[i % LINK_COLORS.length] }))
+          : [
+              { label: 'Insidious Auth',            url: 'https://auth.insidiousevil.org/',    color: '#e05555' },
+              { label: 'Dutch Legions',             url: 'https://dutchlegions.nl/dashboard/', color: '#f0a030' },
+              { label: 'Dutch Legions - Logistics', url: 'https://procurer.space/',            color: '#4ade80' },
+            ]
+        ).map(({ label, url, color }) => (
           <a
             key={url}
             href={url}

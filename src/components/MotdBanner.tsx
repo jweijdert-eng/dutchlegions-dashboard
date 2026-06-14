@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 type MotdType = 'info' | 'warning' | 'success' | 'event'
 
-interface Motd { text: string; enabled: boolean; type: MotdType }
+interface Motd { text: string; enabled: boolean; type: MotdType; until?: string; link?: string }
 
 // Stijl per mededeling-type (kleur + icoon).
 const MOTD_STYLE: Record<MotdType, { color: string; icon: string }> = {
@@ -23,6 +23,11 @@ export default function MotdBanner() {
       .then(r => (r.ok ? r.json() : null))
       .then((d: Motd | null) => {
         if (!d || !d.enabled || !d.text.trim()) return
+        // Auto-verloop: verberg als de einddatum verstreken is.
+        if (d.until && d.until.trim()) {
+          const end = new Date(d.until).getTime()
+          if (!isNaN(end) && end < Date.now()) return
+        }
         setMotd({ ...d, type: d.type ?? 'info' })
         setDismissed(localStorage.getItem('motd_dismissed') === d.text)
       })
@@ -45,6 +50,14 @@ export default function MotdBanner() {
       <div style={{ flex: 1, minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text)' }}>
         {motd.text}
       </div>
+      {motd.link && motd.link.trim() && (
+        <a
+          href={motd.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ flexShrink: 0, alignSelf: 'center', fontSize: '0.7rem', fontWeight: 700, color: `rgb(${color})`, border: `1px solid rgba(${color},0.5)`, borderRadius: 3, padding: '0.15rem 0.5rem', textDecoration: 'none', whiteSpace: 'nowrap' }}
+        >Bekijk →</a>
+      )}
       <button
         onClick={() => { localStorage.setItem('motd_dismissed', motd.text); setDismissed(true) }}
         aria-label="Mededeling sluiten"

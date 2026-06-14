@@ -10,6 +10,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             if (strpos($row['key'], 'motd') === 0) continue;     // motd via motd.php
             if ($row['key'] === 'github_pat') continue;          // geheim, niet uitlekken
+            if ($row['key'] === 'theme_accent') continue;        // string-waarde, via siteconfig.php
+            if ($row['key'] === 'corp_links') continue;          // JSON-waarde, via siteconfig.php
             $out[$row['key']] = $row['value'] === 'true';
         }
         echo json_encode($out);

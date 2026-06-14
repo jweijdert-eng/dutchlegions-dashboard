@@ -5,8 +5,16 @@ import Layout, { PageHeader } from '../components/Layout'
 import { useLayoutMode } from '../context/LayoutModeContext'
 import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
 import EveImage from '../components/EveImage'
+import { fetchSiteConfig, applyAccent, type CorpLink } from '../hooks/useSiteConfig'
 
 const ADMIN_CHAR_ID = 1831618559
+
+const ACCENTS = [
+  { hex: '#00b4d8', name: 'Blauw' }, { hex: '#22d3ee', name: 'Cyaan' },
+  { hex: '#3ecf6e', name: 'Groen' }, { hex: '#f0c040', name: 'Goud' },
+  { hex: '#a78bfa', name: 'Paars' }, { hex: '#f472b6', name: 'Roze' },
+  { hex: '#f97316', name: 'Oranje' }, { hex: '#e05555', name: 'Rood' },
+]
 
 interface ActivityData {
   total: number
@@ -127,7 +135,12 @@ export default function Admin() {
   const [motdText, setMotdText] = useState('')
   const [motdEnabled, setMotdEnabled] = useState(false)
   const [motdType, setMotdType] = useState<MotdType>('info')
+  const [motdUntil, setMotdUntil] = useState('')
+  const [motdLink, setMotdLink] = useState('')
   const [motdSaved, setMotdSaved] = useState(false)
+  const [accent, setAccent] = useState('')
+  const [links, setLinks] = useState<CorpLink[]>([])
+  const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
   const [hasPat, setHasPat] = useState(false)
@@ -141,7 +154,7 @@ export default function Admin() {
   useEffect(() => {
     if (tab === 'stats') fetchActivity()
     if (tab === 'members') fetchMembers()
-    if (tab === 'settings') { fetchSettings(); fetchMotd() }
+    if (tab === 'settings') { fetchSettings(); fetchMotd(); loadSiteConfig() }
     if (tab === 'sde') fetchBpInfo()
   }, [tab])
 
@@ -151,6 +164,8 @@ export default function Admin() {
       setMotdText(d.text ?? '')
       setMotdEnabled(!!d.enabled)
       setMotdType(d.type ?? 'info')
+      setMotdUntil(d.until ?? '')
+      setMotdLink(d.link ?? '')
     } catch { /* ignore */ }
   }
 
@@ -158,9 +173,35 @@ export default function Admin() {
     if (!adminToken) return
     await fetch('/api/motd.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, text: motdText, enabled: motdEnabled, type: motdType }),
+      body: JSON.stringify({ characterId: adminToken.characterId, text: motdText, enabled: motdEnabled, type: motdType, until: motdUntil, link: motdLink }),
     }).catch(() => {})
     setMotdSaved(true); setTimeout(() => setMotdSaved(false), 2000)
+  }
+
+  async function loadSiteConfig() {
+    try {
+      const d = await fetch('/api/siteconfig.php', { cache: 'no-cache' }).then(r => r.json())
+      setAccent(d.accent ?? '')
+      setLinks(Array.isArray(d.links) ? d.links : [])
+    } catch { /* ignore */ }
+  }
+
+  async function saveSiteConfig(nextAccent: string, nextLinks: CorpLink[]) {
+    if (!adminToken) return
+    const cleanLinks = nextLinks.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
+    await fetch('/api/siteconfig.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: adminToken.characterId, accent: nextAccent, links: cleanLinks }),
+    }).catch(() => {})
+    applyAccent(nextAccent)        // direct site-breed toepassen
+    fetchSiteConfig(true)          // module-cache verversen voor de rest van de app
+    setCfgSaved(true); setTimeout(() => setCfgSaved(false), 2000)
+  }
+
+  function pickAccent(hex: string) {
+    setAccent(hex)
+    applyAccent(hex)               // live preview
+    saveSiteConfig(hex, links)
   }
 
   async function fetchBpInfo() {
@@ -615,12 +656,90 @@ export default function Admin() {
                 </div>
               )}
 
+              {/* Verloopt op + link */}
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                <label style={{ flex: '1 1 150px', fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.08em' }}>
+                  VERLOOPT OP (optioneel)
+                  <input
+                    type="datetime-local"
+                    value={motdUntil}
+                    onChange={e => setMotdUntil(e.target.value)}
+                    style={{ display: 'block', width: '100%', marginTop: '0.25rem', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                  />
+                </label>
+                <label style={{ flex: '1 1 180px', fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.08em' }}>
+                  LINK (optioneel, 'Bekijk →')
+                  <input
+                    type="url"
+                    value={motdLink}
+                    onChange={e => setMotdLink(e.target.value)}
+                    placeholder="https://discord.gg/..."
+                    style={{ display: 'block', width: '100%', marginTop: '0.25rem', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                  />
+                </label>
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.65rem' }}>
                 <span style={{ fontSize: '0.62rem', color: motdSaved ? 'var(--green)' : 'var(--text-dim)' }}>
-                  {motdSaved ? '✓ Opgeslagen' : motdEnabled ? 'Zichtbaar voor alle members' : 'Verborgen'}
+                  {motdSaved ? '✓ Opgeslagen' : motdUntil ? `Verloopt ${new Date(motdUntil).toLocaleString('nl', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : motdEnabled ? 'Zichtbaar voor alle members' : 'Verborgen'}
                 </span>
                 <button
                   onClick={saveMotd}
+                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
+                >Opslaan</button>
+              </div>
+            </div>
+
+            {/* Thema / accentkleur */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>🎨 Accentkleur</div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>De accentkleur van de hele site (voor iedereen).</div>
+              <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
+                {ACCENTS.map(a => {
+                  const active = (accent || '#00b4d8') === a.hex
+                  return (
+                    <button key={a.hex} onClick={() => pickAccent(a.hex)} title={a.name} style={{
+                      width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', background: a.hex,
+                      border: active ? '2px solid #fff' : '2px solid transparent',
+                      boxShadow: active ? `0 0 10px -1px ${a.hex}` : 'none', transition: 'box-shadow 0.15s',
+                    }} />
+                  )
+                })}
+              </div>
+              {cfgSaved && <div style={{ fontSize: '0.6rem', color: 'var(--green)', marginTop: '0.5rem' }}>✓ Opgeslagen</div>}
+            </div>
+
+            {/* Handige links */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>🔗 Handige links (zijbalk)</div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>Corp-links onderaan de zijbalk voor members (Discord, forum, SRP…). Leeg = standaardlinks.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {links.map((l, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <input
+                      value={l.label}
+                      onChange={e => setLinks(ls => ls.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                      placeholder="Naam"
+                      style={{ width: 120, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
+                    />
+                    <input
+                      value={l.url}
+                      onChange={e => setLinks(ls => ls.map((x, j) => j === i ? { ...x, url: e.target.value } : x))}
+                      placeholder="https://..."
+                      style={{ flex: 1, minWidth: 0, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
+                    />
+                    <button onClick={() => setLinks(ls => ls.filter((_, j) => j !== i))} title="Verwijderen"
+                      style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--red)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>×</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.65rem' }}>
+                <button
+                  onClick={() => setLinks(ls => ls.length < 12 ? [...ls, { label: '', url: '' }] : ls)}
+                  style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
+                >+ Link toevoegen</button>
+                <button
+                  onClick={() => saveSiteConfig(accent, links)}
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
