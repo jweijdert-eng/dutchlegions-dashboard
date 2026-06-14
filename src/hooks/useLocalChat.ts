@@ -24,6 +24,7 @@ export interface LocalChatState {
   fileName: string | null
   error: string | null
   supported: boolean
+  manual: boolean                // huidige data komt uit een handmatig gekozen bestand (snapshot)
   connect: () => Promise<void>   // opent picker of herstelt toestemming (user-gesture vereist)
   pickFolder: () => Promise<void> // forceer altijd de map-picker
   loadFiles: (files: FileList | File[]) => Promise<void> // fallback: handmatig bestand(en) kiezen (alle browsers)
@@ -148,6 +149,7 @@ export function useLocalChat(): LocalChatState {
   const [status, setStatus] = useState<LocalChatStatus>(supported ? 'idle' : 'unsupported')
   const [fileName, setFileName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [manual, setManual] = useState(false)  // data via handmatige bestand-keuze (geen live-watch)
 
   const dirRef = useRef<FileSystemDirectoryHandle | null>(null)
   const fileRef = useRef<FileSystemFileHandle | null>(null)
@@ -201,6 +203,7 @@ export function useLocalChat(): LocalChatState {
 
   const startWatching = useCallback(
     async (dir: FileSystemDirectoryHandle) => {
+      setManual(false)
       dirRef.current = dir
       fileRef.current = null
       lastSizeRef.current = 0
@@ -293,6 +296,7 @@ export function useLocalChat(): LocalChatState {
       setMessages(parseChat(text))
       setFileName(file.name)
       setStatus('watching')
+      setManual(true)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -304,5 +308,5 @@ export function useLocalChat(): LocalChatState {
     lastSizeRef.current = 0
   }, [])
 
-  return { messages, status, fileName, error, supported, connect, pickFolder, loadFiles, clear }
+  return { messages, status, fileName, error, supported, manual, connect, pickFolder, loadFiles, clear }
 }

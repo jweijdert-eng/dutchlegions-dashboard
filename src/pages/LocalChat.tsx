@@ -43,7 +43,7 @@ export default function LocalChat() {
   const ownNames    = useMemo(() => tokens.map(t => t.characterName), [tokens])
   const activeToken = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
 
-  const { messages, status, fileName: file, supported, connect, loadFiles, clear } = useLocalChat()
+  const { messages, status, fileName: file, supported, manual, connect, loadFiles, clear } = useLocalChat()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [search,       setSearch]       = useState('')
   const [onlyMentions, setOnlyMentions] = useState(false)
@@ -152,8 +152,8 @@ useEffect(() => {
     )
   }
 
-  // In een niet-ondersteunde browser is 'watching' een handmatige momentopname, geen live-feed.
-  const manualMode = !supported && status === 'watching'
+  // Handmatig geladen bestand = momentopname, geen live-feed (ongeacht de browser).
+  const manualMode = manual && status === 'watching'
   const statusColor = manualMode ? 'var(--gold)' : status === 'watching' ? 'var(--green)' : status === 'no-file' ? 'var(--gold)' : 'var(--red)'
   const statusLabel =
     manualMode                    ? '● Handmatig (snapshot)'
@@ -222,12 +222,20 @@ useEffect(() => {
                 ? 'Geef opnieuw toegang tot je EVE Chatlogs-map om Local live te volgen.'
                 : 'Kies éénmalig je EVE Chatlogs-map. Daarna wordt de map onthouden en gaat het automatisch — geen server of installatie nodig.'}
             </div>
-            <button
-              onClick={() => { connect().catch(() => {}) }}
-              style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', color: 'var(--blue)' }}
-            >{status === 'needs-permission' ? 'Toegang opnieuw geven' : 'Kies Chatlogs-map'}</button>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => { connect().catch(() => {}) }}
+                style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', color: 'var(--blue)' }}
+              >{status === 'needs-permission' ? 'Toegang opnieuw geven' : 'Kies Chatlogs-map (live)'}</button>
+              <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>of</span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)' }}
+              >Laad logbestand handmatig</button>
+            </div>
             <div style={{ marginTop: '0.55rem', fontSize: '0.65rem', color: 'var(--text-dim)' }}>
               Locatie: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs</code>
+              {' '}— werkt de map-keuze niet (bv. in Opera)? Gebruik dan <strong>handmatig</strong> het <code>Local_*.txt</code>-bestand.
             </div>
           </div>
         )}
