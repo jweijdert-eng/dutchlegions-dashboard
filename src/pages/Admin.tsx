@@ -57,15 +57,35 @@ export default function Admin() {
   const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
+  const [motdText, setMotdText] = useState('')
+  const [motdEnabled, setMotdEnabled] = useState(false)
+  const [motdSaved, setMotdSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
 
   useEffect(() => {
     if (tab === 'stats') fetchActivity()
     if (tab === 'members') fetchMembers()
-    if (tab === 'settings') fetchSettings()
+    if (tab === 'settings') { fetchSettings(); fetchMotd() }
     if (tab === 'sde') fetchBpInfo()
   }, [tab])
+
+  async function fetchMotd() {
+    try {
+      const d = await fetch('/api/motd.php', { cache: 'no-cache' }).then(r => r.json())
+      setMotdText(d.text ?? '')
+      setMotdEnabled(!!d.enabled)
+    } catch { /* ignore */ }
+  }
+
+  async function saveMotd() {
+    if (!adminToken) return
+    await fetch('/api/motd.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: adminToken.characterId, text: motdText, enabled: motdEnabled }),
+    }).catch(() => {})
+    setMotdSaved(true); setTimeout(() => setMotdSaved(false), 2000)
+  }
 
   async function fetchBpInfo() {
     try {
@@ -371,6 +391,36 @@ export default function Admin() {
         {/* Site Instellingen */}
         {tab === 'settings' && !loading && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 400 }}>
+            {/* Mededeling / MOTD */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.85rem 1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>📢 Mededeling (banner voor members)</span>
+                <div
+                  onClick={() => setMotdEnabled(v => !v)}
+                  title={motdEnabled ? 'Zichtbaar' : 'Verborgen'}
+                  style={{ width: 40, height: 22, borderRadius: 11, cursor: 'pointer', background: motdEnabled ? 'var(--gold)' : 'var(--border)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}
+                >
+                  <div style={{ position: 'absolute', top: 3, left: motdEnabled ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                </div>
+              </div>
+              <textarea
+                value={motdText}
+                onChange={e => setMotdText(e.target.value)}
+                placeholder="Bijv. 'Strat-op vanavond 20:00 EVE. Wees op tijd!'"
+                rows={3}
+                style={{ width: '100%', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.78rem', padding: '0.55rem', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                <span style={{ fontSize: '0.62rem', color: motdSaved ? 'var(--green)' : 'var(--text-dim)' }}>
+                  {motdSaved ? '✓ Opgeslagen' : motdEnabled ? 'Zichtbaar voor alle members' : 'Verborgen'}
+                </span>
+                <button
+                  onClick={saveMotd}
+                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.3rem 0.85rem', cursor: 'pointer' }}
+                >Opslaan</button>
+              </div>
+            </div>
+
             {(Object.keys(settings) as SettingKey[]).map(key => (
               <div key={key} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',

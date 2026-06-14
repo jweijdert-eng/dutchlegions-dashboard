@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import LoadingBar from './LoadingBar'
+import MotdBanner from './MotdBanner'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 interface PageHeaderProps {
@@ -72,6 +73,7 @@ export default function Layout({ children, header, mainStyle }: LayoutProps) {
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
         <LoadingBar />
+        <MotdBanner />
 
         {/* Mobiele topbalk met hamburger */}
         {isMobile && (
