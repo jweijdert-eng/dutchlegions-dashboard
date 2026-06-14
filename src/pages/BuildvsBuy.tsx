@@ -329,7 +329,7 @@ export default function BuildvsBuy() {
 
               {/* Product */}
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <EveImage category="types" id={product.typeId} variation="icon" size={48} px={40} />
+                <EveImage category="types" id={product.typeId} variation="icon" size={64} px={40} />
                 <div>
                   <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>{product.name}</div>
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '0.15rem' }}>

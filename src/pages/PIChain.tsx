@@ -97,7 +97,7 @@ function NodeCard({ node }: { node: ChainNode }) {
       borderRadius: 3, padding: '0.5rem 0.65rem', minWidth: 130, maxWidth: 180,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.25rem' }}>
-        <EveImage category="types" id={node.typeId} variation="icon" size={24} px={20} />
+        <EveImage category="types" id={node.typeId} variation="icon" size={32} px={20} />
         <span style={{ fontSize: '0.68rem', fontWeight: 700, lineHeight: 1.2, flex: 1, minWidth: 0 }}>{node.name}</span>
       </div>
       <div style={{ fontSize: '0.58rem', color, fontWeight: 700, letterSpacing: '0.08em' }}>{tierLabel(node.tier)}</div>

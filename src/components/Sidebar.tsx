@@ -200,11 +200,11 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
             <EveImage category="characters" id={selected.characterId} variation="portrait" size={32} px={26} round
               style={{ border: '1px solid var(--blue)', display: 'block' }} />
             {data?.corpId && (
-              <EveImage category="corporations" id={data.corpId} variation="logo" size={16} px={14}
+              <EveImage category="corporations" id={data.corpId} variation="logo" size={32} px={14}
                 style={{ position: 'absolute', bottom: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
             )}
             {data?.allianceId && (
-              <EveImage category="alliances" id={data.allianceId} variation="logo" size={16} px={14}
+              <EveImage category="alliances" id={data.allianceId} variation="logo" size={32} px={14}
                 style={{ position: 'absolute', top: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
             )}
           </div>
@@ -294,11 +294,11 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
                     <EveImage category="characters" id={t.characterId} variation="portrait" size={32} px={26} round
                       style={{ border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`, display: 'block' }} />
                     {d?.corpId && (
-                      <EveImage category="corporations" id={d.corpId} variation="logo" size={16} px={14}
+                      <EveImage category="corporations" id={d.corpId} variation="logo" size={32} px={14}
                         style={{ position: 'absolute', bottom: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
                     )}
                     {d?.allianceId && (
-                      <EveImage category="alliances" id={d.allianceId} variation="logo" size={16} px={14}
+                      <EveImage category="alliances" id={d.allianceId} variation="logo" size={32} px={14}
                         style={{ position: 'absolute', top: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
                     )}
                   </div>
