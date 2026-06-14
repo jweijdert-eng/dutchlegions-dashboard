@@ -9,13 +9,16 @@ interface ResolvedBlueprint extends Blueprint {
   typeName: string
 }
 
-function MEBar({ value }: { value: number }) {
+// ME loopt 0–10, TE loopt 0–20 (research-stappen). De balkbreedte is relatief
+// t.o.v. het maximum, zodat een volledig onderzochte blueprint een volle balk geeft.
+function EffBar({ value, max }: { value: number; max: number }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100))
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
       <div style={{ flex: 1, height: 3, background: 'var(--border)', borderRadius: 2 }}>
-        <div style={{ height: '100%', width: `${value * 10}%`, background: '#3ecf6e', borderRadius: 2 }} />
+        <div style={{ height: '100%', width: `${pct}%`, background: '#3ecf6e', borderRadius: 2 }} />
       </div>
-      <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)', width: 20, textAlign: 'right' }}>{value}%</span>
+      <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)', width: 26, textAlign: 'right' }}>{value}%</span>
     </div>
   )
 }
@@ -128,10 +131,10 @@ export default function Blueprints() {
                       </span>
                     </td>
                     <td style={{ padding: '0.5rem 0.875rem', minWidth: 100 }}>
-                      <MEBar value={b.material_efficiency} />
+                      <EffBar value={b.material_efficiency} max={10} />
                     </td>
                     <td style={{ padding: '0.5rem 0.875rem', minWidth: 100 }}>
-                      <MEBar value={b.time_efficiency} />
+                      <EffBar value={b.time_efficiency} max={20} />
                     </td>
                     <td style={{ padding: '0.5rem 0.875rem', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
                       {isBPO ? '∞' : b.runs.toLocaleString()}
