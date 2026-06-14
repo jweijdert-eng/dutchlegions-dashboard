@@ -16,3 +16,7 @@ async function zkill(path: string): Promise<ZkillEntry[]> {
 
 export const getKills  = (charId: number, page = 1) => zkill(`/api/kills/characterID/${charId}/page/${page}/`)
 export const getLosses = (charId: number, page = 1) => zkill(`/api/losses/characterID/${charId}/page/${page}/`)
+
+// Corp-brede killboard (alle leden samen).
+export const getCorpKills  = (corpId: number, page = 1) => zkill(`/api/kills/corporationID/${corpId}/page/${page}/`)
+export const getCorpLosses = (corpId: number, page = 1) => zkill(`/api/losses/corporationID/${corpId}/page/${page}/`)
