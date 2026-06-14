@@ -31,6 +31,7 @@ function fmtDate(ts: string): string {
 export default function Mail() {
   const { activeTokens, tokens } = useAuth()
   const [mails, setMails]             = useState<ResolvedMail[]>([])
+  const [loadError, setLoadError]     = useState<string | null>(null)
   const [loading, setLoading]         = useState(true)
   usePageLoading(loading)
   const [selected, setSelected]       = useState<ResolvedMail | null>(null)
@@ -55,22 +56,29 @@ export default function Mail() {
   useEffect(() => {
     if (mailTokens.length === 0) return
     const myId = ++fetchId.current
-    setLoading(true); setMails([])
+    setLoading(true); setMails([]); setLoadError(null)
 
     async function load() {
       const allMails: ResolvedMail[] = []
 
       // Resolve the selected account's mail only
       const rawWithMeta: (MailHeader & { charId: number })[] = []
+      let errMsg: string | null = null
 
       await Promise.all(mailTokens.map(async t => {
-        const list = await getMail(t.characterId, t.accessToken).catch(() => [] as MailHeader[])
-        for (const m of list) {
-          rawWithMeta.push({ ...m, charId: t.characterId })
+        try {
+          const list = await getMail(t.characterId, t.accessToken)
+          for (const m of list) rawWithMeta.push({ ...m, charId: t.characterId })
+        } catch (e) {
+          const status = parseInt((e as Error).message.match(/:\s*(\d+)\s*$/)?.[1] ?? '0')
+          errMsg = status === 403
+            ? 'Geen mail-toegang voor deze character. Log opnieuw in om de mail-rechten toe te voegen (account-dropdown → uitloggen → opnieuw inloggen).'
+            : `Mail ophalen mislukt (${status || 'netwerkfout'}).`
         }
       }))
 
       if (myId !== fetchId.current) return
+      setLoadError(errMsg)
 
       const senderIds = [...new Set(rawWithMeta.map(m => m.from).filter(Boolean))]
       const nameMap   = await resolveNames(senderIds)
@@ -171,7 +179,9 @@ export default function Mail() {
             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Laden...</div>
           )}
           {!loading && mails.length === 0 && (
-            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Geen mails gevonden</div>
+            <div style={{ padding: '1.5rem', textAlign: 'center', fontSize: '0.78rem', lineHeight: 1.6, color: loadError ? 'var(--red)' : 'var(--text-dim)' }}>
+              {loadError ?? 'Geen mails gevonden'}
+            </div>
           )}
           {mails.map(m => {
             const isSelected = selected?.charId === m.charId && selected?.mail_id === m.mail_id
