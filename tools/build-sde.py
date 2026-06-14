@@ -83,6 +83,8 @@ out_reg = {str(rid): name for rid, name in con.execute('SELECT regionID, regionN
 write('regions.json', out_reg)
 
 # NPC-stations: { stationId: [naam, systemId] }
+# (Productie-capaciteit zit niet in deze SDE-dump; de app checkt de 'services' van
+#  een station live via ESI /universe/stations/{id}/ wanneer een systeem gekozen is.)
 out_sta = {str(sid): [name, sysid]
            for sid, name, sysid in con.execute(
                'SELECT stationID, stationName, solarSystemID FROM staStations')}
