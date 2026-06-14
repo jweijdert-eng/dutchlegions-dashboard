@@ -31,6 +31,19 @@ interface MemberOrg {
   allianceTicker?: string
 }
 
+interface MemberDetail {
+  character_id: number
+  name: string
+  last_seen: string
+  blocked: number
+  total_logins: number
+  first_login: string | null
+  last_login: string | null
+  recent_logins: string[]
+  birthday?: string
+  secStatus?: number
+}
+
 type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance' | 'local_chat'
 
 const SETTING_LABELS: Record<SettingKey, string> = {
@@ -38,6 +51,17 @@ const SETTING_LABELS: Record<SettingKey, string> = {
   require_corp:     'Alleen Dutch Legions corp',
   require_alliance: 'Alleen Insidious alliance',
   local_chat:       'Local Chat zichtbaar voor members',
+}
+
+function fmtDT(s: string | null | undefined): string {
+  if (!s) return '—'
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? String(s) : d.toLocaleString('nl', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function ageYears(birthday?: string): string {
+  if (!birthday) return '—'
+  const y = (Date.now() - new Date(birthday).getTime()) / (365.25 * 86400000)
+  return isNaN(y) ? '—' : `${y.toFixed(1)} jr`
 }
 
 const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
@@ -55,6 +79,9 @@ export default function Admin() {
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [members, setMembers] = useState<SiteMember[]>([])
   const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
+  const [detailMember, setDetailMember] = useState<SiteMember | null>(null)
+  const [detail, setDetail] = useState<MemberDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
   const [motdText, setMotdText] = useState('')
@@ -156,6 +183,16 @@ export default function Admin() {
       }
     }
     setOrgs(result)
+  }
+
+  async function openDetail(m: SiteMember) {
+    setDetailMember(m); setDetail(null); setDetailLoading(true)
+    const [d, info] = await Promise.all([
+      fetch(`/api/member.php?characterId=${m.character_id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      getCharacterInfo(m.character_id).catch(() => null),
+    ])
+    setDetail(d ? { ...d, birthday: info?.birthday, secStatus: info?.security_status } : null)
+    setDetailLoading(false)
   }
 
   async function deleteMember(charId: number) {
@@ -311,9 +348,12 @@ export default function Admin() {
                   const blocked = !!m.blocked
                   const org = orgs[m.character_id]
                   return (
-                    <div key={m.character_id} style={{
+                    <div key={m.character_id}
+                      onClick={() => openDetail(m)}
+                      title="Klik voor details"
+                      style={{
                       display: 'flex', alignItems: 'center', gap: '0.75rem',
-                      padding: '0.65rem 1rem',
+                      padding: '0.65rem 1rem', cursor: 'pointer',
                       background: i % 2 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)',
                       borderBottom: i < members.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
                       fontSize: '0.8rem',
@@ -356,7 +396,7 @@ export default function Admin() {
                       {m.character_id !== ADMIN_CHAR_ID && (
                         <>
                           <button
-                            onClick={() => toggleBlock(m)}
+                            onClick={e => { e.stopPropagation(); toggleBlock(m) }}
                             title={blocked ? 'Deblokkeren' : 'Blokkeren'}
                             style={{
                               padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
@@ -368,7 +408,7 @@ export default function Admin() {
                             {blocked ? 'Deblokkeer' : 'Blokkeer'}
                           </button>
                           <button
-                            onClick={() => deleteMember(m.character_id)}
+                            onClick={e => { e.stopPropagation(); deleteMember(m.character_id) }}
                             title="Verwijder"
                             style={{
                               padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
@@ -486,6 +526,76 @@ export default function Admin() {
         )}
 
       </div>
+
+      {/* Member-detail modal */}
+      {detailMember && (() => {
+        const m = detailMember
+        const org = orgs[m.character_id]
+        const Stat = ({ label, value, color }: { label: string; value: string; color?: string }) => (
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.5rem 0.65rem' }}>
+            <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: '0.2rem' }}>{label}</div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: color ?? 'var(--text)' }}>{value}</div>
+          </div>
+        )
+        return (
+          <div onClick={() => setDetailMember(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }}>
+              <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={`https://images.evetech.net/characters/${m.character_id}/portrait?size=64`} width={48} height={48} style={{ borderRadius: '50%', display: 'block' }} />
+                  {org?.corpId && (
+                    <EveImage category="corporations" id={org.corpId} variation="logo" size={32} px={18}
+                      style={{ position: 'absolute', bottom: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
+                  {org && (
+                    <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {org.corpName}{org.allianceName && <span style={{ color: 'var(--gold)' }}> · {org.allianceName}</span>}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setDetailMember(null)} aria-label="Sluiten" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1, flexShrink: 0 }}>×</button>
+              </div>
+
+              <div style={{ padding: '1rem 1.25rem' }}>
+                {detailLoading && <div style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>Laden…</div>}
+                {!detailLoading && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      <Stat label="STATUS" value={m.blocked ? 'Geblokkeerd' : isOnline(m.last_seen) ? 'Online' : 'Offline'} color={m.blocked ? 'var(--red)' : isOnline(m.last_seen) ? 'var(--green)' : 'var(--text-dim)'} />
+                      <Stat label="TOTAAL LOGINS" value={String(detail?.total_logins ?? 0)} />
+                      <Stat label="LAATST GEZIEN" value={fmtDT(m.last_seen)} />
+                      <Stat label="EERSTE LOGIN" value={fmtDT(detail?.first_login)} />
+                      <Stat label="SECURITY" value={detail?.secStatus != null ? detail.secStatus.toFixed(2) : '—'} color={detail?.secStatus != null ? (detail.secStatus >= 0 ? 'var(--green)' : 'var(--red)') : undefined} />
+                      <Stat label="CHAR-LEEFTIJD" value={ageYears(detail?.birthday)} />
+                    </div>
+
+                    {detail?.recent_logins && detail.recent_logins.length > 0 && (
+                      <div style={{ marginTop: '1rem' }}>
+                        <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>RECENTE LOGINS</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                          {detail.recent_logins.slice(0, 14).map((t, i) => (
+                            <span key={i} style={{ fontSize: '0.6rem', background: 'rgba(0,180,216,0.08)', border: '1px solid rgba(0,180,216,0.2)', color: 'var(--blue)', borderRadius: 2, padding: '0.1rem 0.35rem', whiteSpace: 'nowrap' }}>
+                              {new Date(t).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                      <a href={`https://zkillboard.com/character/${m.character_id}/`} target="_blank" rel="noreferrer" style={{ fontSize: '0.68rem', color: 'var(--blue)', textDecoration: 'none', border: '1px solid rgba(0,180,216,0.25)', borderRadius: 3, padding: '0.3rem 0.6rem' }}>zKillboard ↗</a>
+                      <a href={`https://evewho.com/character/${m.character_id}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.68rem', color: 'var(--blue)', textDecoration: 'none', border: '1px solid rgba(0,180,216,0.25)', borderRadius: 3, padding: '0.3rem 0.6rem' }}>EVE Who ↗</a>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </Layout>
   )
 }
