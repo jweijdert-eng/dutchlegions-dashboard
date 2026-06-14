@@ -196,18 +196,8 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
         }}
       >
         {selected ? (
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <EveImage category="characters" id={selected.characterId} variation="portrait" size={32} px={26} round
-              style={{ border: '1px solid var(--blue)', display: 'block' }} />
-            {data?.corpId && (
-              <EveImage category="corporations" id={data.corpId} variation="logo" size={32} px={14}
-                style={{ position: 'absolute', bottom: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
-            )}
-            {data?.allianceId && (
-              <EveImage category="alliances" id={data.allianceId} variation="logo" size={32} px={14}
-                style={{ position: 'absolute', top: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
-            )}
-          </div>
+          <EveImage category="characters" id={selected.characterId} variation="portrait" size={32} px={26} round
+            style={{ border: '1px solid var(--blue)', display: 'block', flexShrink: 0 }} />
         ) : (
           <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(0,180,216,0.15)', border: '1px solid rgba(0,180,216,0.3)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--blue)' }}>⊞</div>
         )}
@@ -221,8 +211,12 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
           {selected && data?.wallet != null && (
             <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>{fmtISK(data.wallet)} ISK</div>
           )}
-          {selected && data?.allianceName && (
-            <div style={{ fontSize: '0.57rem', color: 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.allianceName}</div>
+          {selected && (data?.corpId || data?.allianceId) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.12rem' }}>
+              {data?.corpId && <EveImage category="corporations" id={data.corpId} variation="logo" size={32} px={13} style={{ borderRadius: 2, flexShrink: 0 }} />}
+              {data?.allianceId && <EveImage category="alliances" id={data.allianceId} variation="logo" size={32} px={13} style={{ borderRadius: 2, flexShrink: 0 }} />}
+              {data?.allianceName && <span style={{ fontSize: '0.57rem', color: 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.allianceName}</span>}
+            </div>
           )}
           {!selected && (
             <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>{tokens.length} accounts</div>
@@ -289,19 +283,8 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
                   onMouseEnter={e => { if (!sel) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.03)' }}
                   onMouseLeave={e => { if (!sel) (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
                 >
-                  {/* Portret + corp/alliance icon overlay */}
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <EveImage category="characters" id={t.characterId} variation="portrait" size={32} px={26} round
-                      style={{ border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`, display: 'block' }} />
-                    {d?.corpId && (
-                      <EveImage category="corporations" id={d.corpId} variation="logo" size={32} px={14}
-                        style={{ position: 'absolute', bottom: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
-                    )}
-                    {d?.allianceId && (
-                      <EveImage category="alliances" id={d.allianceId} variation="logo" size={32} px={14}
-                        style={{ position: 'absolute', top: -2, right: -2, borderRadius: 2, border: '1px solid var(--surface)', background: 'var(--surface)' }} />
-                    )}
-                  </div>
+                  <EveImage category="characters" id={t.characterId} variation="portrait" size={32} px={26} round
+                    style={{ border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`, display: 'block', flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.72rem', fontWeight: 600, color: sel ? 'var(--blue)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {t.characterName}
@@ -309,8 +292,12 @@ function AccountDropdown({ tokens, charData, selectedCharId, setSelectedCharId, 
                     <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>
                       {d?.wallet != null ? `${fmtISK(d.wallet)} ISK` : '—'}
                     </div>
-                    {d?.allianceName && (
-                      <div style={{ fontSize: '0.57rem', color: 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.allianceName}</div>
+                    {(d?.corpId || d?.allianceId) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.08rem' }}>
+                        {d?.corpId && <EveImage category="corporations" id={d.corpId} variation="logo" size={32} px={13} style={{ borderRadius: 2, flexShrink: 0 }} />}
+                        {d?.allianceId && <EveImage category="alliances" id={d.allianceId} variation="logo" size={32} px={13} style={{ borderRadius: 2, flexShrink: 0 }} />}
+                        {d?.allianceName && <span style={{ fontSize: '0.57rem', color: 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.allianceName}</span>}
+                      </div>
                     )}
                     {l?.system && l.system !== '—' && (
                       <div style={{ fontSize: '0.57rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
