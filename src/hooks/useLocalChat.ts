@@ -23,10 +23,12 @@ export interface LocalChatState {
   status: LocalChatStatus
   fileName: string | null
   error: string | null
-  supported: boolean
+  supported: boolean             // map-picker (File System Access API directory)
+  supportedFile: boolean         // los-bestand live-picker (showOpenFilePicker) — werkt o.a. in Opera
   manual: boolean                // huidige data komt uit een handmatig gekozen bestand (snapshot)
   connect: () => Promise<void>   // opent picker of herstelt toestemming (user-gesture vereist)
   pickFolder: () => Promise<void> // forceer altijd de map-picker
+  pickFile: () => Promise<void>   // kies één logbestand, wél live (poll op de handle)
   loadFiles: (files: FileList | File[]) => Promise<void> // fallback: handmatig bestand(en) kiezen (alle browsers)
   clear: () => void
 }
@@ -144,6 +146,7 @@ async function requestPerm(handle: FileSystemDirectoryHandle): Promise<PermStatu
 
 export function useLocalChat(): LocalChatState {
   const supported = typeof window !== 'undefined' && 'showDirectoryPicker' in window
+  const supportedFile = typeof window !== 'undefined' && 'showOpenFilePicker' in window
 
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [status, setStatus] = useState<LocalChatStatus>(supported ? 'idle' : 'unsupported')
@@ -216,6 +219,38 @@ export function useLocalChat(): LocalChatState {
     },
     [stopWatching, tick],
   )
+
+  // Live volgen van één los gekozen bestand (showOpenFilePicker geeft een handle die
+  // we herhaald mogen lezen → picks up appends, in tegenstelling tot een <input> File).
+  const startWatchingFile = useCallback(
+    async (handle: FileSystemFileHandle) => {
+      setManual(false)
+      dirRef.current = null
+      fileRef.current = handle
+      lastSizeRef.current = 0
+      setFileName(handle.name)
+      setStatus('watching')
+      stopWatching()
+      await readCurrent()
+      intervalRef.current = setInterval(() => { readCurrent().catch(() => {}) }, POLL_MS)
+    },
+    [stopWatching, readCurrent],
+  )
+
+  const pickFile = useCallback(async () => {
+    const w = window as unknown as { showOpenFilePicker?: (o?: object) => Promise<FileSystemFileHandle[]> }
+    if (!w.showOpenFilePicker) { setError('Deze browser ondersteunt geen live bestand-keuze.'); return }
+    try {
+      const [handle] = await w.showOpenFilePicker({
+        startIn: 'documents',
+        types: [{ description: 'EVE chatlog', accept: { 'text/plain': ['.txt'] } }],
+      })
+      if (handle) { setError(null); await startWatchingFile(handle) }
+    } catch (e) {
+      if ((e as DOMException)?.name === 'AbortError') return
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [startWatchingFile])
 
   const pickFolder = useCallback(async () => {
     if (!supported) return
@@ -308,5 +343,5 @@ export function useLocalChat(): LocalChatState {
     lastSizeRef.current = 0
   }, [])
 
-  return { messages, status, fileName, error, supported, manual, connect, pickFolder, loadFiles, clear }
+  return { messages, status, fileName, error, supported, supportedFile, manual, connect, pickFolder, pickFile, loadFiles, clear }
 }

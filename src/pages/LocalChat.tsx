@@ -43,7 +43,7 @@ export default function LocalChat() {
   const ownNames    = useMemo(() => tokens.map(t => t.characterName), [tokens])
   const activeToken = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
 
-  const { messages, status, fileName: file, supported, manual, connect, loadFiles, clear } = useLocalChat()
+  const { messages, status, fileName: file, supported, supportedFile, manual, connect, pickFile, loadFiles, clear } = useLocalChat()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [search,       setSearch]       = useState('')
   const [onlyMentions, setOnlyMentions] = useState(false)
@@ -199,17 +199,24 @@ useEffect(() => {
         {!supported && (
           <div style={{ background: 'rgba(240,192,64,0.07)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--text)', lineHeight: 1.6 }}>
             <div style={{ marginBottom: '0.55rem' }}>
-              <strong style={{ color: 'var(--gold)' }}>Live volgen kan niet in deze browser.</strong> Automatisch meelezen werkt alleen in
-              {' '}<strong>Chrome</strong>, <strong>Edge</strong> of <strong>Opera</strong>. In Firefox/Safari kun je je logbestand wél handmatig laden:
+              <strong style={{ color: 'var(--gold)' }}>Map-keuze werkt niet in deze browser.</strong>
+              {supportedFile
+                ? ' Kies in plaats daarvan één logbestand — dat ververst wél automatisch (live):'
+                : ' Automatisch meelezen werkt in Chrome/Edge/Opera. In Firefox/Safari kun je je logbestand handmatig laden:'}
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              {supportedFile && (
+                <button
+                  onClick={() => { pickFile().catch(() => {}) }}
+                  style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(62,207,110,0.1)', border: '1px solid var(--green)', color: 'var(--green)' }}
+                >Kies logbestand (live)</button>
+              )}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(240,192,64,0.12)', border: '1px solid var(--gold)', color: 'var(--gold)' }}
-              >{messages.length > 0 ? '↻ Ververs (kies opnieuw)' : 'Kies Local-logbestand'}</button>
+                style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)' }}
+              >{messages.length > 0 ? '↻ Ververs (snapshot)' : 'Handmatig (snapshot)'}</button>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>
-                Locatie: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs\Local_*.txt</code>
-                {' '}— kies het nieuwste bestand. Opnieuw kiezen = verversen.
+                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs\Local_*.txt</code>
               </span>
             </div>
           </div>
@@ -227,15 +234,24 @@ useEffect(() => {
                 onClick={() => { connect().catch(() => {}) }}
                 style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', color: 'var(--blue)' }}
               >{status === 'needs-permission' ? 'Toegang opnieuw geven' : 'Kies Chatlogs-map (live)'}</button>
+              {supportedFile && (
+                <>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>of</span>
+                  <button
+                    onClick={() => { pickFile().catch(() => {}) }}
+                    style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(62,207,110,0.1)', border: '1px solid var(--green)', color: 'var(--green)' }}
+                  >Kies losbestand (live) — werkt in Opera</button>
+                </>
+              )}
               <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>of</span>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)' }}
-              >Laad logbestand handmatig</button>
+              >Handmatig (snapshot)</button>
             </div>
-            <div style={{ marginTop: '0.55rem', fontSize: '0.65rem', color: 'var(--text-dim)' }}>
-              Locatie: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs</code>
-              {' '}— werkt de map-keuze niet (bv. in Opera)? Gebruik dan <strong>handmatig</strong> het <code>Local_*.txt</code>-bestand.
+            <div style={{ marginTop: '0.55rem', fontSize: '0.65rem', color: 'var(--text-dim)', lineHeight: 1.7 }}>
+              Locatie: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs\Local_*.txt</code><br />
+              Werkt de <strong>map-keuze</strong> niet (bv. in Opera)? Kies dan <strong style={{ color: 'var(--green)' }}>één logbestand (live)</strong> — dat ververst automatisch. Handmatig = momentopname (zelf verversen).
             </div>
           </div>
         )}
