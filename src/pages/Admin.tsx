@@ -633,9 +633,9 @@ export default function Admin() {
                   {group.label.toUpperCase()}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {(Object.keys(settings) as SettingKey[]).filter(k => SETTING_META[k].group === group.key).map(key => {
+                  {(Object.keys(SETTING_META) as SettingKey[]).filter(k => SETTING_META[k].group === group.key).map(key => {
                     const meta = SETTING_META[key]
-                    const on = settings[key]
+                    const on = settings[key] ?? false
                     const danger = meta.danger && on
                     const rgb = meta.danger ? '224,85,85' : '0,180,216'
                     return (
