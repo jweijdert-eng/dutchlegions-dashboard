@@ -28,6 +28,7 @@ import KillsTable, { type KillEntry } from '../components/KillsTable'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
 import LocalChatWidget from '../components/LocalChatWidget'
+import Starfield from '../components/Starfield'
 
 const GAP = '0.75rem'
 
@@ -840,18 +841,29 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Character banner */}
+      {/* Character banner — space-hero */}
       {primary && (
-        <div style={{ position: 'relative', height: 110, background: 'linear-gradient(135deg, #0b0b2a 0%, #0f0f3a 60%, #0a0a20 100%)', border: '1px solid var(--border)', borderRadius: 3, marginBottom: GAP, overflow: 'hidden' }}>
+        <div className="hero-rise" style={{ position: 'relative', height: 128, background: 'radial-gradient(120% 160% at 12% 0%, #12123a 0%, #0a0a22 45%, #06060f 100%)', border: '1px solid var(--border)', borderRadius: 6, marginBottom: GAP, overflow: 'hidden' }}>
+          {/* Nevel-gloed */}
+          <div style={{ position: 'absolute', inset: 0, animation: 'nebula-pulse 7s ease-in-out infinite', background: 'radial-gradient(60% 120% at 18% 30%, rgba(0,180,216,0.20) 0%, transparent 60%), radial-gradient(50% 120% at 85% 80%, rgba(240,192,64,0.12) 0%, transparent 55%)' }} />
+          {/* Sterrenveld */}
+          <Starfield />
+          {/* Corp-watermerk */}
           {banner?.corporationId && (
-            <EveImage category="corporations" id={banner.corporationId} variation="logo" size={256} px={180}
-              style={{ position: 'absolute', right: -20, top: '50%', transform: 'translateY(-50%)', opacity: 0.08, filter: 'blur(2px)', borderRadius: 0 }} />
+            <EveImage category="corporations" id={banner.corporationId} variation="logo" size={256} px={190}
+              style={{ position: 'absolute', right: -24, top: '50%', transform: 'translateY(-50%)', opacity: 0.07, filter: 'blur(2px)', borderRadius: 0 }} />
           )}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 1.5rem', gap: '1rem' }}>
-            <EveImage category="characters" id={primary.characterId} variation="portrait" size={128} px={72}
-              style={{ borderRadius: 3, border: '2px solid var(--border)', flexShrink: 0 }} />
+          {/* Onderrand-accentlijn */}
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(0,180,216,0.5), transparent)' }} />
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 1.5rem', gap: '1.1rem' }}>
+            {/* Portret met gloei-ring */}
+            <div style={{ position: 'relative', width: 86, height: 86, flexShrink: 0 }}>
+              <div style={{ position: 'absolute', inset: -3, borderRadius: '50%', background: 'conic-gradient(from 0deg, var(--blue), transparent 35%, var(--gold) 60%, transparent 78%, var(--blue))', animation: 'ring-spin 9s linear infinite', opacity: 0.7 }} />
+              <EveImage category="characters" id={primary.characterId} variation="portrait" size={128} px={80}
+                style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2px solid rgba(5,5,15,0.9)', boxShadow: '0 0 18px -2px rgba(0,180,216,0.55)' }} />
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem' }}>{primary.characterName}</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem', textShadow: '0 0 18px rgba(0,180,216,0.35)' }}>{primary.characterName}</div>
               {banner?.corp && (
                 <div style={{ fontSize: '0.72rem', marginTop: '0.1rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   {banner.corporationId && (
@@ -958,9 +970,9 @@ export default function Dashboard() {
           { label: 'INDUSTRY JOBS',  value: phase1Loading ? '...' : String(allJobs.filter(j => j.status === 'active' || j.status === 'ready').length), color: 'var(--blue)',
             sub: phase1Loading ? '' : allJobs.filter(j => j.status === 'ready').length > 0 ? `${allJobs.filter(j => j.status === 'ready').length} klaar` : undefined },
         ].map(({ label, value, color, sub }) => (
-          <div key={label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.875rem 1rem' }}>
+          <div key={label} className="stat-card" style={{ '--accent': color, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.875rem 1rem' } as React.CSSProperties}>
             <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.18em', marginBottom: '0.35rem' }}>{label}</div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color }}>{value}</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 700, color }}>{value}</div>
             {sub && <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.2rem' }}>{sub}</div>}
           </div>
         ))}
