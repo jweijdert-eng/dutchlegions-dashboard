@@ -46,12 +46,25 @@ interface MemberDetail {
 
 type SettingKey = 'maintenance_mode' | 'require_corp' | 'require_alliance' | 'local_chat'
 
-const SETTING_LABELS: Record<SettingKey, string> = {
-  maintenance_mode: 'Onderhoudsmodus',
-  require_corp:     'Alleen Dutch Legions corp',
-  require_alliance: 'Alleen Insidious alliance',
-  local_chat:       'Local Chat zichtbaar voor members',
+type MotdType = 'info' | 'warning' | 'success' | 'event'
+const MOTD_TYPES: { key: MotdType; label: string; icon: string; rgb: string }[] = [
+  { key: 'info',    label: 'Info',          icon: '📢',  rgb: '0,180,216' },
+  { key: 'warning', label: 'Waarschuwing',  icon: '⚠️', rgb: '240,192,64' },
+  { key: 'success', label: 'Succes',        icon: '✓',   rgb: '62,207,110' },
+  { key: 'event',   label: 'Event',         icon: '📅',  rgb: '167,139,250' },
+]
+
+interface SettingMeta { label: string; desc: string; icon: string; group: 'access' | 'features'; danger?: boolean }
+const SETTING_META: Record<SettingKey, SettingMeta> = {
+  maintenance_mode: { label: 'Onderhoudsmodus',                 desc: 'Sluit de site af voor members — alleen admins hebben toegang.', icon: '🛠️', group: 'access', danger: true },
+  require_corp:     { label: 'Alleen Dutch Legions corp',       desc: 'Alleen leden van de corporatie kunnen inloggen.',               icon: '🪪', group: 'access' },
+  require_alliance: { label: 'Alleen Insidious alliance',       desc: 'Alleen leden van de alliantie kunnen inloggen.',                icon: '🤝', group: 'access' },
+  local_chat:       { label: 'Local Chat zichtbaar voor members', desc: 'Toont het Local Chat-menu-item in de zijbalk voor members.',  icon: '💬', group: 'features' },
 }
+const SETTING_GROUPS: { key: 'access' | 'features'; label: string }[] = [
+  { key: 'access',   label: 'Toegang & beveiliging' },
+  { key: 'features', label: 'Functies' },
+]
 
 const PAGE_LABELS: Record<string, string> = {
   '/': 'Dashboard', '/overview': 'Overzicht', '/character': 'Character', '/wallet': 'Wallet',
@@ -79,6 +92,24 @@ const DEFAULT_SETTINGS: Record<SettingKey, boolean> = {
   local_chat:       true,
 }
 
+function Toggle({ on, onClick, rgb = '0,180,216' }: { on: boolean; onClick: () => void; rgb?: string }) {
+  return (
+    <div
+      onClick={onClick}
+      role="switch"
+      aria-checked={on}
+      style={{
+        width: 40, height: 22, borderRadius: 11, cursor: 'pointer', flexShrink: 0,
+        background: on ? `rgb(${rgb})` : 'var(--border)',
+        boxShadow: on ? `0 0 10px -2px rgba(${rgb},0.7)` : 'none',
+        position: 'relative', transition: 'background 0.2s, box-shadow 0.2s',
+      }}
+    >
+      <div style={{ position: 'absolute', top: 3, left: on ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+    </div>
+  )
+}
+
 export default function Admin() {
   const { tokens } = useAuth()
   const { previewMode, setPreviewMode } = useLayoutMode()
@@ -95,6 +126,7 @@ export default function Admin() {
   const [loading, setLoading] = useState(false)
   const [motdText, setMotdText] = useState('')
   const [motdEnabled, setMotdEnabled] = useState(false)
+  const [motdType, setMotdType] = useState<MotdType>('info')
   const [motdSaved, setMotdSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
@@ -118,6 +150,7 @@ export default function Admin() {
       const d = await fetch('/api/motd.php', { cache: 'no-cache' }).then(r => r.json())
       setMotdText(d.text ?? '')
       setMotdEnabled(!!d.enabled)
+      setMotdType(d.type ?? 'info')
     } catch { /* ignore */ }
   }
 
@@ -125,7 +158,7 @@ export default function Admin() {
     if (!adminToken) return
     await fetch('/api/motd.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, text: motdText, enabled: motdEnabled }),
+      body: JSON.stringify({ characterId: adminToken.characterId, text: motdText, enabled: motdEnabled, type: motdType }),
     }).catch(() => {})
     setMotdSaved(true); setTimeout(() => setMotdSaved(false), 2000)
   }
@@ -528,20 +561,38 @@ export default function Admin() {
         )}
 
         {/* Site Instellingen */}
-        {tab === 'settings' && !loading && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 400 }}>
+        {tab === 'settings' && !loading && (() => {
+          const motdStyle = MOTD_TYPES.find(t => t.key === motdType) ?? MOTD_TYPES[0]
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 520 }}>
             {/* Mededeling / MOTD */}
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.85rem 1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>📢 Mededeling (banner voor members)</span>
-                <div
-                  onClick={() => setMotdEnabled(v => !v)}
-                  title={motdEnabled ? 'Zichtbaar' : 'Verborgen'}
-                  style={{ width: 40, height: 22, borderRadius: 11, cursor: 'pointer', background: motdEnabled ? 'var(--gold)' : 'var(--border)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}
-                >
-                  <div style={{ position: 'absolute', top: 3, left: motdEnabled ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.7rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>📢 Mededeling (MOTD)</div>
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.15rem' }}>Banner bovenaan voor alle members.</div>
                 </div>
+                <Toggle on={motdEnabled} onClick={() => setMotdEnabled(v => !v)} rgb={motdStyle.rgb} />
               </div>
+
+              {/* Type-kiezer (kleur van de banner) */}
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
+                {MOTD_TYPES.map(t => {
+                  const active = motdType === t.key
+                  return (
+                    <button key={t.key} onClick={() => setMotdType(t.key)} style={{
+                      display: 'flex', alignItems: 'center', gap: '0.3rem',
+                      padding: '0.25rem 0.6rem', borderRadius: 20, cursor: 'pointer', fontSize: '0.68rem', fontWeight: 600,
+                      background: active ? `rgba(${t.rgb},0.18)` : 'transparent',
+                      border: `1px solid ${active ? `rgb(${t.rgb})` : 'var(--border)'}`,
+                      color: active ? `rgb(${t.rgb})` : 'var(--text-dim)',
+                    }}>
+                      <span>{t.icon}</span>{t.label}
+                    </button>
+                  )
+                })}
+              </div>
+
               <textarea
                 value={motdText}
                 onChange={e => setMotdText(e.target.value)}
@@ -549,46 +600,70 @@ export default function Admin() {
                 rows={3}
                 style={{ width: '100%', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.78rem', padding: '0.55rem', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+
+              {/* Live preview van de banner */}
+              {motdText.trim() && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem',
+                  padding: '0.5rem 0.75rem', borderRadius: 3, fontSize: '0.74rem',
+                  background: `linear-gradient(90deg, rgba(${motdStyle.rgb},0.16), rgba(${motdStyle.rgb},0.05))`,
+                  border: `1px solid rgba(${motdStyle.rgb},0.4)`,
+                }}>
+                  <span style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.1em', flexShrink: 0 }}>VOORBEELD</span>
+                  <span>{motdStyle.icon}</span>
+                  <span style={{ color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{motdText}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.65rem' }}>
                 <span style={{ fontSize: '0.62rem', color: motdSaved ? 'var(--green)' : 'var(--text-dim)' }}>
                   {motdSaved ? '✓ Opgeslagen' : motdEnabled ? 'Zichtbaar voor alle members' : 'Verborgen'}
                 </span>
                 <button
                   onClick={saveMotd}
-                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.3rem 0.85rem', cursor: 'pointer' }}
+                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
             </div>
 
-            {(Object.keys(settings) as SettingKey[]).map(key => (
-              <div key={key} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 4, padding: '0.85rem 1rem',
-              }}>
-                <span style={{ fontSize: '0.8rem' }}>{SETTING_LABELS[key]}</span>
-                <div
-                  onClick={() => toggleSetting(key)}
-                  style={{
-                    width: 40, height: 22, borderRadius: 11, cursor: 'pointer',
-                    background: settings[key] ? 'var(--blue)' : 'var(--border)',
-                    position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute', top: 3,
-                    left: settings[key] ? 21 : 3,
-                    width: 16, height: 16, borderRadius: '50%',
-                    background: '#fff', transition: 'left 0.2s',
-                  }} />
+            {/* Toggle-secties */}
+            {SETTING_GROUPS.map(group => (
+              <div key={group.key}>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.15em', margin: '0 0 0.5rem 0.25rem' }}>
+                  {group.label.toUpperCase()}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {(Object.keys(settings) as SettingKey[]).filter(k => SETTING_META[k].group === group.key).map(key => {
+                    const meta = SETTING_META[key]
+                    const on = settings[key]
+                    const danger = meta.danger && on
+                    const rgb = meta.danger ? '224,85,85' : '0,180,216'
+                    return (
+                      <div key={key} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        background: danger ? 'rgba(224,85,85,0.06)' : 'var(--surface)',
+                        border: `1px solid ${danger ? 'rgba(224,85,85,0.4)' : 'var(--border)'}`,
+                        borderRadius: 6, padding: '0.7rem 1rem',
+                      }}>
+                        <span style={{ fontSize: '1.1rem', flexShrink: 0, width: 24, textAlign: 'center' }}>{meta.icon}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: danger ? 'var(--red)' : 'var(--text)' }}>{meta.label}</div>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>{meta.desc}</div>
+                        </div>
+                        <Toggle on={on} onClick={() => toggleSetting(key)} rgb={rgb} />
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             ))}
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: '0.5rem' }}>
-              Instellingen worden opgeslagen in de database.
+
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>
+              Wijzigingen worden direct opgeslagen in de database.
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* SDE — blueprint-data wordt nu met de site meegeleverd (geen lokale server) */}
         {tab === 'sde' && (

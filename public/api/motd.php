@@ -7,12 +7,13 @@ $pdo = getDB();
 // GET: huidige mededeling (voor iedereen leesbaar)
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('motd_text','motd_enabled')");
+        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('motd_text','motd_enabled','motd_type')");
         $rows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) $rows[$r['key']] = $r['value'];
         echo json_encode([
             'text'    => $rows['motd_text'] ?? '',
             'enabled' => ($rows['motd_enabled'] ?? 'false') === 'true',
+            'type'    => $rows['motd_type'] ?? 'info',
         ]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
@@ -29,9 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $text    = (string)($data['text'] ?? '');
         $enabled = !empty($data['enabled']) ? 'true' : 'false';
+        $type    = (string)($data['type'] ?? 'info');
+        if (!in_array($type, ['info', 'warning', 'success', 'event'], true)) $type = 'info';
         $stmt = $pdo->prepare('INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?');
         $stmt->execute(['motd_text', $text, $text]);
         $stmt->execute(['motd_enabled', $enabled, $enabled]);
+        $stmt->execute(['motd_type', $type, $type]);
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);

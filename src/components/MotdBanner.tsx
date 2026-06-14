@@ -1,17 +1,29 @@
 import { useEffect, useState } from 'react'
 
+type MotdType = 'info' | 'warning' | 'success' | 'event'
+
+interface Motd { text: string; enabled: boolean; type: MotdType }
+
+// Stijl per mededeling-type (kleur + icoon).
+const MOTD_STYLE: Record<MotdType, { color: string; icon: string }> = {
+  info:    { color: '0,180,216',  icon: '📢' },
+  warning: { color: '240,192,64', icon: '⚠️' },
+  success: { color: '62,207,110', icon: '✓' },
+  event:   { color: '167,139,250', icon: '📅' },
+}
+
 // Toont de admin-mededeling (MOTD) bovenaan; dismissbaar, en verschijnt opnieuw
 // zodra de tekst verandert.
 export default function MotdBanner() {
-  const [motd, setMotd] = useState<{ text: string; enabled: boolean } | null>(null)
+  const [motd, setMotd] = useState<Motd | null>(null)
   const [dismissed, setDismissed] = useState(true)
 
   useEffect(() => {
     fetch('/api/motd.php')
       .then(r => (r.ok ? r.json() : null))
-      .then((d: { text: string; enabled: boolean } | null) => {
+      .then((d: Motd | null) => {
         if (!d || !d.enabled || !d.text.trim()) return
-        setMotd(d)
+        setMotd({ ...d, type: d.type ?? 'info' })
         setDismissed(localStorage.getItem('motd_dismissed') === d.text)
       })
       .catch(() => {})
@@ -19,22 +31,24 @@ export default function MotdBanner() {
 
   if (!motd || dismissed) return null
 
+  const { color, icon } = MOTD_STYLE[motd.type] ?? MOTD_STYLE.info
+
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
       padding: '0.55rem 1rem',
-      background: 'linear-gradient(90deg, rgba(240,192,64,0.14), rgba(240,192,64,0.06))',
-      borderBottom: '1px solid rgba(240,192,64,0.35)',
-      color: 'var(--gold)', fontSize: '0.78rem', lineHeight: 1.5, flexShrink: 0,
+      background: `linear-gradient(90deg, rgba(${color},0.16), rgba(${color},0.05))`,
+      borderBottom: `1px solid rgba(${color},0.4)`,
+      fontSize: '0.78rem', lineHeight: 1.5, flexShrink: 0,
     }}>
-      <span style={{ flexShrink: 0 }}>📢</span>
+      <span style={{ flexShrink: 0 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text)' }}>
         {motd.text}
       </div>
       <button
         onClick={() => { localStorage.setItem('motd_dismissed', motd.text); setDismissed(true) }}
         aria-label="Mededeling sluiten"
-        style={{ flexShrink: 0, background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0.2rem' }}
+        style={{ flexShrink: 0, background: 'none', border: 'none', color: `rgb(${color})`, cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0.2rem' }}
       >×</button>
     </div>
   )
