@@ -91,6 +91,29 @@ async function fetchJitaPrices(typeIds: number[]): Promise<Map<number, { sell: n
   } catch { return new Map() }
 }
 
+// CCP's "adjusted price" per type — de basis voor de job-installatiekosten (EIV).
+// Eén publieke ESI-call, module-gecached (verandert maar ~1× per dag).
+let _adjCache: Map<number, number> | null = null
+let _adjInflight: Promise<Map<number, number>> | null = null
+function fetchAdjustedPrices(): Promise<Map<number, number>> {
+  if (_adjCache) return Promise.resolve(_adjCache)
+  if (!_adjInflight) {
+    _adjInflight = fetch('https://esi.evetech.net/latest/markets/prices/?datasource=tranquility')
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: Array<{ type_id: number; adjusted_price?: number }>) => {
+        const m = new Map<number, number>()
+        for (const row of rows) if (row.adjusted_price != null) m.set(row.type_id, row.adjusted_price)
+        _adjCache = m
+        return m
+      })
+      .catch(() => new Map<number, number>())
+  }
+  return _adjInflight
+}
+
+// SCC-surcharge: vaste 4% van de EIV bovenop de job-kosten (sinds de industry-herziening).
+const SCC_SURCHARGE = 0.04
+
 const TH: React.CSSProperties = { fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', padding: '0.4rem 0.85rem', textAlign: 'left' }
 const TD: React.CSSProperties = { padding: '0.45rem 0.85rem', borderTop: '1px solid rgba(28,28,53,0.5)', verticalAlign: 'middle' }
 const LABEL: React.CSSProperties = { fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.3rem' }
@@ -106,10 +129,14 @@ export default function BuildvsBuy() {
   const [selected, setSelected] = useState<(Blueprint & { typeName: string }) | null>(null)
   const [me, setMe]             = useState(10)
   const [runs, setRuns]         = useState(1)
+  const [priceMode, setPriceMode] = useState<'sell' | 'buy'>('sell')  // materiaal-aankoop
+  const [costIndex, setCostIndex]   = useState(4)  // system manufacturing cost index (%)
+  const [facilityTax, setFacilityTax] = useState(1) // facility/structure tax (%)
 
   const [calculating, setCalculating]   = useState(false)
   const [materials, setMaterials]       = useState<Material[]>([])
   const [product, setProduct]           = useState<ProductInfo | null>(null)
+  const [eiv, setEiv]                   = useState(0)  // Estimated Item Value (basis job-kosten)
   const [sdeError, setSdeError]         = useState<string | null>(null)
   const [serverOffline, setServerOffline] = useState(false)
 
@@ -163,10 +190,15 @@ export default function BuildvsBuy() {
       ...sdeMats.map(m => m.materialtypeid),
       ...(sdeProd ? [sdeProd.producttypeid] : []),
     ]
-    const [nameMap, priceMap] = await Promise.all([
+    const [nameMap, priceMap, adjustedMap] = await Promise.all([
       resolveNames(allTypeIds),
       fetchJitaPrices(allTypeIds),
+      fetchAdjustedPrices(),
     ])
+
+    // EIV = Σ(basishoeveelheid × CCP adjusted_price) — vóór ME, dit is de job-kostenbasis.
+    const eivVal = sdeMats.reduce((s, m) => s + (adjustedMap.get(m.materialtypeid) ?? 0) * (m.quantity * runs), 0)
+    setEiv(eivVal)
 
     const mats: Material[] = sdeMats.map(m => {
       const baseQty   = m.quantity * runs
@@ -203,7 +235,12 @@ export default function BuildvsBuy() {
     b.typeName.toLowerCase().includes(search.toLowerCase())
   )
 
-  const totalBuildCost   = materials.reduce((s, m) => s + (m.jitaSell ?? 0) * m.adjustedQty, 0)
+  // Materiaal-aankoopprijs volgens de gekozen modus (buy = met buy orders, sell = direct kopen).
+  const matUnit = (m: Material) => (priceMode === 'buy' ? m.jitaBuy : m.jitaSell) ?? 0
+  const materialsCost    = materials.reduce((s, m) => s + matUnit(m) * m.adjustedQty, 0)
+  // Job-installatiekosten = EIV × (system cost index + facility tax + SCC-surcharge).
+  const jobCost          = eiv * (costIndex / 100 + facilityTax / 100 + SCC_SURCHARGE)
+  const totalBuildCost   = materialsCost + jobCost
   const jitaSellRevenue  = product ? (product.jitaSell ?? 0) * product.quantity : 0
   const jitaBuyRevenue   = product ? (product.jitaBuy  ?? 0) * product.quantity : 0
   const profitSell       = jitaSellRevenue - totalBuildCost
@@ -283,6 +320,28 @@ export default function BuildvsBuy() {
               <input type="number" min={1} value={runs} onChange={e => setRuns(Math.max(1, Number(e.target.value)))}
                 style={{ width: 70, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', fontSize: '0.8rem', padding: '0.3rem 0.5rem', outline: 'none' }} />
             </div>
+            <div>
+              <div style={LABEL}>MATERIAAL KOPEN VIA</div>
+              <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                {(['sell', 'buy'] as const).map(mode => (
+                  <button key={mode} onClick={() => setPriceMode(mode)} style={{
+                    padding: '0.3rem 0.65rem', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', border: 'none',
+                    background: priceMode === mode ? 'rgba(0,180,216,0.15)' : 'transparent',
+                    color: priceMode === mode ? 'var(--blue)' : 'var(--text-dim)',
+                  }}>{mode === 'sell' ? 'Jita Sell' : 'Jita Buy'}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={LABEL} title="System manufacturing cost index">COST INDEX %</div>
+              <input type="number" min={0} step={0.1} value={costIndex} onChange={e => setCostIndex(Math.max(0, Number(e.target.value)))}
+                style={{ width: 64, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', fontSize: '0.8rem', padding: '0.3rem 0.5rem', outline: 'none' }} />
+            </div>
+            <div>
+              <div style={LABEL} title="Facility/structure tax">FACILITY TAX %</div>
+              <input type="number" min={0} step={0.1} value={facilityTax} onChange={e => setFacilityTax(Math.max(0, Number(e.target.value)))}
+                style={{ width: 64, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', fontSize: '0.8rem', padding: '0.3rem 0.5rem', outline: 'none' }} />
+            </div>
             <button
               onClick={calculate}
               disabled={!selected || calculating}
@@ -327,6 +386,14 @@ export default function BuildvsBuy() {
                 ))}
               </div>
 
+              {/* Kosten-opsplitsing: materiaal + job-installatie */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.6rem 1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                <span>Materiaal ({priceMode === 'buy' ? 'Jita buy' : 'Jita sell'}): <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtISK(materialsCost)} ISK</span></span>
+                <span>+ Job-kosten: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtISK(jobCost)} ISK</span></span>
+                <span style={{ opacity: 0.7 }}>EIV {fmtISK(eiv)} × ({costIndex}% index + {facilityTax}% tax + {(SCC_SURCHARGE * 100).toFixed(0)}% SCC)</span>
+                {runs > 1 && <span style={{ opacity: 0.7 }}>· {runs} runs · per stuk: <span style={{ color: profitSell >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{fmtISK(product ? profitSell / product.quantity : 0)} ISK</span></span>}
+              </div>
+
               {/* Product */}
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <EveImage category="types" id={product.typeId} variation="icon" size={64} px={40} />
@@ -347,14 +414,14 @@ export default function BuildvsBuy() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
-                      {['Materiaal', 'Basis', `ME ${me}%`, 'Jita Sell', 'Totaal', '%'].map(h => (
+                      {['Materiaal', 'Basis', `ME ${me}%`, priceMode === 'buy' ? 'Jita Buy' : 'Jita Sell', 'Totaal', '%'].map(h => (
                         <th key={h} style={TH}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {materials.map(m => {
-                      const cost = (m.jitaSell ?? 0) * m.adjustedQty
+                      const cost = matUnit(m) * m.adjustedQty
                       const pct  = totalBuildCost > 0 ? (cost / totalBuildCost) * 100 : 0
                       return (
                         <tr key={m.typeId}>
@@ -374,7 +441,7 @@ export default function BuildvsBuy() {
                             )}
                           </td>
                           <td style={{ ...TD, fontSize: '0.73rem', whiteSpace: 'nowrap' }}>
-                            {m.jitaSell != null ? `${fmtISK(m.jitaSell)} ISK` : <span style={{ color: 'var(--border)' }}>—</span>}
+                            {matUnit(m) > 0 ? `${fmtISK(matUnit(m))} ISK` : <span style={{ color: 'var(--border)' }}>—</span>}
                           </td>
                           <td style={{ ...TD, fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap', color: 'var(--red)' }}>
                             {fmtISK(cost)} ISK
