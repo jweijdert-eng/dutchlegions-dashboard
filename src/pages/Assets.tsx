@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, getSystemSecurity, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
+import { getAssets, getAssetLocations, getLocation, getRoute, getStationInfo, getStructureInfo, getSystemSecurity, getVolumes, resolveNames, type AssetItem, type AssetLocation } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -60,6 +60,14 @@ function fmtFlag(f: string) {
   return FLAG_LABEL[f] ?? f.replace(/([A-Z])/g, ' $1').trim()
 }
 
+// m³ compact (packaged volume uit de SDE)
+function fmtVol(v: number) {
+  if (v >= 1e9) return `${(v / 1e9).toFixed(2)} mld m³`
+  if (v >= 1e6) return `${(v / 1e6).toFixed(2)} mln m³`
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k m³`
+  return `${v.toFixed(v < 10 ? 1 : 0)} m³`
+}
+
 // Modules die in een schip gefit zitten (Hi/Med/Lo/Rig slots) — niet tonen in de
 // asset-lijst; het schip zelf blijft wel staan.
 const FITTED_SLOT_RE = /^(Hi|Med|Lo|Rig|SubSystem)Slot\d+$/
@@ -74,6 +82,7 @@ export default function Assets() {
     : selectedChar
 
   const [items, setItems] = useState<ResolvedAsset[]>([])
+  const [volumes, setVolumes] = useState<Record<number, number>>({})
   const [locationSystemMap, setLocationSystemMap] = useState<Record<number, number>>({})
   const [securityMap, setSecurityMap] = useState<Record<number, number>>({})
   const [routeCounts, setRouteCounts] = useState<Record<number, number | null>>({})
@@ -255,6 +264,9 @@ export default function Assets() {
 
   useEffect(() => { loadAssets() }, [selectedChar, allTokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
 
+  // Volume-bundel (m³ per type) eenmalig laden voor de totalen per locatie.
+  useEffect(() => { getVolumes().then(setVolumes).catch(() => {}) }, [])
+
   useEffect(() => {
     if (!routeCharacterId) { setOriginSystemId(null); return }
     const token = allTokens.find(t => t.characterId === routeCharacterId)?.accessToken
@@ -421,6 +433,7 @@ export default function Assets() {
           const displayName = isStruct ? 'Onbekende structuur' : isLoc ? 'Onbekende locatie' : loc
           const open = !collapsed[loc]
           const qty = items.reduce((s, it) => s + it.quantity, 0)
+          const vol = items.reduce((s, it) => s + (volumes[it.typeId] ?? 0) * it.quantity, 0)
           const routeCount = routeCounts[locationId]
           const routeLabel = routeCount === null
             ? originSystemId !== null ? 'berekenen…' : ''
@@ -443,7 +456,7 @@ export default function Assets() {
                   )}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  <span>{items.length} soorten · {qty.toLocaleString()} items</span>
+                  <span>{items.length} soorten · {qty.toLocaleString()} items{vol > 0 ? ` · ${fmtVol(vol)}` : ''}</span>
                   <span>{routeLabel}</span>
                 </div>
               </div>

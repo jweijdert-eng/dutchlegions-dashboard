@@ -1,6 +1,6 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { getMining, resolveNames, type MiningEntry } from '../api/esi'
+import { getMining, resolveNames, getReprocessBundle, getTypeInfo, type MiningEntry } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -53,6 +53,8 @@ export default function Mining() {
   usePageLoading(loading)
   const [view, setView]       = useState<'date' | 'ore'>('date')
   const [orePrices, setOrePrices] = useState<Map<number, number>>(new Map())
+  // Reprocessing-recept per erts: { oreTypeId: { portion, mats:[[matId,qty],...] } }
+  const [refineMap, setRefineMap] = useState<Map<number, { portion: number; mats: Array<[number, number]> }>>(new Map())
   const fetchId = useRef(0)
 
   useEffect(() => {
@@ -87,8 +89,22 @@ export default function Mining() {
       setEntries(sorted)
       setLoading(false)
 
-      // Fetch Jita buy prices (reuse already-collected typeIds)
-      fetchOrePrices(typeIds).then(prices => {
+      // Reprocessing-recepten uit de SDE-bundel → mineralen + portionSize per erts.
+      const repBundle = await getReprocessBundle()
+      const refine = new Map<number, { portion: number; mats: Array<[number, number]> }>()
+      const mineralIds = new Set<number>()
+      await Promise.all(typeIds.map(async tid => {
+        const mats = repBundle[String(tid)]
+        if (!mats || mats.length === 0) return
+        const info = await getTypeInfo(tid)
+        refine.set(tid, { portion: info?.portionSize || 100, mats })
+        mats.forEach(([mid]) => mineralIds.add(mid))
+      }))
+      if (myId !== fetchId.current) return
+      setRefineMap(refine)
+
+      // Jita-buy-prijzen voor zowel het ruwe erts als de gerefinede mineralen.
+      fetchOrePrices([...new Set([...typeIds, ...mineralIds])]).then(prices => {
         if (myId !== fetchId.current) return
         setOrePrices(prices)
       })
@@ -120,11 +136,20 @@ export default function Mining() {
     const cur = oreMap.get(e.oreName) ?? { typeId: e.typeId, quantity: 0 }
     oreMap.set(e.oreName, { ...cur, quantity: cur.quantity + e.quantity })
   }
+  // Gerefinede waarde: (aantal / portionSize) × Σ(mineraalAantal × Jita-buy).
+  function refinedIsk(typeId: number, quantity: number): number {
+    const r = refineMap.get(typeId)
+    if (!r) return 0
+    const perPortion = r.mats.reduce((s, [mid, q]) => s + q * (orePrices.get(mid) ?? 0), 0)
+    return (quantity / r.portion) * perPortion
+  }
+
   const oreList = [...oreMap.entries()]
-    .map(([name, v]) => ({ name, ...v, isk: (orePrices.get(v.typeId) ?? 0) * v.quantity }))
+    .map(([name, v]) => ({ name, ...v, isk: (orePrices.get(v.typeId) ?? 0) * v.quantity, refIsk: refinedIsk(v.typeId, v.quantity) }))
     .sort((a, b) => b.quantity - a.quantity)
 
-  const totalISK = oreList.reduce((s, o) => s + o.isk, 0)
+  const totalISK    = oreList.reduce((s, o) => s + o.isk, 0)
+  const totalRefISK = oreList.reduce((s, o) => s + o.refIsk, 0)
 
   // Group table rows
   const groupMap = new Map<string, ResolvedEntry[]>()
@@ -146,7 +171,7 @@ export default function Mining() {
     <Layout header={
       <PageHeader
         title="Mining"
-        sub={loading ? 'Laden...' : `${fmtQty(totalQty)} units${totalISK > 0 ? ` · ~${fmtISK(totalISK)} ISK` : ''} · ${fmtQty(todayQty)} vandaag`}
+        sub={loading ? 'Laden...' : `${fmtQty(totalQty)} units${totalISK > 0 ? ` · erts ~${fmtISK(totalISK)} ISK` : ''}${totalRefISK > 0 ? ` · gerefined ~${fmtISK(totalRefISK)} ISK` : ''} · ${fmtQty(todayQty)} vandaag`}
         right={
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             <button onClick={() => setView('date')} style={btnStyle(view === 'date')}>Per datum</button>
@@ -186,6 +211,11 @@ export default function Mining() {
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{fmtQty(ore.quantity)}</div>
                           {ore.isk > 0 && <div style={{ fontSize: '0.6rem', color: 'var(--gold)' }}>{fmtISK(ore.isk)} ISK</div>}
+                          {ore.refIsk > 0 && (
+                            <div style={{ fontSize: '0.58rem', color: ore.refIsk >= ore.isk ? 'var(--green)' : 'var(--text-dim)' }} title="Geschatte waarde na reprocessing (Jita buy)">
+                              ⚒ {fmtISK(ore.refIsk)}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div style={{ height: 3, background: 'var(--border)', borderRadius: 2 }}>

@@ -7,11 +7,12 @@ Output (compact, meegedeployd met de site → geen lokale server nodig):
   public/type-names.json  { typeId: "Naam" }                                  (published types, en)
   public/schematics.json  { id: { schematic_name, cycle_time, pins:[{type_id,is_input,quantity}] } } (PI)
 """
-import io, json, tarfile, urllib.request, os
+import io, json, tarfile, urllib.request, os, gzip, sqlite3, tempfile
 from datetime import datetime, timezone
 
 URL = 'https://data.everef.net/reference-data/reference-data-latest.tar.xz'
 LATEST = 'https://developers.eveonline.com/static-data/tranquility/latest.jsonl'
+FUZZ = 'https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz'
 PUB = os.path.join(os.path.dirname(__file__), '..', 'public')
 
 print('Downloaden EVE Ref reference-data (~14MB)...')
@@ -60,6 +61,52 @@ for sid, s in sch.items():
              for p in (s.get('products') or {}).values()]
     out_sch[sid] = {'schematic_name': s['name']['en'], 'cycle_time': s['cycle_time'], 'pins': pins}
 write('schematics.json', out_sch)
+
+# ── Fuzzwork SQLite (klassieke SDE) → systems / stations / type-info / reprocessing ──
+# LET OP: decomprimeer met Python's gzip; git-bash 'gunzip' levert hier een onbruikbaar bestand.
+print('Downloaden Fuzzwork SDE SQLite (~136MB)...')
+gz = urllib.request.urlopen(FUZZ, timeout=600).read()
+db_path = os.path.join(tempfile.gettempdir(), 'fuzzwork-sde.db')
+with open(db_path, 'wb') as f:
+    f.write(gzip.decompress(gz))
+con = sqlite3.connect(db_path)
+
+# Solar systems: { systemId: [naam, security] }
+# 4 decimalen → de app rondt zelf naar 1 decimaal (anders dubbel afronden: Jita 0.9459 → 0.95 → 1.0).
+out_sys = {str(sid): [name, round(sec, 4)]
+           for sid, name, sec in con.execute(
+               'SELECT solarSystemID, solarSystemName, security FROM mapSolarSystems')}
+write('systems.json', out_sys)
+
+# NPC-stations: { stationId: [naam, systemId] }
+out_sta = {str(sid): [name, sysid]
+           for sid, name, sysid in con.execute(
+               'SELECT stationID, stationName, solarSystemID FROM staStations')}
+write('stations.json', out_sta)
+
+# Type-info: { typeId: [groupId, volume, portionSize] }  — SP-per-categorie, m³, reprocessing-batch
+out_ti = {str(tid): [gid, vol, portion]
+          for tid, gid, vol, portion in con.execute(
+              'SELECT typeID, groupID, volume, portionSize FROM invTypes')}
+write('type-info.json', out_ti)
+
+# Groepen: { groupId: [naam, categoryId] }
+out_grp = {str(gid): [name, cid]
+           for gid, name, cid in con.execute('SELECT groupID, groupName, categoryID FROM invGroups')}
+write('groups.json', out_grp)
+
+# Categorieën: { categoryId: naam }
+out_cat = {str(cid): name for cid, name in con.execute('SELECT categoryID, categoryName FROM invCategories')}
+write('categories.json', out_cat)
+
+# Reprocessing-opbrengst: { typeId: [[materiaalId, aantal], ...] }
+out_rep = {}
+for tid, mid, qty in con.execute(
+        'SELECT typeID, materialTypeID, quantity FROM invTypeMaterials ORDER BY typeID'):
+    out_rep.setdefault(str(tid), []).append([mid, qty])
+write('reprocess.json', out_rep)
+
+con.close()
 
 # SDE-versie (officiële build) — voor weergave + update-detectie
 ver = json.loads(urllib.request.urlopen(LATEST, timeout=30).read().decode().splitlines()[0])

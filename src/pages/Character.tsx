@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
   getCharacterInfo, getSkillsInfo, getCorporation, getWallet, getCorpHistory, getMedals,
-  getClones, getImplants, getCharacterAttributes, getStationInfo, getStructureName, resolveNames,
+  getClones, getImplants, getCharacterAttributes, getStationInfo, getStructureName, resolveNames, getTypeInfo,
   type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes, type SkillsInfo, type Medal,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
@@ -50,6 +50,7 @@ interface CharData {
 interface SkillStats {
   total: number; unallocated: number; count: number; atV: number
   top: { id: number; sp: number; level: number; name: string }[]
+  byCategory: { name: string; sp: number; count: number }[]
 }
 interface HistoryEntry {
   corpId: number; corpName: string; start: string; end: string | null; days: number
@@ -171,16 +172,31 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
   async function loadStats() {
     if (skillStats) return
     const sk = data?.skillsInfo?.skills
-    if (!sk || sk.length === 0) { setSkillStats({ total: data?.totalSP ?? 0, unallocated: data?.skillsInfo?.unallocated_sp ?? 0, count: 0, atV: 0, top: [] }); return }
+    if (!sk || sk.length === 0) { setSkillStats({ total: data?.totalSP ?? 0, unallocated: data?.skillsInfo?.unallocated_sp ?? 0, count: 0, atV: 0, top: [], byCategory: [] }); return }
     setTabLoading(true)
     const top = [...sk].sort((a, b) => b.skillpoints_in_skill - a.skillpoints_in_skill).slice(0, 10)
     const names = await resolveNames(top.map(s => s.skill_id))
+
+    // SP per skill-groep (Gunnery, Spaceship Command, …) uit de SDE-bundel.
+    const byGroup = new Map<string, { sp: number; count: number }>()
+    await Promise.all(sk.map(async s => {
+      const info = await getTypeInfo(s.skill_id)
+      const name = info?.groupName || 'Overig'
+      const g = byGroup.get(name) ?? { sp: 0, count: 0 }
+      g.sp += s.skillpoints_in_skill; g.count += 1
+      byGroup.set(name, g)
+    }))
+    const byCategory = [...byGroup.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.sp - a.sp)
+
     setSkillStats({
       total: data?.skillsInfo?.total_sp ?? 0,
       unallocated: data?.skillsInfo?.unallocated_sp ?? 0,
       count: sk.length,
       atV: sk.filter(s => s.trained_skill_level === 5).length,
       top: top.map(s => ({ id: s.skill_id, sp: s.skillpoints_in_skill, level: s.trained_skill_level, name: names.get(s.skill_id) ?? `Skill ${s.skill_id}` })),
+      byCategory,
     })
     setTabLoading(false)
   }
@@ -328,6 +344,26 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
                           <div style={{ height: '100%', width: `${Math.max(3, (s.sp / max) * 100)}%`, background: 'linear-gradient(90deg, var(--gold), #f5d97a)', borderRadius: 2 }} />
                         </div>
                         <span style={{ width: 92, fontSize: '0.62rem', color: 'var(--text-dim)', textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{fmtSP(s.sp)} · L{s.level}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+            {skillStats.byCategory.length > 0 && (
+              <>
+                <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', margin: '1rem 0 0.5rem' }}>SP PER CATEGORIE</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  {skillStats.byCategory.map(c => {
+                    const max = skillStats.byCategory[0].sp || 1
+                    const pct = skillStats.total > 0 ? (c.sp / skillStats.total) * 100 : 0
+                    return (
+                      <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: 150, fontSize: '0.7rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                        <div style={{ flex: 1, height: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.max(3, (c.sp / max) * 100)}%`, background: 'linear-gradient(90deg, var(--blue), #5fd0ec)', borderRadius: 2 }} />
+                        </div>
+                        <span style={{ width: 92, fontSize: '0.62rem', color: 'var(--text-dim)', textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{fmtSP(c.sp)} · {pct.toFixed(0)}%</span>
                       </div>
                     )
                   })}

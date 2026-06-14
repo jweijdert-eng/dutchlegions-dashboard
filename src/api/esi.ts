@@ -785,6 +785,16 @@ const _stationCache = new Map<number, StationInfo>()
 
 export async function getStationInfo(id: number): Promise<StationInfo | null> {
   if (_stationCache.has(id)) return _stationCache.get(id)!
+  // SDE-bundel eerst: NPC-stations zonder ESI-call (naam + systeem).
+  try {
+    const stations = await loadBundle<Record<string, [string, number]>>('stations.json')
+    const hit = stations[String(id)]
+    if (hit) {
+      const info: StationInfo = { name: hit[0], system_id: hit[1] }
+      _stationCache.set(id, info)
+      return info
+    }
+  } catch { /* bundel mist → val terug op ESI */ }
   try {
     const data = await esiGet<StationInfo>(`/universe/stations/${id}/`)
     _stationCache.set(id, data)
@@ -805,10 +815,21 @@ const _sysCache  = new Map<number, SystemInfo>()
 const _consCache = new Map<number, { name: string; region_id: number }>()
 const _regCache  = new Map<number, string>()
 
+// SDE-bundel: { systemId: [naam, security] } — geladen via loadBundle (module-cache).
+async function _systemsBundle(): Promise<Record<string, [string, number]>> {
+  try { return await loadBundle<Record<string, [string, number]>>('systems.json') }
+  catch { return {} }
+}
+
 export async function getSystemInfo(id: number): Promise<SystemInfo | null> {
   if (_sysCache.has(id)) return _sysCache.get(id)!
+  // Naam + security komen direct uit de SDE-bundel (geen ESI, geen "blijft laden").
+  const bundle = await _systemsBundle()
+  const b = bundle[String(id)]
   try {
-    const sys = await esiGet<{ name: string; security_status: number; constellation_id: number }>(`/universe/systems/${id}/`)
+    const sys = b
+      ? { name: b[0], security_status: b[1], constellation_id: 0 }
+      : await esiGet<{ name: string; security_status: number; constellation_id: number }>(`/universe/systems/${id}/`)
     const info: SystemInfo = {
       name: sys.name,
       security_status: sys.security_status,
@@ -821,8 +842,9 @@ export async function getSystemInfo(id: number): Promise<SystemInfo | null> {
 
     // Constellation/region zijn aanvullend — als die calls falen (bv. rate-limit
     // bij veel systemen tegelijk) mag de al opgehaalde security_status niet verloren gaan.
+    // constellation_id 0 = uit de bundel; dan geen aanvullende calls.
     try {
-      if (!_consCache.has(sys.constellation_id)) {
+      if (sys.constellation_id && !_consCache.has(sys.constellation_id)) {
         const cons = await esiGet<{ name: string; region_id: number }>(`/universe/constellations/${sys.constellation_id}/`)
         _consCache.set(sys.constellation_id, cons)
       }
@@ -849,10 +871,83 @@ export async function getSystemInfo(id: number): Promise<SystemInfo | null> {
 export async function getSystemSecurity(id: number): Promise<number | null> {
   const cached = _sysCache.get(id)
   if (cached) return cached.security_status
+  // SDE-bundel eerst → geen ESI-call nodig.
+  const b = (await _systemsBundle())[String(id)]
+  if (b) return b[1]
   try {
     const sys = await esiGet<{ security_status: number }>(`/universe/systems/${id}/`)
     return sys.security_status
   } catch { return null }
+}
+
+// ── Type-info uit de SDE-bundel: categorie (voor SP-per-categorie) en m³ (volume) ──
+export interface TypeInfo {
+  groupId: number
+  groupName: string
+  categoryId: number
+  categoryName: string
+  volume: number
+  portionSize: number
+}
+
+// type-info.json: { typeId: [groupId, volume, portionSize] }
+type TypeInfoTuple = [number, number, number]
+
+export async function getTypeInfo(typeId: number): Promise<TypeInfo | null> {
+  try {
+    const [types, groups, cats] = await Promise.all([
+      loadBundle<Record<string, TypeInfoTuple>>('type-info.json'),
+      loadBundle<Record<string, [string, number]>>('groups.json'),
+      loadBundle<Record<string, string>>('categories.json'),
+    ])
+    const t = types[String(typeId)]
+    if (!t) return null
+    const [groupId, volume, portionSize] = t
+    const g = groups[String(groupId)]
+    const categoryId = g ? g[1] : 0
+    return {
+      groupId,
+      groupName: g ? g[0] : '',
+      categoryId,
+      categoryName: cats[String(categoryId)] ?? '',
+      volume,
+      portionSize: portionSize || 1,
+    }
+  } catch { return null }
+}
+
+// Alleen het volume (m³) — lichtgewicht voor hoeveelheidsberekeningen.
+export async function getTypeVolume(typeId: number): Promise<number | null> {
+  try {
+    const types = await loadBundle<Record<string, TypeInfoTuple>>('type-info.json')
+    const t = types[String(typeId)]
+    return t ? t[1] : null
+  } catch { return null }
+}
+
+// Hele volume-bundel ineens (voor lijsten) → { typeId: m³ }
+export async function getVolumes(): Promise<Record<number, number>> {
+  try {
+    const types = await loadBundle<Record<string, TypeInfoTuple>>('type-info.json')
+    const out: Record<number, number> = {}
+    for (const [id, t] of Object.entries(types)) out[Number(id)] = t[1]
+    return out
+  } catch { return {} }
+}
+
+// Reprocessing-opbrengst per refine-batch: { matTypeId: aantal }.
+// De aantallen gelden per `portionSize` eenheden (zie getTypeInfo.portionSize).
+export async function getReprocess(typeId: number): Promise<Array<[number, number]>> {
+  try {
+    const rep = await loadBundle<Record<string, Array<[number, number]>>>('reprocess.json')
+    return rep[String(typeId)] ?? []
+  } catch { return [] }
+}
+
+// Volledige reprocess-bundel + type-info ineens (voor Mining/Assets-berekeningen).
+export async function getReprocessBundle(): Promise<Record<string, Array<[number, number]>>> {
+  try { return await loadBundle<Record<string, Array<[number, number]>>>('reprocess.json') }
+  catch { return {} }
 }
 
 export const getRoute = (originSystemId: number, destinationSystemId: number, flag = 'shortest') =>
