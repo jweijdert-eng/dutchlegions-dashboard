@@ -171,6 +171,19 @@ export interface CorpHistoryEntry {
 }
 export const getCorpHistory = (id: number) => esiGet<CorpHistoryEntry[]>(`/characters/${id}/corporationhistory/`)
 
+export interface Medal {
+  medal_id: number
+  title: string
+  description: string
+  corporation_id: number
+  date: string
+  issuer_id: number
+  reason: string
+  status: 'public' | 'private'
+  graphics: { color?: number; graphic: string; layer: number; part: number }[]
+}
+export const getMedals = (id: number, token: string) => esiGet<Medal[]>(`/characters/${id}/medals/`, token)
+
 export interface CorporationInfo {
   name: string
   ticker: string

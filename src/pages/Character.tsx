@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
-  getCharacterInfo, getSkillsInfo, getCorporation, getWallet, getCorpHistory,
+  getCharacterInfo, getSkillsInfo, getCorporation, getWallet, getCorpHistory, getMedals,
   getClones, getImplants, getCharacterAttributes, getStationInfo, getStructureName, resolveNames,
-  type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes, type SkillsInfo,
+  type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes, type SkillsInfo, type Medal,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
@@ -34,7 +34,9 @@ function fmtDate(date?: string) {
   return new Date(date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-type Tab = 'overview' | 'stats' | 'history' | 'implants' | 'clones' | 'attributes'
+type Tab = 'overview' | 'stats' | 'history' | 'medals' | 'implants' | 'clones' | 'attributes'
+
+interface ResolvedMedal extends Medal { issuerName: string; corpName: string }
 
 interface CharData {
   info: CharacterInfo
@@ -88,6 +90,8 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
   const [attrs, setAttrs]       = useState<CharacterAttributes | null>(null)
   const [skillStats, setSkillStats] = useState<SkillStats | null>(null)
   const [history, setHistory]   = useState<HistoryEntry[] | null>(null)
+  const [medals, setMedals]     = useState<ResolvedMedal[] | null>(null)
+  const [medalsErr, setMedalsErr] = useState<string | null>(null)
   const [loading, setLoading]   = useState(true)
   usePageLoading(loading)
   const [tabLoading, setTabLoading] = useState(false)
@@ -195,10 +199,31 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
     setTabLoading(false)
   }
 
+  async function loadMedals() {
+    if (medals) return
+    setTabLoading(true); setMedalsErr(null)
+    try {
+      const raw = await getMedals(token.characterId, token.accessToken)
+      const names = await resolveNames([...new Set(raw.flatMap(m => [m.issuer_id, m.corporation_id]))])
+      setMedals(
+        [...raw].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .map(m => ({ ...m, issuerName: names.get(m.issuer_id) ?? `ID ${m.issuer_id}`, corpName: names.get(m.corporation_id) ?? `Corp ${m.corporation_id}` }))
+      )
+    } catch (e) {
+      const status = parseInt((e as Error).message.match(/:\s*(\d+)\s*$/)?.[1] ?? '0')
+      setMedalsErr(status === 403
+        ? 'Geen toegang tot medailles — log opnieuw in om de extra rechten toe te voegen.'
+        : `Medailles ophalen mislukt (${status || 'netwerkfout'}).`)
+      setMedals([])
+    }
+    setTabLoading(false)
+  }
+
   function handleTab(t: Tab) {
     setTab(t)
     if (t === 'stats')      loadStats()
     if (t === 'history')    loadHistory()
+    if (t === 'medals')     loadMedals()
     if (t === 'implants')   loadImplants()
     if (t === 'clones')     loadClones()
     if (t === 'attributes') loadAttributes()
@@ -244,6 +269,7 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
           <TabButton label="OVERVIEW"    active={tab === 'overview'}    onClick={() => handleTab('overview')} />
           <TabButton label="STATS"       active={tab === 'stats'}       onClick={() => handleTab('stats')} />
           <TabButton label="HISTORIE"    active={tab === 'history'}     onClick={() => handleTab('history')} />
+          <TabButton label="MEDAILLES"   active={tab === 'medals'}      onClick={() => handleTab('medals')} />
           <TabButton label="IMPLANTS"    active={tab === 'implants'}    onClick={() => handleTab('implants')} />
           <TabButton label="KLONEN"      active={tab === 'clones'}      onClick={() => handleTab('clones')} />
           <TabButton label="ATTRIBUTEN"  active={tab === 'attributes'}  onClick={() => handleTab('attributes')} />
@@ -331,6 +357,32 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
                   </div>
                 ))}
               </div>
+        )}
+
+        {/* Medailles */}
+        {tab === 'medals' && !tabLoading && medals && (
+          medalsErr
+            ? <div style={{ color: 'var(--red)', fontSize: '0.75rem', lineHeight: 1.6 }}>{medalsErr}</div>
+            : medals.length === 0
+              ? <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>Geen medailles toegekend</div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {medals.map(m => (
+                    <div key={m.medal_id} style={{ display: 'flex', gap: '0.7rem', padding: '0.65rem 0.75rem', background: 'rgba(15,15,34,0.5)', border: '1px solid var(--border)', borderRadius: 3 }}>
+                      <div style={{ fontSize: '1.5rem', flexShrink: 0, lineHeight: 1 }}>🎖️</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)' }}>{m.title}</span>
+                          <span style={{ fontSize: '0.5rem', color: m.status === 'public' ? 'var(--green)' : 'var(--text-dim)', border: `1px solid ${m.status === 'public' ? 'rgba(62,207,110,0.4)' : 'var(--border)'}`, borderRadius: 2, padding: '0 0.3rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{m.status === 'public' ? 'publiek' : 'privé'}</span>
+                        </div>
+                        {m.description && <div style={{ fontSize: '0.66rem', color: 'var(--text)', marginTop: '0.2rem', lineHeight: 1.5 }}>{m.description}</div>}
+                        <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>
+                          {fmtDate(m.date)} · {m.corpName} · door {m.issuerName}
+                        </div>
+                        {m.reason && <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', fontStyle: 'italic', marginTop: '0.2rem' }}>“{m.reason}”</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
         )}
 
         {/* Implants */}
