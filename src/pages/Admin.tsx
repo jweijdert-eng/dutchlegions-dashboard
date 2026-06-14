@@ -416,14 +416,8 @@ export default function Admin() {
                 </span>
               </div>
 
-              {bpCount != null && (
-                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text)', marginBottom: '0.35rem' }}>
-                  {bpCount.toLocaleString('nl')} blueprints
-                </div>
-              )}
-
               {sdeVer?.build != null && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
                     SDE build <strong style={{ color: 'var(--text)' }}>#{sdeVer.build}</strong>
                     {sdeVer.releaseDate && ` · ${new Date(sdeVer.releaseDate).toLocaleDateString('nl', { day: '2-digit', month: 'short', year: 'numeric' })}`}
@@ -437,20 +431,6 @@ export default function Admin() {
                   ) : null}
                 </div>
               )}
-
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.7 }}>
-                De SDE-data wordt nu <strong>met de site meegeleverd</strong> (geen lokale server meer nodig):
-                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>blueprints.json</code>
-                (Build vs Buy),
-                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>type-names.json</code>
-                (alle item-namen) en
-                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>schematics.json</code>
-                (PI). Namen worden zo direct opgelost zonder ESI-rate-limits.
-              </div>
-
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '0.75rem', lineHeight: 1.6 }}>
-                Een wekelijkse GitHub Action draait <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>build-sde.py</code> en deployt automatisch bij een nieuwe SDE. Handmatig: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>python tools/build-sde.py</code> → commit + push.
-              </div>
             </div>
           </div>
         )}
