@@ -43,7 +43,8 @@ export default function LocalChat() {
   const ownNames    = useMemo(() => tokens.map(t => t.characterName), [tokens])
   const activeToken = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
 
-  const { messages, status, fileName: file, connect, clear } = useLocalChat()
+  const { messages, status, fileName: file, supported, connect, loadFiles, clear } = useLocalChat()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [search,       setSearch]       = useState('')
   const [onlyMentions, setOnlyMentions] = useState(false)
   const [manuals,      setManuals]      = useState<Record<string, Standing>>(getStandings)
@@ -151,9 +152,12 @@ useEffect(() => {
     )
   }
 
-  const statusColor = status === 'watching' ? 'var(--green)' : status === 'no-file' ? 'var(--gold)' : 'var(--red)'
+  // In een niet-ondersteunde browser is 'watching' een handmatige momentopname, geen live-feed.
+  const manualMode = !supported && status === 'watching'
+  const statusColor = manualMode ? 'var(--gold)' : status === 'watching' ? 'var(--green)' : status === 'no-file' ? 'var(--gold)' : 'var(--red)'
   const statusLabel =
-    status === 'watching'         ? '● Live'
+    manualMode                    ? '● Handmatig (snapshot)'
+    : status === 'watching'       ? '● Live'
     : status === 'no-file'        ? '● Geen logbestand'
     : status === 'unsupported'    ? '● Niet ondersteund'
     : status === 'needs-permission' ? '● Toegang nodig'
@@ -182,9 +186,32 @@ useEffect(() => {
           }
         />
       }>
-        {status === 'unsupported' && (
-          <div style={{ background: 'rgba(224,85,85,0.08)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--red)', lineHeight: 1.6 }}>
-            Je browser ondersteunt het lezen van lokale bestanden niet. Gebruik <strong>Chrome</strong> of <strong>Edge</strong> om Local chat live te volgen.
+        {/* Verborgen bestand-kiezer voor de fallback (werkt in alle browsers) */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt"
+          multiple
+          style={{ display: 'none' }}
+          onChange={e => { if (e.target.files) loadFiles(e.target.files).catch(() => {}); e.target.value = '' }}
+        />
+
+        {!supported && (
+          <div style={{ background: 'rgba(240,192,64,0.07)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.85rem 1rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--text)', lineHeight: 1.6 }}>
+            <div style={{ marginBottom: '0.55rem' }}>
+              <strong style={{ color: 'var(--gold)' }}>Live volgen kan niet in deze browser.</strong> Automatisch meelezen werkt alleen in
+              {' '}<strong>Chrome</strong>, <strong>Edge</strong> of <strong>Opera</strong>. In Firefox/Safari kun je je logbestand wél handmatig laden:
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{ padding: '0.4rem 0.85rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', background: 'rgba(240,192,64,0.12)', border: '1px solid var(--gold)', color: 'var(--gold)' }}
+              >{messages.length > 0 ? '↻ Ververs (kies opnieuw)' : 'Kies Local-logbestand'}</button>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>
+                Locatie: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>Documents\EVE\logs\Chatlogs\Local_*.txt</code>
+                {' '}— kies het nieuwste bestand. Opnieuw kiezen = verversen.
+              </span>
+            </div>
           </div>
         )}
 
@@ -262,9 +289,9 @@ useEffect(() => {
           {displayed.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem', padding: '3rem' }}>
               {status === 'watching'
-                ? (search || onlyMentions || filter ? 'Geen resultaten' : 'Wachtend op berichten in Local...')
+                ? (search || onlyMentions || filter ? 'Geen resultaten' : manualMode ? 'Logbestand geladen, maar geen berichten gevonden' : 'Wachtend op berichten in Local...')
                 : status === 'no-file' ? 'Geen logbestand in de gekozen map'
-                : status === 'unsupported' ? 'Niet ondersteund in deze browser'
+                : status === 'unsupported' ? 'Kies hierboven je Local-logbestand om de chat te bekijken'
                 : 'Nog geen Chatlogs-map gekozen'}
             </div>
           ) : (

@@ -26,6 +26,7 @@ export interface LocalChatState {
   supported: boolean
   connect: () => Promise<void>   // opent picker of herstelt toestemming (user-gesture vereist)
   pickFolder: () => Promise<void> // forceer altijd de map-picker
+  loadFiles: (files: FileList | File[]) => Promise<void> // fallback: handmatig bestand(en) kiezen (alle browsers)
   clear: () => void
 }
 
@@ -270,10 +271,38 @@ export function useLocalChat(): LocalChatState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supported])
 
+  // Fallback voor browsers zonder File System Access API (Firefox/Safari): laat het
+  // lid zelf zijn Local_*.txt kiezen via een gewone <input type=file>. Geen live-watch
+  // mogelijk — het nieuwste gekozen bestand wordt geparsed; opnieuw kiezen = verversen.
+  const loadFiles = useCallback(async (files: FileList | File[]) => {
+    const arr = Array.from(files)
+    if (arr.length === 0) return
+    // Kies bij voorkeur een Local_*.txt; anders het nieuwste .txt-bestand.
+    const candidates = arr.filter(f => /^Local_.*\.txt$/i.test(f.name))
+    const pool = candidates.length > 0 ? candidates : arr.filter(f => /\.txt$/i.test(f.name))
+    if (pool.length === 0) {
+      setError('Geen Local_*.txt gevonden in je selectie. Kies het juiste logbestand uit je Chatlogs-map.')
+      setStatus('no-file')
+      return
+    }
+    const file = pool.reduce((a, b) => (b.lastModified > a.lastModified ? b : a))
+    try {
+      stopWatching()        // eventuele FS-poll stoppen; fallback is een momentopname
+      dirRef.current = null
+      const text = decodeEveLog(await file.arrayBuffer())
+      setMessages(parseChat(text))
+      setFileName(file.name)
+      setStatus('watching')
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [stopWatching])
+
   const clear = useCallback(() => {
     setMessages([])
     lastSizeRef.current = 0
   }, [])
 
-  return { messages, status, fileName, error, supported, connect, pickFolder, clear }
+  return { messages, status, fileName, error, supported, connect, pickFolder, loadFiles, clear }
 }

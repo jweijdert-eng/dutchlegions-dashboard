@@ -92,7 +92,7 @@ export default function LocalChatWidget() {
         <div style={{ padding: '0.625rem 0.875rem', height: 'calc(100vh - 550px)', overflowY: 'auto', fontSize: '0.68rem', lineHeight: 1.5 }}>
           {status !== 'watching' ? (
             <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '1rem 0' }}>
-              {status === 'unsupported' ? 'Niet ondersteund in deze browser'
+              {status === 'unsupported' ? 'Klik om je logbestand handmatig te laden'
                 : status === 'no-file' ? 'Geen logbestand gevonden'
                 : 'Klik om Local in te stellen'}
             </div>
