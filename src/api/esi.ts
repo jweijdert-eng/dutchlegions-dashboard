@@ -815,9 +815,9 @@ const _sysCache  = new Map<number, SystemInfo>()
 const _consCache = new Map<number, { name: string; region_id: number }>()
 const _regCache  = new Map<number, string>()
 
-// SDE-bundel: { systemId: [naam, security] } — geladen via loadBundle (module-cache).
-async function _systemsBundle(): Promise<Record<string, [string, number]>> {
-  try { return await loadBundle<Record<string, [string, number]>>('systems.json') }
+// SDE-bundel: { systemId: [naam, security, regionId] } — geladen via loadBundle (module-cache).
+async function _systemsBundle(): Promise<Record<string, [string, number, number]>> {
+  try { return await loadBundle<Record<string, [string, number, number]>>('systems.json') }
   catch { return {} }
 }
 
@@ -948,6 +948,37 @@ export async function getReprocess(typeId: number): Promise<Array<[number, numbe
 export async function getReprocessBundle(): Promise<Record<string, Array<[number, number]>>> {
   try { return await loadBundle<Record<string, Array<[number, number]>>>('reprocess.json') }
   catch { return {} }
+}
+
+// SDE-bundels voor de bouwlocatie-kiezer.
+export async function getSystems(): Promise<Record<string, [string, number, number]>> {
+  return _systemsBundle()
+}
+export async function getRegions(): Promise<Record<string, string>> {
+  try { return await loadBundle<Record<string, string>>('regions.json') }
+  catch { return {} }
+}
+
+// Live system manufacturing cost index per systeem (ESI /industry/systems/). Eén
+// publieke call, module-gecached. Bepaalt mee hoe duur een job in dat systeem is.
+let _costIdxCache: Map<number, number> | null = null
+let _costIdxInflight: Promise<Map<number, number>> | null = null
+export function getManufacturingCostIndices(): Promise<Map<number, number>> {
+  if (_costIdxCache) return Promise.resolve(_costIdxCache)
+  if (!_costIdxInflight) {
+    _costIdxInflight = esiGet<Array<{ solar_system_id: number; cost_indices: Array<{ activity: string; cost_index: number }> }>>('/industry/systems/')
+      .then(rows => {
+        const m = new Map<number, number>()
+        for (const r of rows) {
+          const mfg = r.cost_indices.find(c => c.activity === 'manufacturing')
+          if (mfg) m.set(r.solar_system_id, mfg.cost_index)
+        }
+        _costIdxCache = m
+        return m
+      })
+      .catch(() => new Map<number, number>())
+  }
+  return _costIdxInflight
 }
 
 export const getRoute = (originSystemId: number, destinationSystemId: number, flag = 'shortest') =>

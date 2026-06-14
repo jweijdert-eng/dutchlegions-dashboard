@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { getBlueprints, resolveNames, type Blueprint } from '../api/esi'
+import { getBlueprints, resolveNames, getSystems, getRegions, getManufacturingCostIndices, type Blueprint } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -133,6 +133,13 @@ export default function BuildvsBuy() {
   const [costIndex, setCostIndex]   = useState(4)  // system manufacturing cost index (%)
   const [facilityTax, setFacilityTax] = useState(1) // facility/structure tax (%)
 
+  // Bouwlocatie: systemen + regio's (SDE-bundel) + live cost indices (ESI).
+  const [systemsMap, setSystemsMap] = useState<Record<string, [string, number, number]>>({})
+  const [regionsMap, setRegionsMap] = useState<Record<string, string>>({})
+  const [costIdxMap, setCostIdxMap] = useState<Map<number, number>>(new Map())
+  const [locQuery, setLocQuery]     = useState('')
+  const [buildSystem, setBuildSystem] = useState<{ id: number; name: string; sec: number; region: string; index: number } | null>(null)
+
   const [calculating, setCalculating]   = useState(false)
   const [materials, setMaterials]       = useState<Material[]>([])
   const [product, setProduct]           = useState<ProductInfo | null>(null)
@@ -163,6 +170,42 @@ export default function BuildvsBuy() {
     }
     load()
   }, [tokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
+
+  // Bouwlocatie-data eenmalig laden.
+  useEffect(() => {
+    getSystems().then(setSystemsMap).catch(() => {})
+    getRegions().then(setRegionsMap).catch(() => {})
+    getManufacturingCostIndices().then(setCostIdxMap).catch(() => {})
+  }, [])
+
+  // Systemen die met de zoekterm matchen + een bekende cost index hebben (sorteerbaar op index).
+  const locMatches = (() => {
+    const q = locQuery.trim().toLowerCase()
+    if (q.length < 2) return []
+    const out: { id: number; name: string; sec: number; region: string; index: number }[] = []
+    for (const [idStr, [name, sec, regionId]] of Object.entries(systemsMap)) {
+      if (!name.toLowerCase().includes(q)) continue
+      const id = Number(idStr)
+      const index = costIdxMap.get(id)
+      if (index == null) continue   // alleen systemen met industrie-activiteit
+      out.push({ id, name, sec, region: regionsMap[String(regionId)] ?? '—', index })
+      if (out.length > 200) break
+    }
+    return out.sort((a, b) => a.index - b.index || a.name.localeCompare(b.name)).slice(0, 12)
+  })()
+
+  function pickSystem(s: { id: number; name: string; sec: number; region: string; index: number }) {
+    setBuildSystem(s)
+    setCostIndex(Math.round(s.index * 1000) / 10)  // fractie → % (1 decimaal)
+    setLocQuery('')
+  }
+
+  function secColor(sec: number) {
+    const s = Math.round(sec * 10) / 10
+    if (s >= 0.5) return 'var(--green)'
+    if (s > 0)    return 'var(--gold)'
+    return 'var(--red)'
+  }
 
   async function calculate() {
     if (!selected || calculating) return
@@ -248,7 +291,7 @@ export default function BuildvsBuy() {
   const roiSell          = totalBuildCost > 0 ? (profitSell / totalBuildCost) * 100 : 0
 
   return (
-    <Layout header={<PageHeader title="Build vs Buy" sub="Vergelijk bouwen met Jita koopprijs" />}>
+    <Layout header={<PageHeader title="Build vs Buy" sub="Vergelijk bouwen met Jita koopprijs · kies je bouwsysteem voor de echte job-kosten" />}>
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '0.75rem', alignItems: 'start' }}>
 
         {/* Blueprint selector */}
@@ -332,9 +375,43 @@ export default function BuildvsBuy() {
                 ))}
               </div>
             </div>
+            <div style={{ position: 'relative' }}>
+              <div style={LABEL}>BOUWLOCATIE (SYSTEEM)</div>
+              <input
+                type="text"
+                placeholder={costIdxMap.size === 0 ? 'Cost indices laden...' : 'Zoek systeem...'}
+                value={locQuery}
+                onChange={e => setLocQuery(e.target.value)}
+                style={{ width: 175, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', fontSize: '0.78rem', padding: '0.3rem 0.5rem', outline: 'none' }}
+              />
+              {buildSystem && !locQuery && (
+                <div style={{ fontSize: '0.6rem', marginTop: '0.2rem', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                  <span style={{ color: secColor(buildSystem.sec), fontWeight: 700 }}>{(Math.round(buildSystem.sec * 10) / 10).toFixed(1)}</span>{' '}
+                  {buildSystem.name} · {buildSystem.region}
+                </div>
+              )}
+              {locMatches.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, marginTop: 2, width: 280, maxHeight: 280, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--blue)', borderRadius: 3, boxShadow: '0 6px 18px rgba(0,0,0,0.5)' }}>
+                  <div style={{ padding: '0.3rem 0.6rem', fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.1em', borderBottom: '1px solid var(--border)' }}>GESORTEERD OP GOEDKOOPSTE INDEX</div>
+                  {locMatches.map(s => (
+                    <div key={s.id} onClick={() => pickSystem(s)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.35rem 0.6rem', cursor: 'pointer', borderBottom: '1px solid rgba(28,28,53,0.4)' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,180,216,0.08)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}>
+                      <span style={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: secColor(s.sec), fontWeight: 700, marginRight: '0.35rem' }}>{(Math.round(s.sec * 10) / 10).toFixed(1)}</span>
+                        {s.name}
+                        <span style={{ color: 'var(--text-dim)', marginLeft: '0.35rem', fontSize: '0.6rem' }}>{s.region}</span>
+                      </span>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--gold)', flexShrink: 0 }}>{(s.index * 100).toFixed(2)}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div>
               <div style={LABEL} title="System manufacturing cost index">COST INDEX %</div>
-              <input type="number" min={0} step={0.1} value={costIndex} onChange={e => setCostIndex(Math.max(0, Number(e.target.value)))}
+              <input type="number" min={0} step={0.1} value={costIndex} onChange={e => { setCostIndex(Math.max(0, Number(e.target.value))); setBuildSystem(null) }}
                 style={{ width: 64, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', fontSize: '0.8rem', padding: '0.3rem 0.5rem', outline: 'none' }} />
             </div>
             <div>
@@ -391,6 +468,7 @@ export default function BuildvsBuy() {
                 <span>Materiaal ({priceMode === 'buy' ? 'Jita buy' : 'Jita sell'}): <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtISK(materialsCost)} ISK</span></span>
                 <span>+ Job-kosten: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtISK(jobCost)} ISK</span></span>
                 <span style={{ opacity: 0.7 }}>EIV {fmtISK(eiv)} × ({costIndex}% index + {facilityTax}% tax + {(SCC_SURCHARGE * 100).toFixed(0)}% SCC)</span>
+                {buildSystem && <span style={{ opacity: 0.7 }}>· @ <span style={{ color: secColor(buildSystem.sec) }}>{buildSystem.name}</span> ({buildSystem.region})</span>}
                 {runs > 1 && <span style={{ opacity: 0.7 }}>· {runs} runs · per stuk: <span style={{ color: profitSell >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{fmtISK(product ? profitSell / product.quantity : 0)} ISK</span></span>}
               </div>
 

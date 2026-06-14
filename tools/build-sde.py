@@ -71,12 +71,16 @@ with open(db_path, 'wb') as f:
     f.write(gzip.decompress(gz))
 con = sqlite3.connect(db_path)
 
-# Solar systems: { systemId: [naam, security] }
+# Solar systems: { systemId: [naam, security, regionId] }
 # 4 decimalen → de app rondt zelf naar 1 decimaal (anders dubbel afronden: Jita 0.9459 → 0.95 → 1.0).
-out_sys = {str(sid): [name, round(sec, 4)]
-           for sid, name, sec in con.execute(
-               'SELECT solarSystemID, solarSystemName, security FROM mapSolarSystems')}
+out_sys = {str(sid): [name, round(sec, 4), rid]
+           for sid, name, sec, rid in con.execute(
+               'SELECT solarSystemID, solarSystemName, security, regionID FROM mapSolarSystems')}
 write('systems.json', out_sys)
+
+# Regio's: { regionId: naam }
+out_reg = {str(rid): name for rid, name in con.execute('SELECT regionID, regionName FROM mapRegions')}
+write('regions.json', out_reg)
 
 # NPC-stations: { stationId: [naam, systemId] }
 out_sta = {str(sid): [name, sysid]
