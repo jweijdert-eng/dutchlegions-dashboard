@@ -958,6 +958,36 @@ export async function getRegions(): Promise<Record<string, string>> {
   try { return await loadBundle<Record<string, string>>('regions.json') }
   catch { return {} }
 }
+export async function getStationsBundle(): Promise<Record<string, [string, number]>> {
+  try { return await loadBundle<Record<string, [string, number]>>('stations.json') }
+  catch { return {} }
+}
+
+// Services van een NPC-station (bv. 'manufacturing', 'market') — live via ESI, gecached.
+const _stationSvcCache = new Map<number, string[]>()
+export async function getStationServices(id: number): Promise<string[]> {
+  if (_stationSvcCache.has(id)) return _stationSvcCache.get(id)!
+  try {
+    const d = await esiGet<{ services?: string[] }>(`/universe/stations/${id}/`)
+    const svc = d.services ?? []
+    _stationSvcCache.set(id, svc)
+    return svc
+  } catch { return [] }
+}
+
+// NPC-stations in een systeem die kunnen produceren (Factory/manufacturing-service).
+export async function getManufacturingStations(systemId: number): Promise<Array<{ id: number; name: string }>> {
+  const bundle = await getStationsBundle()
+  const candidates = Object.entries(bundle)
+    .filter(([, v]) => v[1] === systemId)
+    .map(([idStr, v]) => ({ id: Number(idStr), name: v[0] }))
+    .slice(0, 25)
+  const checked = await Promise.all(candidates.map(async s => ({
+    ...s,
+    mfg: (await getStationServices(s.id)).includes('manufacturing'),
+  })))
+  return checked.filter(s => s.mfg).map(({ id, name }) => ({ id, name }))
+}
 
 // Live system manufacturing cost index per systeem (ESI /industry/systems/). Eén
 // publieke call, module-gecached. Bepaalt mee hoe duur een job in dat systeem is.
