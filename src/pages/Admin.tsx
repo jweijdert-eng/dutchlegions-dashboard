@@ -1,22 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
 import { useLayoutMode } from '../context/LayoutModeContext'
-import { LOCAL } from '../components/Sidebar'
 import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
 import EveImage from '../components/EveImage'
 
 const ADMIN_CHAR_ID = 1831618559
-
-function fmtMB(bytes: number) { return `${(bytes / 1024 / 1024).toFixed(0)} MB` }
-
-interface SdeStatus {
-  loaded: boolean
-  fsdFiles: number
-  version: { installed: number | null; installedReleaseDate: string | null; latest: number | null; latestReleaseDate: string | null; updateAvailable: boolean }
-  download: { active: boolean; step: string; downloaded: number; total: number; extracted: number; error: string | null }
-}
 
 interface ActivityData {
   total: number
@@ -67,32 +57,21 @@ export default function Admin() {
   const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
-  const [sde, setSde] = useState<SdeStatus | null>(null)
-  const [sdeServerUp, setSdeServerUp] = useState(false)
-  const sdeRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
 
   useEffect(() => {
     if (tab === 'stats') fetchActivity()
     if (tab === 'members') fetchMembers()
     if (tab === 'settings') fetchSettings()
-    if (tab === 'sde') {
-      pollSde()
-      sdeRef.current = setInterval(pollSde, 3000)
-    } else {
-      if (sdeRef.current) { clearInterval(sdeRef.current); sdeRef.current = null }
-    }
-    return () => { if (sdeRef.current) { clearInterval(sdeRef.current); sdeRef.current = null } }
+    if (tab === 'sde') fetchBpInfo()
   }, [tab])
 
-  async function pollSde() {
+  async function fetchBpInfo() {
     try {
-      const r = await fetch(`${LOCAL}/sde-status`, { signal: AbortSignal.timeout(1500) })
-      if (r.ok) { setSde(await r.json()); setSdeServerUp(true) }
-    } catch { setSdeServerUp(false) }
-  }
-
-  async function startSdeDownload() {
-    await fetch(`${LOCAL}/sde-download`, { method: 'POST' }).catch(() => null)
+      const r = await fetch('/blueprints.json', { cache: 'no-cache' })
+      const d = await r.json() as Record<string, unknown>
+      setBpCount(Object.keys(d).length)
+    } catch { setBpCount(null) }
   }
 
   async function fetchActivity() {
@@ -414,75 +393,39 @@ export default function Admin() {
           </div>
         )}
 
-        {/* SDE */}
-        {tab === 'sde' && (() => {
-          const dl = sde?.download
-          const isUpdate = sde?.version?.updateAvailable
-          const accentColor = !sdeServerUp ? 'var(--border)' : dl?.active ? 'var(--blue)' : isUpdate ? 'var(--gold)' : sde?.loaded ? 'var(--green)' : 'var(--blue)'
-          const versionLabel = !sdeServerUp ? null
-            : dl?.active ? null
-            : sde?.version?.installed ? `Build #${sde.version.installed}`
-            : sde?.loaded ? `${sde.fsdFiles} bestanden`
-            : null
-          return (
-            <div style={{ maxWidth: 420 }}>
-              <div style={{
-                background: 'rgba(255,255,255,0.04)', border: `1px solid var(--border)`,
-                borderLeft: `3px solid ${accentColor}`, borderRadius: 4, padding: '1.25rem 1.5rem',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                  <span style={{ fontSize: '0.7rem', color: accentColor, letterSpacing: '0.15em', fontWeight: 700 }}>STATIC DATA EXPORT</span>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: accentColor }}>
-                    {!sdeServerUp ? 'Server offline' : dl?.active ? (dl.extracted > 0 ? `${dl.extracted} bestanden` : dl.step) : sde?.loaded ? '✓ Geladen' : 'Niet geladen'}
-                  </span>
+        {/* SDE — blueprint-data wordt nu met de site meegeleverd (geen lokale server) */}
+        {tab === 'sde' && (
+          <div style={{ maxWidth: 460 }}>
+            <div style={{
+              background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
+              borderLeft: `3px solid ${bpCount ? 'var(--green)' : bpCount === null ? 'var(--red)' : 'var(--border)'}`,
+              borderRadius: 4, padding: '1.25rem 1.5rem',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', letterSpacing: '0.15em', fontWeight: 700 }}>STATIC DATA EXPORT</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: bpCount ? 'var(--green)' : bpCount === null ? 'var(--red)' : 'var(--text-dim)' }}>
+                  {bpCount === undefined ? 'Laden…' : bpCount === null ? 'Niet gevonden' : '✓ Geladen'}
+                </span>
+              </div>
+
+              {bpCount != null && (
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text)', marginBottom: '0.35rem' }}>
+                  {bpCount.toLocaleString('nl')} blueprints
                 </div>
+              )}
 
-                {versionLabel && !dl?.active && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: isUpdate ? 'var(--gold)' : 'var(--text)' }}>{versionLabel}</span>
-                      {isUpdate && <span style={{ fontSize: '0.62rem', background: 'rgba(240,192,64,0.15)', border: '1px solid rgba(240,192,64,0.4)', color: 'var(--gold)', borderRadius: 2, padding: '0.05rem 0.35rem', fontWeight: 700 }}>update beschikbaar</span>}
-                    </div>
-                    {sde?.version?.installedReleaseDate && (
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                        {new Date(sde.version.installedReleaseDate).toLocaleString('nl', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                )}
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.7 }}>
+                De blueprint-data (manufacturing) wordt nu <strong>met de site meegeleverd</strong> als
+                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2, margin: '0 0.25rem' }}>public/blueprints.json</code>
+                — geen lokale server meer nodig. Build vs Buy werkt zo voor iedereen op de live-site.
+              </div>
 
-                {dl?.active && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ height: 6, background: 'rgba(0,180,216,0.15)', borderRadius: 3, overflow: 'hidden', marginBottom: '0.4rem' }}>
-                      <div style={{ height: '100%', borderRadius: 3, background: 'linear-gradient(90deg, var(--blue), #7dd3fc)', width: dl.total > 0 ? `${Math.round(dl.downloaded / dl.total * 100)}%` : '60%', transition: 'width 0.5s' }} />
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--blue)', fontWeight: 600 }}>
-                      {dl.total > 0 ? `${fmtMB(dl.downloaded)} / ${fmtMB(dl.total)}` : dl.step}
-                    </div>
-                  </div>
-                )}
-
-                {dl?.error && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--red)', marginBottom: '0.75rem', background: 'rgba(224,85,85,0.08)', borderRadius: 3, padding: '0.4rem 0.6rem' }}>
-                    {dl.error}
-                  </div>
-                )}
-
-                {!dl?.active && sdeServerUp && (!sde?.loaded || isUpdate) && (
-                  <button onClick={startSdeDownload} style={{ display: 'block', width: '100%', textAlign: 'center', cursor: 'pointer', background: isUpdate ? 'rgba(240,192,64,0.12)' : 'rgba(0,180,216,0.1)', border: `1px solid ${isUpdate ? 'rgba(240,192,64,0.45)' : 'rgba(0,180,216,0.35)'}`, color: isUpdate ? 'var(--gold)' : 'var(--blue)', borderRadius: 3, fontSize: '0.75rem', fontWeight: 700, padding: '0.5rem' }}>
-                    {isUpdate ? '↻ Bijwerken' : '↓ SDE installeren'}
-                  </button>
-                )}
-
-                {!sdeServerUp && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>
-                    Start de lokale server: <code style={{ color: 'var(--blue)' }}>cd local-chat-server &amp;&amp; node server.js</code>
-                  </div>
-                )}
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '0.75rem', lineHeight: 1.6 }}>
+                Bijwerken bij een nieuwe SDE: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: 2 }}>node tools/build-blueprints.mjs</code>, daarna committen + pushen.
               </div>
             </div>
-          )
-        })()}
+          </div>
+        )}
 
       </div>
     </Layout>
