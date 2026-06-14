@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { getBlueprints, resolveNames, getSystems, getRegions, getManufacturingCostIndices, getManufacturingStations, type Blueprint } from '../api/esi'
+import { getBlueprints, resolveNames, getSystems, getRegions, getManufacturingCostIndices, type Blueprint } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -139,10 +139,6 @@ export default function BuildvsBuy() {
   const [costIdxMap, setCostIdxMap] = useState<Map<number, number>>(new Map())
   const [locQuery, setLocQuery]     = useState('')
   const [buildSystem, setBuildSystem] = useState<{ id: number; name: string; sec: number; region: string; index: number } | null>(null)
-  // Productie-stations in het gekozen systeem (live via ESI).
-  const [stationList, setStationList] = useState<Array<{ id: number; name: string }>>([])
-  const [stationsLoading, setStationsLoading] = useState(false)
-  const [buildStation, setBuildStation] = useState<{ id: number; name: string } | null>(null)
 
   const [calculating, setCalculating]   = useState(false)
   const [materials, setMaterials]       = useState<Material[]>([])
@@ -202,14 +198,6 @@ export default function BuildvsBuy() {
     setBuildSystem(s)
     setCostIndex(Math.round(s.index * 1000) / 10)  // fractie → % (1 decimaal)
     setLocQuery('')
-    // Productie-stations in dit systeem ophalen (ESI services-check).
-    setBuildStation(null)
-    setStationList([])
-    setStationsLoading(true)
-    getManufacturingStations(s.id)
-      .then(list => setStationList(list))
-      .catch(() => setStationList([]))
-      .finally(() => setStationsLoading(false))
   }
 
   function secColor(sec: number) {
@@ -445,37 +433,6 @@ export default function BuildvsBuy() {
             </button>
           </div>
 
-          {/* Productie-stations in het gekozen systeem */}
-          {buildSystem && (
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.7rem 1rem' }}>
-              <div style={{ ...LABEL, marginBottom: '0.5rem' }}>
-                PRODUCTIE-STATION IN <span style={{ color: secColor(buildSystem.sec) }}>{buildSystem.name}</span> · {buildSystem.region}
-              </div>
-              {stationsLoading ? (
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>Stations checken via ESI...</div>
-              ) : stationList.length === 0 ? (
-                <div style={{ fontSize: '0.72rem', color: 'var(--gold)' }}>
-                  Geen NPC-productiestation in dit systeem — hier bouw je in een eigen structure (Engineering Complex). De system cost index geldt nog steeds.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  {stationList.map(st => {
-                    const active = buildStation?.id === st.id
-                    return (
-                      <button key={st.id} onClick={() => setBuildStation(active ? null : st)} style={{
-                        padding: '0.3rem 0.6rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', textAlign: 'left',
-                        background: active ? 'rgba(0,180,216,0.15)' : 'var(--surface2)',
-                        border: `1px solid ${active ? 'var(--blue)' : 'var(--border)'}`,
-                        color: active ? 'var(--blue)' : 'var(--text)',
-                      }}>{st.name}</button>
-                    )
-                  })}
-                </div>
-              )}
-              {buildStation && <div style={{ fontSize: '0.62rem', color: 'var(--green)', marginTop: '0.45rem' }}>✓ Bouwen in {buildStation.name}</div>}
-            </div>
-          )}
-
           {serverOffline && (
             <div style={{ background: 'rgba(224,85,85,0.08)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--red)', lineHeight: 1.7 }}>
               Kan de blueprint-data niet laden. Probeer de pagina te verversen.
@@ -511,7 +468,7 @@ export default function BuildvsBuy() {
                 <span>Materiaal ({priceMode === 'buy' ? 'Jita buy' : 'Jita sell'}): <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtISK(materialsCost)} ISK</span></span>
                 <span>+ Job-kosten: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{fmtISK(jobCost)} ISK</span></span>
                 <span style={{ opacity: 0.7 }}>EIV {fmtISK(eiv)} × ({costIndex}% index + {facilityTax}% tax + {(SCC_SURCHARGE * 100).toFixed(0)}% SCC)</span>
-                {buildSystem && <span style={{ opacity: 0.7 }}>· @ {buildStation ? `${buildStation.name} · ` : ''}<span style={{ color: secColor(buildSystem.sec) }}>{buildSystem.name}</span> ({buildSystem.region})</span>}
+                {buildSystem && <span style={{ opacity: 0.7 }}>· @ <span style={{ color: secColor(buildSystem.sec) }}>{buildSystem.name}</span> ({buildSystem.region})</span>}
                 {runs > 1 && <span style={{ opacity: 0.7 }}>· {runs} runs · per stuk: <span style={{ color: profitSell >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{fmtISK(product ? profitSell / product.quantity : 0)} ISK</span></span>}
               </div>
 
