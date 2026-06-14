@@ -857,10 +857,13 @@ export default function Dashboard() {
           <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(0,180,216,0.5), transparent)' }} />
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 1.5rem', gap: '1.1rem' }}>
             {/* Portret met gloei-ring */}
-            <div style={{ position: 'relative', width: 86, height: 86, flexShrink: 0 }}>
-              <div style={{ position: 'absolute', inset: -3, borderRadius: '50%', background: 'conic-gradient(from 0deg, var(--blue), transparent 35%, var(--gold) 60%, transparent 78%, var(--blue))', animation: 'ring-spin 9s linear infinite', opacity: 0.7 }} />
-              <EveImage category="characters" id={primary.characterId} variation="portrait" size={128} px={80}
-                style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2px solid rgba(5,5,15,0.9)', boxShadow: '0 0 18px -2px rgba(0,180,216,0.55)' }} />
+            <div style={{ position: 'relative', width: 80, height: 80, flexShrink: 0, display: 'flex' }}>
+              {/* zachte gloed-halo erachter */}
+              <div style={{ position: 'absolute', inset: -11, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,180,216,0.5) 0%, rgba(0,180,216,0) 72%)' }} />
+              {/* volledige, langzaam draaiende gloei-ring (rim achter het portret) */}
+              <div style={{ position: 'absolute', inset: -3, borderRadius: '50%', background: 'conic-gradient(from 0deg, #00b4d8, #7fe0ff, #f0c040, #7fe0ff, #00b4d8)', animation: 'ring-spin 8s linear infinite' }} />
+              <EveImage category="characters" id={primary.characterId} variation="portrait" size={128} px={80} round
+                style={{ position: 'relative', border: '2px solid rgba(5,5,15,0.95)', boxShadow: '0 0 16px -3px rgba(0,180,216,0.6)' }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '1.2rem', fontWeight: 700, letterSpacing: '0.02em', marginBottom: '0.15rem', textShadow: '0 0 18px rgba(0,180,216,0.35)' }}>{primary.characterName}</div>
