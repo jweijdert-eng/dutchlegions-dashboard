@@ -98,6 +98,10 @@ export default function Admin() {
   const [motdSaved, setMotdSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
+  const [hasPat, setHasPat] = useState(false)
+  const [patInput, setPatInput] = useState('')
+  const [showPatField, setShowPatField] = useState(false)
+  const [triggerMsg, setTriggerMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (tab === 'stats') fetchActivity()
@@ -136,6 +140,28 @@ export default function Admin() {
       latest = JSON.parse(txt.trim().split('\n')[0]).buildNumber ?? null
     } catch { /* CORS/offline — geen live check */ }
     setSdeVer({ build: ver?.build ?? null, releaseDate: ver?.releaseDate ?? null, latest })
+    fetch('/api/sde-trigger.php').then(r => (r.ok ? r.json() : null)).then(d => setHasPat(!!d?.hasPat)).catch(() => {})
+  }
+
+  async function savePat() {
+    if (!adminToken || !patInput.trim()) return
+    await fetch('/api/sde-trigger.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: adminToken.characterId, action: 'save', pat: patInput.trim() }),
+    }).catch(() => {})
+    setHasPat(true); setShowPatField(false); setPatInput('')
+  }
+
+  async function runUpdate() {
+    if (!adminToken) return
+    if (!hasPat) { setShowPatField(true); return }
+    setTriggerMsg('Starten…')
+    const r = await fetch('/api/sde-trigger.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: adminToken.characterId, action: 'run' }),
+    }).then(r => r.json()).catch(() => ({ error: 'netwerkfout' }))
+    setTriggerMsg(r.ok ? '✓ Gestart — over ~2 min live' : `Mislukt: ${r.error ?? ''}`)
+    setTimeout(() => setTriggerMsg(null), 6000)
   }
 
   async function fetchActivity() {
@@ -558,6 +584,37 @@ export default function Admin() {
                   ) : sdeVer.latest != null ? (
                     <span style={{ fontSize: '0.62rem', color: 'var(--green)', fontWeight: 600 }}>✓ actueel</span>
                   ) : null}
+                </div>
+              )}
+
+              <div style={{ marginTop: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={runUpdate}
+                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.8rem', cursor: 'pointer' }}
+                >↻ Nu bijwerken</button>
+                {!hasPat && (
+                  <button onClick={() => setShowPatField(s => !s)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.65rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    GitHub-token instellen
+                  </button>
+                )}
+                {triggerMsg && (
+                  <span style={{ fontSize: '0.65rem', color: triggerMsg.startsWith('✓') ? 'var(--green)' : triggerMsg.startsWith('Starten') ? 'var(--text-dim)' : 'var(--red)' }}>{triggerMsg}</span>
+                )}
+              </div>
+
+              {showPatField && (
+                <div style={{ marginTop: '0.6rem' }}>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <input
+                      type="password" value={patInput} onChange={e => setPatInput(e.target.value)}
+                      placeholder="GitHub fine-grained PAT (Actions: read+write)"
+                      style={{ flex: 1, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.7rem', padding: '0.35rem 0.55rem', outline: 'none' }}
+                    />
+                    <button onClick={savePat} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.35rem 0.7rem', cursor: 'pointer' }}>Opslaan</button>
+                  </div>
+                  <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.3rem', lineHeight: 1.5 }}>
+                    Maak op github.com een fine-grained token voor deze repo met <strong>Actions: Read and write</strong>. Wordt veilig in de database bewaard (niet in de code).
+                  </div>
                 </div>
               )}
             </div>

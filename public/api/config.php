@@ -4,6 +4,7 @@ define('DB_NAME', 'cm135994_dutchlegions');
 define('DB_USER', 'cm135994_dutchlegions');
 define('DB_PASS', '^Pvyrn2bRnQLXS12QW6U');
 define('ADMIN_CHAR_ID', 1831618559);
+define('GITHUB_REPO', 'jweijdert-eng/dutchlegions-dashboard');
 
 function getDB(): PDO {
     $pdo = new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME.';charset=utf8', DB_USER, DB_PASS);

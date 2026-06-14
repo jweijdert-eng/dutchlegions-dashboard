@@ -2,7 +2,7 @@ name: Update SDE
 
 on:
   schedule:
-    - cron: '0 6 * * 1'   # elke maandag 06:00 UTC
+    - cron: '0 6 * * *'   # elke dag 06:00 UTC
   workflow_dispatch: {}     # handmatig te starten
 
 permissions:

@@ -8,7 +8,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $pdo->query('SELECT `key`, value FROM settings');
         $out  = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            if (strpos($row['key'], 'motd') === 0) continue; // motd via motd.php
+            if (strpos($row['key'], 'motd') === 0) continue;     // motd via motd.php
+            if ($row['key'] === 'github_pat') continue;          // geheim, niet uitlekken
             $out[$row['key']] = $row['value'] === 'true';
         }
         echo json_encode($out);
