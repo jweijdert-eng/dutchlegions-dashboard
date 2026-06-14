@@ -114,9 +114,7 @@ export default function Kills() {
   const { activeTokens: tokens, mainCharId } = useAuth()
   const [searchParams] = useSearchParams()
   const scope: 'me' | 'corp' = searchParams.get('board') === 'corp' ? 'corp' : 'me'
-  const [view, setView]     = useState<'list' | 'analyse'>(scope === 'corp' ? 'analyse' : 'list')
-  // Bij wisselen van killboard (via de zijbalk) de passende weergave kiezen.
-  useEffect(() => { setView(scope === 'corp' ? 'analyse' : 'list') }, [scope])
+  const [view, setView]     = useState<'list' | 'analyse'>('list')   // beide killboards standaard als lijst
   const [corp, setCorp]     = useState<{ id: number; name: string } | null>(null)
   const [entries, setEntries]     = useState<KillEntry[]>([])
   const [loading, setLoading]     = useState(true)
