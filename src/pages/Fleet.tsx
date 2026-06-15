@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
   resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterIds,
+  createFleetWing, renameFleetWing, deleteFleetWing, createFleetSquad, renameFleetSquad, deleteFleetSquad,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
@@ -58,6 +59,9 @@ interface ResolvedMember extends FleetMember {
   shipName: string
   systemName: string
 }
+
+const miniBtn: React.CSSProperties = { background: 'transparent', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', fontSize: '0.58rem', lineHeight: 1, padding: '0.12rem 0.35rem', cursor: 'pointer' }
+const miniBtnRed: React.CSSProperties = { ...miniBtn, color: 'var(--red)', borderColor: 'rgba(224,85,85,0.4)' }
 
 export default function Fleet() {
   // Álle accounts, niet alleen de geselecteerde — je kunt met een ander character in fleet zitten.
@@ -195,6 +199,14 @@ export default function Fleet() {
   const kick = (memberId: number, name: string) => { if (confirm(`${name} uit de fleet verwijderen?`)) withBusy(() => kickFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId), `${name} verwijderd`) }
   const moveTo = (memberId: number, opt: { wingId: number; squadId: number }) =>
     withBusy(() => moveFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId, { role: 'squad_member', wing_id: opt.wingId, squad_id: opt.squadId }), 'Lid verplaatst')
+
+  // Wings & squads
+  const addWing    = () => withBusy(() => createFleetWing(charFleet!.fleet_id, fleetToken!.accessToken), 'Wing toegevoegd')
+  const addSquad   = (wingId: number) => withBusy(() => createFleetSquad(charFleet!.fleet_id, fleetToken!.accessToken, wingId), 'Squad toegevoegd')
+  const renameWing = (wingId: number, cur: string) => { const n = prompt('Wing hernoemen:', cur); if (n && n.trim()) withBusy(() => renameFleetWing(charFleet!.fleet_id, fleetToken!.accessToken, wingId, n.trim()), 'Wing hernoemd') }
+  const renameSquad = (squadId: number, cur: string) => { const n = prompt('Squad hernoemen:', cur); if (n && n.trim()) withBusy(() => renameFleetSquad(charFleet!.fleet_id, fleetToken!.accessToken, squadId, n.trim()), 'Squad hernoemd') }
+  const delWing    = (wingId: number, name: string) => { if (confirm(`Wing "${name}" verwijderen? Alle squads erin verdwijnen ook.`)) withBusy(() => deleteFleetWing(charFleet!.fleet_id, fleetToken!.accessToken, wingId), 'Wing verwijderd') }
+  const delSquad   = (squadId: number, name: string) => { if (confirm(`Squad "${name}" verwijderen?`)) withBusy(() => deleteFleetSquad(charFleet!.fleet_id, fleetToken!.accessToken, squadId), 'Squad verwijderd') }
   async function doInvite() {
     // Namen: één per regel of komma-gescheiden.
     const names = [...new Set(inviteName.split(/[\n,]+/).map(s => s.trim()).filter(Boolean))]
@@ -376,9 +388,18 @@ export default function Fleet() {
           )}
 
           {/* Wing structuur */}
-          {wings.length > 0 && (
+          {(wings.length > 0 || canManage) && (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.75rem 1rem' }}>
-              <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.5rem' }}>WING / SQUAD STRUCTUUR</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>WING / SQUAD STRUCTUUR</span>
+                {canManage && (
+                  <button onClick={addWing} disabled={busy} title="Wing toevoegen"
+                    style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.62rem', padding: '0.2rem 0.55rem', cursor: 'pointer' }}>+ Wing</button>
+                )}
+              </div>
+              {wings.length === 0 ? (
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Nog geen wings — voeg er één toe om leden te kunnen indelen/uitnodigen.</div>
+              ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                 {wings.map(w => {
                   const wingMembers = members.filter(m => m.wing_id === w.id)
@@ -387,14 +408,27 @@ export default function Fleet() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
                         <span style={{ fontSize: '0.68rem', color: 'var(--blue)', fontWeight: 600 }}>◈ {w.name}</span>
                         <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>{wingMembers.length} leden</span>
+                        {canManage && (
+                          <span style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                            <button onClick={() => addSquad(w.id)} disabled={busy} title="Squad toevoegen" style={miniBtn}>+ squad</button>
+                            <button onClick={() => renameWing(w.id, w.name)} disabled={busy} title="Wing hernoemen" style={miniBtn}>✎</button>
+                            <button onClick={() => delWing(w.id, w.name)} disabled={busy} title="Wing verwijderen" style={miniBtnRed}>✕</button>
+                          </span>
+                        )}
                       </div>
                       {w.squads.map(s => {
                         const squadMembers = members.filter(m => m.squad_id === s.id)
                         return (
-                          <div key={s.id} style={{ marginLeft: '1rem', marginBottom: '0.15rem' }}>
+                          <div key={s.id} style={{ marginLeft: '1rem', marginBottom: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                             <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
                               └ {s.name} <span style={{ color: 'var(--border)' }}>({squadMembers.length})</span>
                             </span>
+                            {canManage && (
+                              <span style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                                <button onClick={() => renameSquad(s.id, s.name)} disabled={busy} title="Squad hernoemen" style={miniBtn}>✎</button>
+                                <button onClick={() => delSquad(s.id, s.name)} disabled={busy} title="Squad verwijderen" style={miniBtnRed}>✕</button>
+                              </span>
+                            )}
                           </div>
                         )
                       })}
@@ -402,6 +436,7 @@ export default function Fleet() {
                   )
                 })}
               </div>
+              )}
             </div>
           )}
 

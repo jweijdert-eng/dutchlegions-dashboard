@@ -1253,6 +1253,20 @@ export const moveFleetMember = (fleetId: number, token: string, memberId: number
 export const inviteFleetMember = (fleetId: number, token: string, characterId: number, dest: { role: FleetRole; wing_id?: number; squad_id?: number }) =>
   esiWrite(`/fleets/${fleetId}/members/`, token, 'POST', { character_id: characterId, ...dest })
 
+// Wings & squads beheren (FC).
+export const createFleetWing  = (fleetId: number, token: string) =>
+  esiWrite(`/fleets/${fleetId}/wings/`, token, 'POST')
+export const renameFleetWing  = (fleetId: number, token: string, wingId: number, name: string) =>
+  esiWrite(`/fleets/${fleetId}/wings/${wingId}/`, token, 'PUT', { name })
+export const deleteFleetWing  = (fleetId: number, token: string, wingId: number) =>
+  esiWrite(`/fleets/${fleetId}/wings/${wingId}/`, token, 'DELETE')
+export const createFleetSquad = (fleetId: number, token: string, wingId: number) =>
+  esiWrite(`/fleets/${fleetId}/wings/${wingId}/squads/`, token, 'POST')
+export const renameFleetSquad = (fleetId: number, token: string, squadId: number, name: string) =>
+  esiWrite(`/fleets/${fleetId}/squads/${squadId}/`, token, 'PUT', { name })
+export const deleteFleetSquad = (fleetId: number, token: string, squadId: number) =>
+  esiWrite(`/fleets/${fleetId}/squads/${squadId}/`, token, 'DELETE')
+
 // Naam → character_id (voor uitnodigen op naam).
 export async function resolveCharacterId(name: string): Promise<number | null> {
   try {
