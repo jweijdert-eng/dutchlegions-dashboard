@@ -1265,6 +1265,28 @@ export async function resolveCharacterId(name: string): Promise<number | null> {
   } catch { return null }
 }
 
+// Meerdere namen ineens → { naam: id|null } (voor batch-uitnodigen).
+export async function resolveCharacterIds(names: string[]): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>()
+  const uniq = [...new Set(names.map(n => n.trim()).filter(Boolean))]
+  if (uniq.length === 0) return out
+  for (const n of uniq) out.set(n, null)
+  try {
+    const res = await esiFetch(`${BASE}/universe/ids/?datasource=tranquility`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(uniq),
+    })
+    if (res.ok) {
+      const data = await res.json() as { characters?: { id: number; name: string }[] }
+      for (const c of data.characters ?? []) {
+        // ESI geeft de canonieke naam terug; match hoofdletter-ongevoelig op de invoer.
+        const match = uniq.find(n => n.toLowerCase() === c.name.toLowerCase())
+        if (match) out.set(match, c.id)
+      }
+    }
+  } catch { /* laat alles op null staan */ }
+  return out
+}
+
 export async function resolveNames(ids: number[]): Promise<Map<number, string>> {
   const result = new Map<number, string>()
   const uniq = [...new Set(ids.filter(id => id > 0))]

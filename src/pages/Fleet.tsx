@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
-  resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterId,
+  resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterIds,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
@@ -193,18 +193,34 @@ export default function Fleet() {
   const moveTo = (memberId: number, opt: { wingId: number; squadId: number }) =>
     withBusy(() => moveFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId, { role: 'squad_member', wing_id: opt.wingId, squad_id: opt.squadId }), 'Lid verplaatst')
   async function doInvite() {
-    const name = inviteName.trim()
-    if (!name) return
+    // Namen: één per regel of komma-gescheiden.
+    const names = [...new Set(inviteName.split(/[\n,]+/).map(s => s.trim()).filter(Boolean))]
+    if (names.length === 0) return
     const sq = squadOptions[0]
     if (!sq) { setMsg('Geen squad om naartoe uit te nodigen — maak eerst een squad in de fleet.'); return }
     setBusy(true); setMsg(null)
-    const id = await resolveCharacterId(name)
-    if (!id) { setMsg(`Karakter "${name}" niet gevonden`); setBusy(false); return }
-    try {
-      await inviteFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, id, { role: 'squad_member', wing_id: sq.wingId, squad_id: sq.squadId })
-      setMsg(`Uitnodiging verstuurd naar ${name}`); setInviteName('')
-    } catch (e) { setMsg(`Uitnodigen mislukt: ${(e as Error).message ?? 'fout'}`) }
-    finally { setBusy(false) }
+
+    const idMap = await resolveCharacterIds(names)
+    const notFound = names.filter(n => !idMap.get(n))
+    const found = names.filter(n => idMap.get(n))
+
+    let invited = 0
+    const failed: string[] = []
+    for (const n of found) {
+      const id = idMap.get(n)!
+      try {
+        await inviteFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, id, { role: 'squad_member', wing_id: sq.wingId, squad_id: sq.squadId })
+        invited++
+      } catch { failed.push(n) }
+    }
+
+    const parts: string[] = []
+    if (invited > 0)        parts.push(`${invited} uitgenodigd`)
+    if (failed.length)      parts.push(`${failed.length} mislukt (${failed.join(', ')})`)
+    if (notFound.length)    parts.push(`${notFound.length} niet gevonden (${notFound.join(', ')})`)
+    setMsg(parts.join(' · ') || 'Niets om uit te nodigen')
+    if (invited > 0 && failed.length === 0 && notFound.length === 0) setInviteName('')
+    setBusy(false)
   }
 
   return (
@@ -335,11 +351,13 @@ export default function Fleet() {
                   border: `1px solid ${fleetInfo?.is_free_move ? 'var(--green)' : 'var(--border)'}`,
                   color: fleetInfo?.is_free_move ? 'var(--green)' : 'var(--text-dim)',
                 }}>Free Move: {fleetInfo?.is_free_move ? 'AAN' : 'UIT'}</button>
-                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                  <input value={inviteName} onChange={e => setInviteName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doInvite() }}
-                    placeholder="Karakternaam uitnodigen…"
-                    style={{ width: 200, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.3rem 0.5rem', outline: 'none' }} />
-                  <button onClick={doInvite} disabled={busy} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.3rem 0.8rem', cursor: 'pointer' }}>Uitnodigen</button>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                  <textarea value={inviteName} onChange={e => setInviteName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doInvite() }}
+                    placeholder="Karakternaam(en) uitnodigen — één per regel of komma-gescheiden"
+                    rows={2}
+                    style={{ width: 300, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                  <button onClick={doInvite} disabled={busy} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.35rem 0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>Uitnodigen</button>
                 </div>
               </div>
             </div>
