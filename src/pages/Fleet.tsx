@@ -9,6 +9,15 @@ import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
 
+// Scopes uit het EVE access-token (JWT 'scp'-claim) lezen — om te waarschuwen als
+// de fleet-schrijfrechten ontbreken (token van vóór de scope-uitbreiding).
+function tokenScopes(accessToken: string): string[] {
+  try {
+    const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { scp?: string | string[] }
+    return Array.isArray(payload.scp) ? payload.scp : typeof payload.scp === 'string' ? payload.scp.split(' ') : []
+  } catch { return [] }
+}
+
 function sanitizeMotd(html: string): string {
   return html
     .replace(/<(?!\/?(a|b|i|br|font|span|p|ul|li|strong|em)\b)[^>]*>/gi, '')
@@ -148,6 +157,7 @@ export default function Fleet() {
   // Beheer alleen voor de Fleet Commander (ESI vereist de juiste rol sowieso).
   // Beheer alleen tonen als de boss-endpoints écht toegankelijk zijn (ledenlijst geladen).
   const canManage = myRole === 'fleet_commander' && !!charFleet && !accessError && members.length > 0
+  const hasFleetWrite = token ? tokenScopes(token.accessToken).includes('esi-fleets.write_fleet.v1') : false
   const squadOptions = wings.flatMap(w => w.squads.map(s => ({ wingId: w.id, squadId: s.id, label: `${w.name} / ${s.name}` })))
   const memberCols = canManage ? '1fr 130px 120px 46px 168px' : '1fr 160px 160px 60px'
 
@@ -259,6 +269,13 @@ export default function Fleet() {
                 <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--blue)', letterSpacing: '0.12em' }}>⚑ FLEET-BEHEER (FC)</span>
                 {msg && <span style={{ fontSize: '0.62rem', color: /mislukt|niet gevonden|Geen squad/i.test(msg) ? 'var(--red)' : 'var(--green)' }}>{msg}</span>}
               </div>
+
+              {!hasFleetWrite && (
+                <div style={{ background: 'rgba(240,192,64,0.08)', border: '1px solid rgba(240,192,64,0.35)', borderRadius: 3, padding: '0.55rem 0.75rem', marginBottom: '0.7rem', fontSize: '0.7rem', color: 'var(--gold)', lineHeight: 1.5 }}>
+                  ⚠ Je huidige login mist de <strong>fleet-beheer-rechten</strong> (esi-fleets.write_fleet). Uitnodigen, kicken en MOTD wijzigen werken daardoor niet.
+                  {' '}Los het op: ga in de zijbalk naar je account → <strong>verwijder dit account</strong> en log opnieuw in (dan worden de nieuwe rechten verleend).
+                </div>
+              )}
 
               {/* MOTD bewerken */}
               <div style={{ marginBottom: '0.7rem' }}>

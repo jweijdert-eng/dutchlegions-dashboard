@@ -1231,7 +1231,12 @@ async function esiWrite(path: string, token: string, method: 'PUT' | 'POST' | 'D
     headers: { Authorization: `Bearer ${token}`, ...(body != null ? { 'Content-Type': 'application/json' } : {}) },
     body: body != null ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`ESI ${method} ${path}: ${res.status}`)
+  if (!res.ok) {
+    // ESI geeft bij fouten vaak een nuttige reden mee ({ error: "..." }).
+    let detail = ''
+    try { const j = await res.json() as { error?: string }; if (j?.error) detail = ` — ${j.error}` } catch { /* geen json */ }
+    throw new Error(`ESI ${method} ${path}: ${res.status}${detail}`)
+  }
 }
 
 export type FleetRole = 'fleet_commander' | 'wing_commander' | 'squad_commander' | 'squad_member'
