@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
-  resolveNames,
+  resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterId,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
@@ -63,6 +63,13 @@ export default function Fleet() {
   const [myRole, setMyRole]           = useState<string | null>(null)
   const [accessError, setAccessError] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Beheer (FC)
+  const [motdDraft, setMotdDraft]   = useState('')
+  const [editingMotd, setEditingMotd] = useState(false)
+  const [inviteName, setInviteName] = useState('')
+  const [msg, setMsg]               = useState<string | null>(null)
+  const [busy, setBusy]             = useState(false)
 
   async function load(t: typeof token) {
     if (!t) return
@@ -129,6 +136,39 @@ export default function Fleet() {
 
   const fc    = members.find(m => m.role === 'fleet_commander')
   const myChar = members.find(m => m.character_id === token?.characterId)
+
+  // Beheer alleen voor de Fleet Commander (ESI vereist de juiste rol sowieso).
+  const canManage = myRole === 'fleet_commander' && !!charFleet
+  const squadOptions = wings.flatMap(w => w.squads.map(s => ({ wingId: w.id, squadId: s.id, label: `${w.name} / ${s.name}` })))
+  const memberCols = canManage ? '1fr 130px 120px 46px 168px' : '1fr 160px 160px 60px'
+
+  async function withBusy(action: () => Promise<void>, ok: string) {
+    if (!token || !charFleet) return
+    setBusy(true); setMsg(null)
+    try { await action(); setMsg(ok); await load(token) }
+    catch (e) { setMsg(`Mislukt: ${(e as Error).message ?? 'fout'}`) }
+    finally { setBusy(false) }
+  }
+
+  const saveMotd = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, token!.accessToken, { motd: motdDraft }), 'MOTD opgeslagen')
+  const toggleFreeMove = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, token!.accessToken, { is_free_move: !fleetInfo?.is_free_move }), 'Free Move gewijzigd')
+  const kick = (memberId: number, name: string) => { if (confirm(`${name} uit de fleet verwijderen?`)) withBusy(() => kickFleetMember(charFleet!.fleet_id, token!.accessToken, memberId), `${name} verwijderd`) }
+  const moveTo = (memberId: number, opt: { wingId: number; squadId: number }) =>
+    withBusy(() => moveFleetMember(charFleet!.fleet_id, token!.accessToken, memberId, { role: 'squad_member', wing_id: opt.wingId, squad_id: opt.squadId }), 'Lid verplaatst')
+  async function doInvite() {
+    const name = inviteName.trim()
+    if (!name) return
+    const sq = squadOptions[0]
+    if (!sq) { setMsg('Geen squad om naartoe uit te nodigen — maak eerst een squad in de fleet.'); return }
+    setBusy(true); setMsg(null)
+    const id = await resolveCharacterId(name)
+    if (!id) { setMsg(`Karakter "${name}" niet gevonden`); setBusy(false); return }
+    try {
+      await inviteFleetMember(charFleet!.fleet_id, token!.accessToken, id, { role: 'squad_member', wing_id: sq.wingId, squad_id: sq.squadId })
+      setMsg(`Uitnodiging verstuurd naar ${name}`); setInviteName('')
+    } catch (e) { setMsg(`Uitnodigen mislukt: ${(e as Error).message ?? 'fout'}`) }
+    finally { setBusy(false) }
+  }
 
   return (
     <Layout header={
@@ -203,6 +243,50 @@ export default function Fleet() {
             )}
           </div>
 
+          {/* Fleet-beheer (alleen FC) */}
+          {canManage && (
+            <div style={{ background: 'var(--surface)', border: '1px solid rgba(0,180,216,0.4)', borderRadius: 3, padding: '0.85rem 1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--blue)', letterSpacing: '0.12em' }}>⚑ FLEET-BEHEER (FC)</span>
+                {msg && <span style={{ fontSize: '0.62rem', color: /mislukt|niet gevonden|Geen squad/i.test(msg) ? 'var(--red)' : 'var(--green)' }}>{msg}</span>}
+              </div>
+
+              {/* MOTD bewerken */}
+              <div style={{ marginBottom: '0.7rem' }}>
+                {editingMotd ? (
+                  <>
+                    <textarea value={motdDraft} onChange={e => setMotdDraft(e.target.value)} rows={3}
+                      placeholder="Fleet MOTD…"
+                      style={{ width: '100%', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.75rem', padding: '0.5rem', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
+                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+                      <button onClick={() => { saveMotd(); setEditingMotd(false) }} disabled={busy} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.3rem 0.8rem', cursor: 'pointer' }}>MOTD opslaan</button>
+                      <button onClick={() => setEditingMotd(false)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.8rem', cursor: 'pointer' }}>Annuleren</button>
+                    </div>
+                  </>
+                ) : (
+                  <button onClick={() => { setMotdDraft((fleetInfo?.motd ?? '').replace(/<[^>]+>/g, '')); setEditingMotd(true) }}
+                    style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.7rem', padding: '0.3rem 0.8rem', cursor: 'pointer' }}>✎ MOTD bewerken</button>
+                )}
+              </div>
+
+              {/* Free move + uitnodigen */}
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button onClick={toggleFreeMove} disabled={busy} style={{
+                  fontSize: '0.7rem', fontWeight: 600, padding: '0.3rem 0.8rem', borderRadius: 3, cursor: 'pointer',
+                  background: fleetInfo?.is_free_move ? 'rgba(62,207,110,0.12)' : 'transparent',
+                  border: `1px solid ${fleetInfo?.is_free_move ? 'var(--green)' : 'var(--border)'}`,
+                  color: fleetInfo?.is_free_move ? 'var(--green)' : 'var(--text-dim)',
+                }}>Free Move: {fleetInfo?.is_free_move ? 'AAN' : 'UIT'}</button>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <input value={inviteName} onChange={e => setInviteName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doInvite() }}
+                    placeholder="Karakternaam uitnodigen…"
+                    style={{ width: 200, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.3rem 0.5rem', outline: 'none' }} />
+                  <button onClick={doInvite} disabled={busy} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.3rem 0.8rem', cursor: 'pointer' }}>Uitnodigen</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* MOTD */}
           {fleetInfo?.motd && fleetInfo.motd.trim() && (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '3px solid var(--blue)', borderRadius: 3, padding: '0.6rem 1rem' }}>
@@ -249,11 +333,12 @@ export default function Fleet() {
             </div>
           ) : (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 160px 160px 60px', gap: '0.5rem' }}>
+              <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: memberCols, gap: '0.5rem' }}>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>KARAKTER</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>SHIP</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>LOCATIE</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>ROL</span>
+                {canManage && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>ACTIES</span>}
               </div>
               {members.map(m => {
                 const isMe = m.character_id === token?.characterId
@@ -261,7 +346,7 @@ export default function Fleet() {
                   <div
                     key={m.character_id}
                     style={{
-                      display: 'grid', gridTemplateColumns: '1fr 160px 160px 60px',
+                      display: 'grid', gridTemplateColumns: memberCols,
                       gap: '0.5rem', alignItems: 'center',
                       padding: '0.45rem 1rem',
                       borderBottom: '1px solid rgba(28,28,53,0.5)',
@@ -286,6 +371,26 @@ export default function Fleet() {
                       <SolarSystem name={m.systemName} systemId={m.solar_system_id} fontSize="0.65rem" />
                     </div>
                     <RoleBadge role={m.role} />
+                    {canManage && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                        {squadOptions.length > 0 && (
+                          <select
+                            value="-1"
+                            onChange={e => { const i = Number(e.target.value); if (i >= 0) moveTo(m.character_id, squadOptions[i]) }}
+                            disabled={busy}
+                            title="Verplaats naar squad"
+                            style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', fontSize: '0.6rem', padding: '0.15rem 0.2rem', maxWidth: 110, cursor: 'pointer', outline: 'none' }}
+                          >
+                            <option value="-1">Verplaats…</option>
+                            {squadOptions.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
+                          </select>
+                        )}
+                        {!isMe && (
+                          <button onClick={() => kick(m.character_id, m.characterName)} disabled={busy} title="Uit fleet verwijderen"
+                            style={{ background: 'transparent', border: '1px solid rgba(224,85,85,0.4)', borderRadius: 2, color: 'var(--red)', fontSize: '0.7rem', lineHeight: 1, padding: '0.15rem 0.4rem', cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}

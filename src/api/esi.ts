@@ -1224,6 +1224,42 @@ export const getFleetMembers = (fleetId: number, token: string) =>
 export const getFleetWings   = (fleetId: number, token: string) =>
   esiGet<FleetWing[]>(`/fleets/${fleetId}/wings/`, token)
 
+// ── Fleet-beheer (write; vereist esi-fleets.write_fleet.v1 + FC/WC/SC-rol) ──
+async function esiWrite(path: string, token: string, method: 'PUT' | 'POST' | 'DELETE', body?: unknown): Promise<void> {
+  const res = await esiFetch(`${BASE}${path}?datasource=tranquility`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body != null ? { 'Content-Type': 'application/json' } : {}) },
+    body: body != null ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`ESI ${method} ${path}: ${res.status}`)
+}
+
+export type FleetRole = 'fleet_commander' | 'wing_commander' | 'squad_commander' | 'squad_member'
+
+export const setFleetSettings = (fleetId: number, token: string, patch: { motd?: string; is_free_move?: boolean }) =>
+  esiWrite(`/fleets/${fleetId}/`, token, 'PUT', patch)
+
+export const kickFleetMember = (fleetId: number, token: string, memberId: number) =>
+  esiWrite(`/fleets/${fleetId}/members/${memberId}/`, token, 'DELETE')
+
+export const moveFleetMember = (fleetId: number, token: string, memberId: number, dest: { role: FleetRole; wing_id?: number; squad_id?: number }) =>
+  esiWrite(`/fleets/${fleetId}/members/${memberId}/`, token, 'PUT', dest)
+
+export const inviteFleetMember = (fleetId: number, token: string, characterId: number, dest: { role: FleetRole; wing_id?: number; squad_id?: number }) =>
+  esiWrite(`/fleets/${fleetId}/members/`, token, 'POST', { character_id: characterId, ...dest })
+
+// Naam → character_id (voor uitnodigen op naam).
+export async function resolveCharacterId(name: string): Promise<number | null> {
+  try {
+    const res = await esiFetch(`${BASE}/universe/ids/?datasource=tranquility`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([name]),
+    })
+    if (!res.ok) return null
+    const data = await res.json() as { characters?: { id: number; name: string }[] }
+    return data.characters?.[0]?.id ?? null
+  } catch { return null }
+}
+
 export async function resolveNames(ids: number[]): Promise<Map<number, string>> {
   const result = new Map<number, string>()
   const uniq = [...new Set(ids.filter(id => id > 0))]

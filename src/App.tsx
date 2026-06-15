@@ -35,6 +35,7 @@ const Ratting      = lz(() => import('./pages/Ratting'))
 const Hauling      = lz(() => import('./pages/Hauling'))
 const Assets       = lz(() => import('./pages/Assets'))
 const Admin        = lz(() => import('./pages/Admin'))
+const Fleet        = lz(() => import('./pages/Fleet'))
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -191,6 +192,7 @@ function AppRoutes() {
       <Route path="/local"      element={<LocalChatRoute><LocalChat /></LocalChatRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
       <Route path="/ratting"    element={<ProtectedRoute><Ratting /></ProtectedRoute>} />
+      <Route path="/fleet"      element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
       <Route path="/hauling"    element={<ProtectedRoute><Hauling /></ProtectedRoute>} />
       <Route path="/assets"     element={<ProtectedRoute><Assets /></ProtectedRoute>} />
       <Route path="/admin"      element={<AdminRoute><Admin /></AdminRoute>} />

@@ -45,6 +45,7 @@ const DEFAULT_NAV: NavItem[] = [
   { label: 'Wallet',      path: '/wallet',     icon: '◑', badge: null },
   { label: 'Market',      path: '/market',     icon: '◊', badge: null },
   { label: 'Kills',       path: '/kills',      icon: '◉', badge: null },
+  { label: 'Fleet',       path: '/fleet',      icon: '⚑', badge: null },
   { label: 'Ratting',     path: '/ratting',    icon: '⦿', badge: null },
   { label: 'Hauling',     path: '/hauling',    icon: '⇶', badge: null },
   { label: 'Industry',    path: '/industry',   icon: '◫', badge: 'jobs' },

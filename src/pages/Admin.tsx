@@ -78,7 +78,7 @@ const SETTING_GROUPS: { key: 'access' | 'features'; label: string }[] = [
 
 const PAGE_LABELS: Record<string, string> = {
   '/': 'Dashboard', '/overview': 'Overzicht', '/character': 'Character', '/wallet': 'Wallet',
-  '/market': 'Market', '/kills': 'Kills', '/ratting': 'Ratting', '/hauling': 'Hauling',
+  '/market': 'Market', '/kills': 'Kills', '/fleet': 'Fleet', '/ratting': 'Ratting', '/hauling': 'Hauling',
   '/industry': 'Industry', '/mining': 'Mining', '/planets': 'Planets', '/mail': 'Mail',
   '/fittings': 'Fittings', '/skills': 'Skills', '/blueprints': 'Blueprints', '/contracts': 'Contracts',
   '/buildvsbuy': 'Build vs Buy', '/assets': 'Assets', '/notes': 'Notities', '/local': 'Local Chat', '/admin': 'Admin',
