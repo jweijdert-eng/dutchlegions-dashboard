@@ -82,8 +82,14 @@ write('systems.json', out_sys)
 out_reg = {str(rid): name for rid, name in con.execute('SELECT regionID, regionName FROM mapRegions')}
 write('regions.json', out_reg)
 
-# Stargate-buren: { systemId: [buurSystemId, ...] } — voor de schematische fleet-kaart
-# (graph-layout + jump-afstand). Coördinaten zijn niet nodig: de kaart is force-directed.
+# Systeem-coördinaten voor de New Eden cluster-kaart: { systemId: [x, z] }
+# (top-down, /1e12 afgerond). Alleen k-space (id < 31000000); wormhole/J-space ligt
+# op heel andere coords en zou de cluster-vorm vervormen.
+out_xy = {str(sid): [round(x / 1e12), round(z / 1e12)]
+          for sid, x, z in con.execute('SELECT solarSystemID, x, z FROM mapSolarSystems WHERE solarSystemID < 31000000')}
+write('system-coords.json', out_xy)
+
+# Stargate-buren: { systemId: [buurSystemId, ...] } — voor jump-afstand (BFS).
 adj = {}
 for a, b in con.execute('SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps'):
     adj.setdefault(str(a), []).append(b)

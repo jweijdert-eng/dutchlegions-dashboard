@@ -958,7 +958,12 @@ export async function getRegions(): Promise<Record<string, string>> {
   try { return await loadBundle<Record<string, string>>('regions.json') }
   catch { return {} }
 }
-// Stargate-buren per systeem (voor de schematische fleet-kaart + jump-afstand via BFS).
+// Systeem-coördinaten (top-down x/z) voor de New Eden cluster-kaart.
+export async function getSystemCoords(): Promise<Record<string, [number, number]>> {
+  try { return await loadBundle<Record<string, [number, number]>>('system-coords.json') }
+  catch { return {} }
+}
+// Stargate-buren per systeem (jump-afstand via BFS).
 export async function getSystemJumps(): Promise<Record<string, number[]>> {
   try { return await loadBundle<Record<string, number[]>>('system-jumps.json') }
   catch { return {} }

@@ -4,7 +4,7 @@ import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
   resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterIds,
   createFleetWing, renameFleetWing, deleteFleetWing, createFleetSquad, renameFleetSquad, deleteFleetSquad,
-  getSystems, getRegions, getSystemJumps,
+  getSystems, getRegions, getSystemCoords, getSystemJumps,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
@@ -65,90 +65,76 @@ interface ResolvedMember extends FleetMember {
 const miniBtn: React.CSSProperties = { background: 'transparent', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', fontSize: '0.58rem', lineHeight: 1, padding: '0.12rem 0.35rem', cursor: 'pointer' }
 const miniBtnRed: React.CSSProperties = { ...miniBtn, color: 'var(--red)', borderColor: 'rgba(224,85,85,0.4)' }
 
-interface LayoutNode {
-  sid: number; px: number; py: number       // genormaliseerd 0..1
-  isMember: boolean; members: ResolvedMember[]; name: string
+interface MemberNode {
+  sid: number; members: ResolvedMember[]; name: string
   sec: number; region: string; jumps: number | undefined; isFc: boolean
 }
 
-// Force-directed layout (Fruchterman–Reingold) → genormaliseerde posities 0..1.
-function forceLayout(ids: number[], edges: [number, number][]): Map<number, [number, number]> {
-  const n = ids.length
-  if (n === 0) return new Map()
-  if (n === 1) return new Map([[ids[0], [0.5, 0.5]]])
-  const pos = new Map<number, { x: number; y: number }>()
-  ids.forEach((id, i) => pos.set(id, { x: 0.5 + 0.3 * Math.cos((2 * Math.PI * i) / n), y: 0.5 + 0.3 * Math.sin((2 * Math.PI * i) / n) }))
-  const k = 0.9 / Math.sqrt(n)   // ideale kantlengte
-  let temp = 0.12
-  for (let it = 0; it < 300; it++) {
-    const disp = new Map(ids.map(id => [id, { x: 0, y: 0 }]))
-    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
-      const pa = pos.get(ids[i])!, pb = pos.get(ids[j])!
-      let dx = pa.x - pb.x, dy = pa.y - pb.y
-      const dist = Math.hypot(dx, dy) || 0.001
-      const rep = (k * k) / dist, ux = dx / dist, uy = dy / dist
-      const da = disp.get(ids[i])!, db = disp.get(ids[j])!
-      da.x += ux * rep; da.y += uy * rep; db.x -= ux * rep; db.y -= uy * rep
-    }
-    for (const [a, b] of edges) {
-      const pa = pos.get(a)!, pb = pos.get(b)!
-      let dx = pa.x - pb.x, dy = pa.y - pb.y
-      const dist = Math.hypot(dx, dy) || 0.001
-      const att = (dist * dist) / k, ux = dx / dist, uy = dy / dist
-      const da = disp.get(a)!, db = disp.get(b)!
-      da.x -= ux * att; da.y -= uy * att; db.x += ux * att; db.y += uy * att
-    }
-    for (const id of ids) {
-      const d = disp.get(id)!, p = pos.get(id)!
-      const dl = Math.hypot(d.x, d.y) || 0.001, lim = Math.min(dl, temp)
-      p.x = Math.max(0, Math.min(1, p.x + (d.x / dl) * lim))
-      p.y = Math.max(0, Math.min(1, p.y + (d.y / dl) * lim))
-    }
-    temp *= 0.97
-  }
-  const xs = [...pos.values()].map(p => p.x), ys = [...pos.values()].map(p => p.y)
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
-  const sx = (maxX - minX) || 1, sy = (maxY - minY) || 1
-  return new Map(ids.map(id => { const p = pos.get(id)!; return [id, [(p.x - minX) / sx, (p.y - minY) / sy] as [number, number]] }))
-}
+// New Eden cluster-kaart: alle systemen als dots (canvas, gekleurd op security),
+// met de fleet-leden gehighlight als overlay (SVG). Vaste projectie van het hele cluster.
+function ClusterMap({ coords, sysMeta, memberNodes }: {
+  coords: Record<string, [number, number]>
+  sysMeta: Record<string, [string, number, number]>
+  memberNodes: MemberNode[]
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const W = 860, H = 560, PAD = 24
 
-// Schematische 2D-kaart: systemen als nodes, stargates als lijnen (graph-layout).
-function FleetMap({ nodes, edges }: { nodes: LayoutNode[]; edges: [number, number][] }) {
-  if (nodes.length === 0) {
-    return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Geen kaartgegevens (wormhole-ruimte?). Zie de lijst hieronder.</div>
+  // Projectie uit alle systeem-coördinaten (vast — het hele cluster past in beeld).
+  const proj = useMemo(() => {
+    const entries = Object.values(coords)
+    if (entries.length === 0) return null
+    const xs = entries.map(c => c[0]), zs = entries.map(c => -c[1])  // z geflipt
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs)
+    const spanX = (maxX - minX) || 1, spanZ = (maxZ - minZ) || 1
+    const scale = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanZ)
+    const offX = (W - scale * spanX) / 2 - minX * scale
+    const offZ = (H - scale * spanZ) / 2 - minZ * scale
+    return (x: number, z: number): [number, number] => [offX + x * scale, offZ + (-z) * scale]
+  }, [coords])
+
+  // Achtergrond: alle ~8500 systemen op canvas tekenen, faint, gekleurd op security.
+  useEffect(() => {
+    const cv = canvasRef.current
+    if (!cv || !proj) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    cv.width = W * dpr; cv.height = H * dpr
+    const ctx = cv.getContext('2d')!
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, W, H)
+    for (const [sid, c] of Object.entries(coords)) {
+      const [x, y] = proj(c[0], c[1])
+      const sec = sysMeta[sid]?.[1] ?? 0
+      ctx.fillStyle = secColor(sec)
+      ctx.globalAlpha = 0.7
+      ctx.beginPath()
+      ctx.arc(x, y, 1.1, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  }, [coords, sysMeta, proj])
+
+  if (!proj) {
+    return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Kaart laden…</div>
   }
-  const W = 820, H = 400, PAD = 54
-  const px = (p: number) => PAD + p * (W - 2 * PAD)
-  const py = (p: number) => PAD + p * (H - 2 * PAD)
-  const pos = new Map(nodes.map(n => [n.sid, [px(n.px), py(n.py)] as [number, number]]))
-  const maxCount = Math.max(...nodes.map(n => n.members.length), 1)
+  const maxCount = Math.max(...memberNodes.map(n => n.members.length), 1)
 
   return (
-    <div style={{ background: 'radial-gradient(circle at 50% 35%, #0c0c26 0%, #05050e 75%)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
-        {edges.map(([a, b], i) => {
-          const pa = pos.get(a), pb = pos.get(b)
-          if (!pa || !pb) return null
-          return <line key={i} x1={pa[0]} y1={pa[1]} x2={pb[0]} y2={pb[1]} stroke="rgba(120,140,200,0.35)" strokeWidth={1.2} />
-        })}
-        {nodes.map(n => {
-          const [x, y] = pos.get(n.sid)!
-          if (!n.isMember) {
-            // doorvoer-systeem (op de route) — klein, gedimd
-            return (
-              <g key={n.sid}>
-                <circle cx={x} cy={y} r={3.5} fill="#3a3a5a" stroke="rgba(120,140,200,0.5)" strokeWidth={1} />
-                <text x={x} y={y - 7} textAnchor="middle" fontSize={7.5} fill="rgba(160,170,200,0.7)">{n.name}</text>
-              </g>
-            )
-          }
-          const r = 8 + (n.members.length / maxCount) * 14
+    <div style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto' }} />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+        {memberNodes.map(n => {
+          const c = coords[String(n.sid)]
+          if (!c) return null
+          const [x, y] = proj(c[0], c[1])
+          const r = 5 + (n.members.length / maxCount) * 9
           return (
             <g key={n.sid}>
-              {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1.5} strokeDasharray="3 2" />}
-              <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} fillOpacity={0.9} stroke="rgba(0,0,0,0.6)" strokeWidth={1} />
-              <text x={x} y={y + 3.5} textAnchor="middle" fontSize={10} fontWeight={700} fill="#05050e">{n.members.length}</text>
-              <text x={x} y={y - r - 5} textAnchor="middle" fontSize={10} fontWeight={600} fill="#c8cde8" stroke="#05050e" strokeWidth={0.6} paintOrder="stroke">
+              <circle cx={x} cy={y} r={r + 6} fill={secColor(n.sec)} fillOpacity={0.18} />
+              {n.isFc && <circle cx={x} cy={y} r={r + 3} fill="none" stroke="#f0c040" strokeWidth={1.5} strokeDasharray="3 2" />}
+              <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#fff" strokeWidth={1} />
+              <text x={x} y={y + 3} textAnchor="middle" fontSize={9} fontWeight={700} fill="#05050e">{n.members.length}</text>
+              <text x={x + r + 3} y={y + 3} fontSize={10} fontWeight={600} fill="#fff" stroke="#05050e" strokeWidth={0.6} paintOrder="stroke">
                 {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
               </text>
             </g>
@@ -184,15 +170,19 @@ export default function Fleet() {
 
   // Kaart
   const [view, setView] = useState<'list' | 'map'>('list')
+  const [coords, setCoords]     = useState<Record<string, [number, number]>>({})
   const [adj, setAdj]           = useState<Record<string, number[]>>({})
   const [sysMeta, setSysMeta]   = useState<Record<string, [string, number, number]>>({})
   const [regionMap, setRegionMap] = useState<Record<string, string>>({})
 
+  // Pas de zware kaart-bundels alleen laden als de kaart geopend wordt.
   useEffect(() => {
+    if (view !== 'map') return
+    getSystemCoords().then(setCoords).catch(() => {})
     getSystemJumps().then(setAdj).catch(() => {})
     getSystems().then(setSysMeta).catch(() => {})
     getRegions().then(setRegionMap).catch(() => {})
-  }, [])
+  }, [view])
 
   async function load() {
     if (tokens.length === 0) return
@@ -294,61 +284,36 @@ export default function Fleet() {
   const squadOptions = wings.flatMap(w => w.squads.map(s => ({ wingId: w.id, squadId: s.id, label: `${w.name} / ${s.name}` })))
   const memberCols = canManage ? '1fr 130px 120px 46px 168px' : '1fr 160px 160px 60px'
 
-  // Schematische kaart-data: leden per systeem + de gate-paden ertussen, force-gelayout.
+  // Kaart-data: fleet-leden gegroepeerd per systeem + jump-afstand vanaf de FC.
   const fleetMap = useMemo(() => {
     const groups = new Map<number, ResolvedMember[]>()
     for (const m of members) { const g = groups.get(m.solar_system_id) ?? []; g.push(m); groups.set(m.solar_system_id, g) }
     const memberSids = new Set(groups.keys())
     const fcSys = members.find(m => m.role === 'fleet_commander')?.solar_system_id ?? members[0]?.solar_system_id
 
-    // BFS vanaf de FC over de stargate-buren (parent-pointers + afstand).
-    const parent = new Map<number, number>()
+    // Jump-afstand vanaf de FC via BFS over de stargate-buren.
     const dist = new Map<number, number>()
     if (fcSys != null) {
-      parent.set(fcSys, fcSys); dist.set(fcSys, 0)
+      dist.set(fcSys, 0)
       let frontier = [fcSys], d = 0
-      while (frontier.length && d < 50 && [...memberSids].some(s => !dist.has(s))) {
+      while (frontier.length && d < 60 && [...memberSids].some(s => !dist.has(s))) {
         d++
         const next: number[] = []
-        for (const s of frontier) for (const nb of (adj[String(s)] ?? [])) if (!parent.has(nb)) { parent.set(nb, s); dist.set(nb, d); next.push(nb) }
+        for (const s of frontier) for (const nb of (adj[String(s)] ?? [])) if (!dist.has(nb)) { dist.set(nb, d); next.push(nb) }
         frontier = next
       }
     }
 
-    // Relevante systemen = leden-systemen + de systemen op het gate-pad van elk naar de FC.
-    const relevant = new Set<number>(memberSids)
-    if (fcSys != null) {
-      relevant.add(fcSys)
-      for (const ms of memberSids) {
-        let cur = ms, guard = 0
-        while (cur !== fcSys && parent.has(cur) && guard++ < 80) { relevant.add(cur); cur = parent.get(cur)! }
-      }
-    }
-    // Te groot/verspreid → val terug op alleen de leden-systemen (anders onleesbaar).
-    let ids = [...relevant]
-    if (ids.length > 90) ids = [...new Set([...memberSids, ...(fcSys != null ? [fcSys] : [])])]
-
-    const idSet = new Set(ids)
-    const edges: [number, number][] = []
-    for (const s of ids) for (const nb of (adj[String(s)] ?? [])) if (idSet.has(nb) && s < nb) edges.push([s, nb])
-
-    const layout = forceLayout(ids, edges)
-
-    const nodes: LayoutNode[] = ids.map(sid => {
-      const mem = groups.get(sid) ?? []
+    const memberNodes: MemberNode[] = [...groups.entries()].map(([sid, mem]) => {
       const meta = sysMeta[String(sid)]
-      const [px, py] = layout.get(sid) ?? [0.5, 0.5]
       return {
-        sid, px, py, isMember: memberSids.has(sid), members: mem,
-        name: mem[0]?.systemName ?? (meta?.[0] ?? `System ${sid}`),
+        sid, members: mem, name: mem[0]?.systemName ?? (meta?.[0] ?? `System ${sid}`),
         sec: meta?.[1] ?? 0,
         region: meta ? (regionMap[String(meta[2])] ?? '') : '',
         jumps: dist.get(sid), isFc: sid === fcSys,
       }
-    })
-    // Voor de lijst onderaan: alleen leden-systemen, op aantal gesorteerd.
-    const memberNodes = nodes.filter(n => n.isMember).sort((a, b) => b.members.length - a.members.length)
-    return { nodes, edges, memberNodes }
+    }).sort((a, b) => b.members.length - a.members.length)
+    return { memberNodes }
   }, [members, adj, sysMeta, regionMap])
 
   async function withBusy(action: () => Promise<void>, ok: string) {
@@ -623,7 +588,7 @@ export default function Fleet() {
             </div>
           ) : view === 'map' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <FleetMap nodes={fleetMap.nodes} edges={fleetMap.edges} />
+              <ClusterMap coords={coords} sysMeta={sysMeta} memberNodes={fleetMap.memberNodes} />
               {/* Per-systeem overzicht */}
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
                 {fleetMap.memberNodes.map(n => (
