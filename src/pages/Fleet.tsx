@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
   resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterIds,
   createFleetWing, renameFleetWing, deleteFleetWing, createFleetSquad, renameFleetSquad, deleteFleetSquad,
+  getSystems, getRegions, getSystemCoords, getSystemJumps,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
+import { secColor } from '../utils/secColor'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
@@ -63,6 +65,56 @@ interface ResolvedMember extends FleetMember {
 const miniBtn: React.CSSProperties = { background: 'transparent', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', fontSize: '0.58rem', lineHeight: 1, padding: '0.12rem 0.35rem', cursor: 'pointer' }
 const miniBtnRed: React.CSSProperties = { ...miniBtn, color: 'var(--red)', borderColor: 'rgba(224,85,85,0.4)' }
 
+interface MapNode {
+  sid: number; members: ResolvedMember[]; name: string
+  x: number | null; z: number | null; sec: number; region: string
+  jumps: number | undefined; isFc: boolean
+}
+
+// Top-down (x/z) ruimtelijke kaart van de fleet-systemen, auto-ingezoomd.
+function FleetMap({ nodes, edges }: { nodes: MapNode[]; edges: [number, number][] }) {
+  const W = 820, H = 380, PAD = 50
+  const pts = nodes.filter(n => n.x != null && n.z != null) as (MapNode & { x: number; z: number })[]
+  if (pts.length === 0) {
+    return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Geen coördinaten voor deze systemen (wormhole-ruimte?). Zie de lijst hieronder.</div>
+  }
+  const xs = pts.map(n => n.x), ys = pts.map(n => -n.z)   // z geflipt → noord boven
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
+  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1
+  const scale = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY)
+  const offX = (W - scale * spanX) / 2 - minX * scale
+  const offY = (H - scale * spanY) / 2 - minY * scale
+  const pos = new Map(pts.map(n => [n.sid, [offX + n.x * scale, offY + (-n.z) * scale] as [number, number]]))
+  const maxCount = Math.max(...nodes.map(n => n.members.length), 1)
+
+  return (
+    <div style={{ background: 'radial-gradient(circle at 50% 35%, #0c0c26 0%, #05050e 75%)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
+        {edges.map(([a, b], i) => {
+          const pa = pos.get(a), pb = pos.get(b)
+          if (!pa || !pb) return null
+          return <line key={i} x1={pa[0]} y1={pa[1]} x2={pb[0]} y2={pb[1]} stroke="rgba(0,180,216,0.22)" strokeWidth={1} />
+        })}
+        {pts.map(n => {
+          const [x, y] = pos.get(n.sid)!
+          const r = 6 + (n.members.length / maxCount) * 14
+          const col = secColor(n.sec)
+          return (
+            <g key={n.sid}>
+              {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1.5} strokeDasharray="3 2" />}
+              <circle cx={x} cy={y} r={r} fill={col} fillOpacity={0.85} stroke="rgba(0,0,0,0.6)" strokeWidth={1} />
+              <text x={x} y={y + 3.5} textAnchor="middle" fontSize={10} fontWeight={700} fill="#05050e">{n.members.length}</text>
+              <text x={x} y={y - r - 5} textAnchor="middle" fontSize={9.5} fill="#c8cde8" stroke="#05050e" strokeWidth={0.5} paintOrder="stroke">
+                {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 export default function Fleet() {
   // Álle accounts, niet alleen de geselecteerde — je kunt met een ander character in fleet zitten.
   const { tokens } = useAuth()
@@ -85,6 +137,20 @@ export default function Fleet() {
   const [inviteName, setInviteName] = useState('')
   const [msg, setMsg]               = useState<string | null>(null)
   const [busy, setBusy]             = useState(false)
+
+  // Kaart
+  const [view, setView] = useState<'list' | 'map'>('list')
+  const [coords, setCoords]     = useState<Record<string, [number, number]>>({})
+  const [adj, setAdj]           = useState<Record<string, number[]>>({})
+  const [sysMeta, setSysMeta]   = useState<Record<string, [string, number, number]>>({})
+  const [regionMap, setRegionMap] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    getSystemCoords().then(setCoords).catch(() => {})
+    getSystemJumps().then(setAdj).catch(() => {})
+    getSystems().then(setSysMeta).catch(() => {})
+    getRegions().then(setRegionMap).catch(() => {})
+  }, [])
 
   async function load() {
     if (tokens.length === 0) return
@@ -186,6 +252,45 @@ export default function Fleet() {
   const squadOptions = wings.flatMap(w => w.squads.map(s => ({ wingId: w.id, squadId: s.id, label: `${w.name} / ${s.name}` })))
   const memberCols = canManage ? '1fr 130px 120px 46px 168px' : '1fr 160px 160px 60px'
 
+  // Kaart-data: leden per systeem, coördinaten, gate-edges en jump-afstand vanaf de FC.
+  const fleetMap = useMemo(() => {
+    const groups = new Map<number, ResolvedMember[]>()
+    for (const m of members) { const g = groups.get(m.solar_system_id) ?? []; g.push(m); groups.set(m.solar_system_id, g) }
+    const fcSys = members.find(m => m.role === 'fleet_commander')?.solar_system_id ?? members[0]?.solar_system_id
+
+    // jump-afstand vanaf FC via BFS over stargate-buren
+    const dist = new Map<number, number>()
+    if (fcSys != null) {
+      const targets = new Set(groups.keys())
+      dist.set(fcSys, 0)
+      let frontier = [fcSys], d = 0
+      while (frontier.length && d < 60 && [...targets].some(t => !dist.has(t))) {
+        d++
+        const next: number[] = []
+        for (const s of frontier) for (const nb of (adj[String(s)] ?? [])) if (!dist.has(nb)) { dist.set(nb, d); next.push(nb) }
+        frontier = next
+      }
+    }
+
+    const nodes = [...groups.entries()].map(([sid, mem]) => {
+      const c = coords[String(sid)]
+      const meta = sysMeta[String(sid)]
+      return {
+        sid, members: mem, name: mem[0].systemName,
+        x: c?.[0] ?? null, z: c?.[1] ?? null,
+        sec: meta?.[1] ?? 0,
+        region: meta ? (regionMap[String(meta[2])] ?? '') : '',
+        jumps: dist.get(sid), isFc: sid === fcSys,
+      }
+    }).sort((a, b) => b.members.length - a.members.length)
+
+    const shown = new Set(nodes.filter(n => n.x != null).map(n => n.sid))
+    const edges: [number, number][] = []
+    for (const n of nodes) for (const nb of (adj[String(n.sid)] ?? [])) if (shown.has(nb) && n.sid < nb) edges.push([n.sid, nb])
+
+    return { nodes, edges }
+  }, [members, coords, adj, sysMeta, regionMap])
+
   async function withBusy(action: () => Promise<void>, ok: string) {
     if (!fleetToken || !charFleet) return
     setBusy(true); setMsg(null)
@@ -247,6 +352,17 @@ export default function Fleet() {
           notInFleet ? 'Niet in fleet' :
           `${members.length} leden · ${myRole ? ROLE_LABEL[myRole] : ''}`
         }
+        right={!loading && !notInFleet && members.length > 0 ? (
+          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+            {(['list', 'map'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)} style={{
+                padding: '0.3rem 0.7rem', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', border: 'none',
+                background: view === v ? 'rgba(0,180,216,0.15)' : 'transparent',
+                color: view === v ? 'var(--blue)' : 'var(--text-dim)',
+              }}>{v === 'list' ? 'Leden' : '🗺 Kaart'}</button>
+            ))}
+          </div>
+        ) : undefined}
       />
     }>
       {loading && (
@@ -440,10 +556,34 @@ export default function Fleet() {
             </div>
           )}
 
-          {/* Ledenlijst of foutmelding */}
+          {/* Ledenlijst, kaart of foutmelding */}
           {accessError ? (
             <div style={{ background: 'rgba(240,192,64,0.06)', border: '1px solid rgba(240,192,64,0.25)', borderRadius: 3, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--gold)' }}>
               {accessError}
+            </div>
+          ) : view === 'map' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <FleetMap nodes={fleetMap.nodes} edges={fleetMap.edges} />
+              {/* Per-systeem overzicht */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                {fleetMap.nodes.map(n => (
+                  <div key={n.sid} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.45rem 1rem', borderBottom: '1px solid rgba(28,28,53,0.5)' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: secColor(n.sec), width: 30, textAlign: 'right' }}>{(Math.round(n.sec * 10) / 10).toFixed(1)}</span>
+                    <div style={{ minWidth: 150 }}>
+                      <SolarSystem name={n.name} systemId={n.sid} fontSize="0.75rem" />
+                      <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)' }}>{n.region}{n.jumps != null ? ` · ${n.jumps === 0 ? 'FC-systeem' : `${n.jumps} jumps`}` : ''}</div>
+                    </div>
+                    <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)', minWidth: 54 }}>{n.members.length} {n.members.length === 1 ? 'lid' : 'leden'}</span>
+                    <div style={{ display: 'flex', gap: '0.2rem', flexWrap: 'wrap', flex: 1 }}>
+                      {n.members.map(m => (
+                        <span key={m.character_id} title={`${m.characterName} — ${m.shipName}`} style={{ display: 'inline-flex', flexShrink: 0 }}>
+                          <EveImage category="characters" id={m.character_id} variation="portrait" size={32} px={22} round />
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>

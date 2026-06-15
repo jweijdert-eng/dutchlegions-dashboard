@@ -958,6 +958,16 @@ export async function getRegions(): Promise<Record<string, string>> {
   try { return await loadBundle<Record<string, string>>('regions.json') }
   catch { return {} }
 }
+// Systeem-coördinaten (top-down x/z) voor de fleet-kaart.
+export async function getSystemCoords(): Promise<Record<string, [number, number]>> {
+  try { return await loadBundle<Record<string, [number, number]>>('system-coords.json') }
+  catch { return {} }
+}
+// Stargate-buren per systeem (voor gate-lijnen + jump-afstand via BFS).
+export async function getSystemJumps(): Promise<Record<string, number[]>> {
+  try { return await loadBundle<Record<string, number[]>>('system-jumps.json') }
+  catch { return {} }
+}
 // Live system manufacturing cost index per systeem (ESI /industry/systems/). Eén
 // publieke call, module-gecached. Bepaalt mee hoe duur een job in dat systeem is.
 let _costIdxCache: Map<number, number> | null = null
