@@ -85,27 +85,30 @@ export default function Fleet() {
   async function load() {
     if (tokens.length === 0) return
 
-    // Probeer elk account; gebruik het eerste dat daadwerkelijk in een fleet zit.
-    // Eerder gevonden account eerst, zodat we bij polling maar één call doen.
-    const known = fleetToken && tokens.find(x => x.characterId === fleetToken.characterId)
-    const candidates = known ? [known, ...tokens.filter(x => x.characterId !== known.characterId)] : tokens
+    // Vraag voor élk account de fleet-status op; meerdere van je characters kunnen
+    // in dezelfde fleet zitten (bv. main + alt).
+    const results = await Promise.all(tokens.map(async cand => {
+      try { return { cand, cf: await getCharacterFleet(cand.characterId, cand.accessToken), err: '' } }
+      catch (e) { return { cand, cf: null as CharacterFleet | null, err: (e as Error).message } }
+    }))
+    const inFleet = results.filter(r => r.cf)
 
-    let cf: CharacterFleet | null = null
-    let t: typeof tokens[number] | null = null
-    let lastErr = ''
-    for (const cand of candidates) {
-      try { cf = await getCharacterFleet(cand.characterId, cand.accessToken); t = cand; break }
-      catch (e) { lastErr = (e as Error).message }
-    }
-
-    if (!cf || !t) {
+    if (inFleet.length === 0) {
+      const errs = results.map(r => r.err).join(' ')
       setNotInFleet(true)
       setFleetToken(null)
       // 403 = scope ontbreekt; 404 = ESI ziet (nog) geen fleet.
-      setFleetErr(/\b403\b/.test(lastErr) ? 'scope' : /\b404\b/.test(lastErr) ? 'none' : lastErr || 'none')
+      setFleetErr(/\b403\b/.test(errs) ? 'scope' : 'none')
       setLoading(false)
       return
     }
+
+    // Kies het account met de hoogste rol — de fleet-boss (FC) kan als enige de
+    // ledenlijst/details lezen. Anders zou een alt (gewoon lid) een 404 geven.
+    const rolePref: Record<string, number> = { fleet_commander: 0, wing_commander: 1, squad_commander: 2, squad_member: 3 }
+    inFleet.sort((a, b) => (rolePref[a.cf!.role] ?? 9) - (rolePref[b.cf!.role] ?? 9))
+    const t = inFleet[0].cand
+    const cf = inFleet[0].cf!
 
     setFleetToken(t)
     setCharFleet(cf)
