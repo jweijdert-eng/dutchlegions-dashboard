@@ -82,13 +82,8 @@ write('systems.json', out_sys)
 out_reg = {str(rid): name for rid, name in con.execute('SELECT regionID, regionName FROM mapRegions')}
 write('regions.json', out_reg)
 
-# Systeem-coördinaten voor de kaart: { systemId: [x, z] } (top-down, /1e12 afgerond).
-# EVE-coords zijn ~1e17 m; /1e12 houdt ruime relatieve precisie met compacte getallen.
-out_xy = {str(sid): [round(x / 1e12), round(z / 1e12)]
-          for sid, x, z in con.execute('SELECT solarSystemID, x, z FROM mapSolarSystems')}
-write('system-coords.json', out_xy)
-
-# Stargate-buren: { systemId: [buurSystemId, ...] } (voor gate-lijnen + jump-afstand).
+# Stargate-buren: { systemId: [buurSystemId, ...] } — voor de schematische fleet-kaart
+# (graph-layout + jump-afstand). Coördinaten zijn niet nodig: de kaart is force-directed.
 adj = {}
 for a, b in con.execute('SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps'):
     adj.setdefault(str(a), []).append(b)
