@@ -60,8 +60,8 @@ interface ResolvedMember extends FleetMember {
 }
 
 export default function Fleet() {
-  const { activeTokens: tokens } = useAuth()
-  const token = tokens[0]
+  // Álle accounts, niet alleen de geselecteerde — je kunt met een ander character in fleet zitten.
+  const { tokens } = useAuth()
 
   const [charFleet, setCharFleet]     = useState<CharacterFleet | null>(null)
   const [fleetInfo, setFleetInfo]     = useState<FleetInfo | null>(null)
@@ -69,6 +69,8 @@ export default function Fleet() {
   const [wings, setWings]             = useState<FleetWing[]>([])
   const [loading, setLoading]         = useState(true)
   const [notInFleet, setNotInFleet]   = useState(false)
+  const [fleetErr, setFleetErr]       = useState<string | null>(null)   // foutreden bij 'niet in fleet'
+  const [fleetToken, setFleetToken]   = useState<typeof tokens[number] | null>(null) // het account dat in de fleet zit
   const [myRole, setMyRole]           = useState<string | null>(null)
   const [accessError, setAccessError] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -80,21 +82,36 @@ export default function Fleet() {
   const [msg, setMsg]               = useState<string | null>(null)
   const [busy, setBusy]             = useState(false)
 
-  async function load(t: typeof token) {
-    if (!t) return
+  async function load() {
+    if (tokens.length === 0) return
 
-    let cf: CharacterFleet
-    try {
-      cf = await getCharacterFleet(t.characterId, t.accessToken)
-    } catch {
+    // Probeer elk account; gebruik het eerste dat daadwerkelijk in een fleet zit.
+    // Eerder gevonden account eerst, zodat we bij polling maar één call doen.
+    const known = fleetToken && tokens.find(x => x.characterId === fleetToken.characterId)
+    const candidates = known ? [known, ...tokens.filter(x => x.characterId !== known.characterId)] : tokens
+
+    let cf: CharacterFleet | null = null
+    let t: typeof tokens[number] | null = null
+    let lastErr = ''
+    for (const cand of candidates) {
+      try { cf = await getCharacterFleet(cand.characterId, cand.accessToken); t = cand; break }
+      catch (e) { lastErr = (e as Error).message }
+    }
+
+    if (!cf || !t) {
       setNotInFleet(true)
+      setFleetToken(null)
+      // 403 = scope ontbreekt; 404 = ESI ziet (nog) geen fleet.
+      setFleetErr(/\b403\b/.test(lastErr) ? 'scope' : /\b404\b/.test(lastErr) ? 'none' : lastErr || 'none')
       setLoading(false)
       return
     }
 
+    setFleetToken(t)
     setCharFleet(cf)
     setMyRole(cf.role)
     setNotInFleet(false)
+    setFleetErr(null)
     setAccessError(null)
 
     const [info, memberList, wingList] = await Promise.allSettled([
@@ -144,36 +161,37 @@ export default function Fleet() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (tokens.length === 0) return
     setLoading(true)
-    load(token)
-    intervalRef.current = setInterval(() => load(token), 15_000)
+    load()
+    intervalRef.current = setInterval(() => load(), 15_000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [token?.characterId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokens.map(t => t.characterId).join(',')])
 
   const fc    = members.find(m => m.role === 'fleet_commander')
-  const myChar = members.find(m => m.character_id === token?.characterId)
+  const myChar = members.find(m => m.character_id === fleetToken?.characterId)
 
-  // Beheer alleen voor de Fleet Commander (ESI vereist de juiste rol sowieso).
-  // Beheer alleen tonen als de boss-endpoints écht toegankelijk zijn (ledenlijst geladen).
+  // Beheer alleen voor de Fleet Commander, en alleen als de boss-endpoints écht
+  // toegankelijk zijn (ledenlijst geladen).
   const canManage = myRole === 'fleet_commander' && !!charFleet && !accessError && members.length > 0
-  const hasFleetWrite = token ? tokenScopes(token.accessToken).includes('esi-fleets.write_fleet.v1') : false
+  const hasFleetWrite = fleetToken ? tokenScopes(fleetToken.accessToken).includes('esi-fleets.write_fleet.v1') : false
   const squadOptions = wings.flatMap(w => w.squads.map(s => ({ wingId: w.id, squadId: s.id, label: `${w.name} / ${s.name}` })))
   const memberCols = canManage ? '1fr 130px 120px 46px 168px' : '1fr 160px 160px 60px'
 
   async function withBusy(action: () => Promise<void>, ok: string) {
-    if (!token || !charFleet) return
+    if (!fleetToken || !charFleet) return
     setBusy(true); setMsg(null)
-    try { await action(); setMsg(ok); await load(token) }
+    try { await action(); setMsg(ok); await load() }
     catch (e) { setMsg(`Mislukt: ${(e as Error).message ?? 'fout'}`) }
     finally { setBusy(false) }
   }
 
-  const saveMotd = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, token!.accessToken, { motd: motdDraft }), 'MOTD opgeslagen')
-  const toggleFreeMove = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, token!.accessToken, { is_free_move: !fleetInfo?.is_free_move }), 'Free Move gewijzigd')
-  const kick = (memberId: number, name: string) => { if (confirm(`${name} uit de fleet verwijderen?`)) withBusy(() => kickFleetMember(charFleet!.fleet_id, token!.accessToken, memberId), `${name} verwijderd`) }
+  const saveMotd = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, fleetToken!.accessToken, { motd: motdDraft }), 'MOTD opgeslagen')
+  const toggleFreeMove = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, fleetToken!.accessToken, { is_free_move: !fleetInfo?.is_free_move }), 'Free Move gewijzigd')
+  const kick = (memberId: number, name: string) => { if (confirm(`${name} uit de fleet verwijderen?`)) withBusy(() => kickFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId), `${name} verwijderd`) }
   const moveTo = (memberId: number, opt: { wingId: number; squadId: number }) =>
-    withBusy(() => moveFleetMember(charFleet!.fleet_id, token!.accessToken, memberId, { role: 'squad_member', wing_id: opt.wingId, squad_id: opt.squadId }), 'Lid verplaatst')
+    withBusy(() => moveFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId, { role: 'squad_member', wing_id: opt.wingId, squad_id: opt.squadId }), 'Lid verplaatst')
   async function doInvite() {
     const name = inviteName.trim()
     if (!name) return
@@ -183,7 +201,7 @@ export default function Fleet() {
     const id = await resolveCharacterId(name)
     if (!id) { setMsg(`Karakter "${name}" niet gevonden`); setBusy(false); return }
     try {
-      await inviteFleetMember(charFleet!.fleet_id, token!.accessToken, id, { role: 'squad_member', wing_id: sq.wingId, squad_id: sq.squadId })
+      await inviteFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, id, { role: 'squad_member', wing_id: sq.wingId, squad_id: sq.squadId })
       setMsg(`Uitnodiging verstuurd naar ${name}`); setInviteName('')
     } catch (e) { setMsg(`Uitnodigen mislukt: ${(e as Error).message ?? 'fout'}`) }
     finally { setBusy(false) }
@@ -207,9 +225,23 @@ export default function Fleet() {
       )}
 
       {!loading && notInFleet && (
-        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: 'var(--text-dim)', fontSize: '0.85rem' }}>
+        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.7, maxWidth: 560, margin: '0 auto' }}>
           <div style={{ fontSize: '2rem', color: 'var(--border)', marginBottom: '1rem' }}>⊞</div>
-          Je zit momenteel niet in een fleet.
+          {fleetErr === 'scope' ? (
+            <>
+              <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: '0.5rem' }}>Je login mist de fleet-rechten</div>
+              Je account(s) hebben de scope <code>esi-fleets.read_fleet.v1</code> niet (token van vóór de uitbreiding).
+              {' '}Ga in de zijbalk naar je account, <strong>verwijder het</strong> en log opnieuw in om de fleet-rechten te verlenen.
+            </>
+          ) : (
+            <>
+              Geen van je {tokens.length} account{tokens.length !== 1 ? 's' : ''} zit op dit moment in een fleet — volgens ESI.
+              <div style={{ fontSize: '0.72rem', marginTop: '0.75rem', color: 'var(--text-dim)' }}>
+                Zit je er wél in? ESI loopt soms ~1 minuut achter — wacht even en het ververst vanzelf (elke 15s).
+                {' '}Controleer ook of je met het juiste character bent ingelogd (de pagina checkt al je accounts).
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -367,7 +399,7 @@ export default function Fleet() {
                 {canManage && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>ACTIES</span>}
               </div>
               {members.map(m => {
-                const isMe = m.character_id === token?.characterId
+                const isMe = m.character_id === fleetToken?.characterId
                 return (
                   <div
                     key={m.character_id}
