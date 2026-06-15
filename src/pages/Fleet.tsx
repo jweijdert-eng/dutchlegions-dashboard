@@ -116,8 +116,16 @@ export default function Fleet() {
       }))
     } else {
       const err = memberList.reason as Error
-      if (err?.message?.includes('403')) {
-        setAccessError('Ledenlijst is alleen zichtbaar voor de Fleet Commander.')
+      const code = err?.message?.match(/\b(40\d)\b/)?.[1]
+      if (code === '404' || code === '403') {
+        // ESI staat de /fleets/{id}/-endpoints alleen toe voor de fleet-boss (de FC
+        // bovenaan). Niet-boss leden krijgen een 404 — geen echte fout.
+        setMembers([])
+        setAccessError(
+          cf.role === 'fleet_commander'
+            ? 'ESI geeft geen toegang tot de fleet-details. Dit gebeurt als je niet de fleet-boss bent (de allereerste FC die de fleet opende) of als de fleet net opnieuw is gevormd — laat de boss de fleet-tools openen.'
+            : 'De ledenlijst en fleet-details zijn via ESI alleen zichtbaar voor de Fleet Commander (de fleet-boss). Je ziet hieronder wel je eigen rol en schip.'
+        )
       } else {
         setAccessError(`Kan ledenlijst niet laden: ${err?.message ?? 'onbekende fout'}`)
       }
@@ -138,7 +146,8 @@ export default function Fleet() {
   const myChar = members.find(m => m.character_id === token?.characterId)
 
   // Beheer alleen voor de Fleet Commander (ESI vereist de juiste rol sowieso).
-  const canManage = myRole === 'fleet_commander' && !!charFleet
+  // Beheer alleen tonen als de boss-endpoints écht toegankelijk zijn (ledenlijst geladen).
+  const canManage = myRole === 'fleet_commander' && !!charFleet && !accessError && members.length > 0
   const squadOptions = wings.flatMap(w => w.squads.map(s => ({ wingId: w.id, squadId: s.id, label: `${w.name} / ${s.name}` })))
   const memberCols = canManage ? '1fr 130px 120px 46px 168px' : '1fr 160px 160px 60px'
 
