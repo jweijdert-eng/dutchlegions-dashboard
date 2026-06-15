@@ -70,21 +70,25 @@ interface MemberNode {
   sec: number; region: string; jumps: number | undefined; isFc: boolean
 }
 
-// New Eden cluster-kaart: alle systemen als dots (canvas, gekleurd op security),
-// met de fleet-leden gehighlight als overlay (SVG). Vaste projectie van het hele cluster.
-function ClusterMap({ coords, sysMeta, memberNodes }: {
+// New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
+// als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
+function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
+  regionMap: Record<string, string>
   memberNodes: MemberNode[]
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const W = 860, H = 560, PAD = 24
+  const [tf, setTf] = useState({ k: 1, x: 0, y: 0 })
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
 
-  // Projectie uit alle systeem-coördinaten (vast — het hele cluster past in beeld).
-  const proj = useMemo(() => {
+  // Basisprojectie (vast, fit alle coords). Daarna pas/zoom-transform eroverheen.
+  const base = useMemo(() => {
     const entries = Object.values(coords)
     if (entries.length === 0) return null
-    const xs = entries.map(c => c[0]), zs = entries.map(c => -c[1])  // z geflipt
+    const xs = entries.map(c => c[0]), zs = entries.map(c => -c[1])
     const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs)
     const spanX = (maxX - minX) || 1, spanZ = (maxZ - minZ) || 1
     const scale = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanZ)
@@ -93,40 +97,89 @@ function ClusterMap({ coords, sysMeta, memberNodes }: {
     return (x: number, z: number): [number, number] => [offX + x * scale, offZ + (-z) * scale]
   }, [coords])
 
-  // Achtergrond: alle ~8500 systemen op canvas tekenen, faint, gekleurd op security.
+  const screen = (x: number, z: number): [number, number] => {
+    const [bx, by] = base!(x, z)
+    return [bx * tf.k + tf.x, by * tf.k + tf.y]
+  }
+
+  // Regio-zwaartepunten (voor de namen).
+  const regions = useMemo(() => {
+    const acc = new Map<number, { sx: number; sy: number; n: number }>()
+    for (const [sid, c] of Object.entries(coords)) {
+      const rid = sysMeta[sid]?.[2]
+      if (rid == null) continue
+      const a = acc.get(rid) ?? { sx: 0, sy: 0, n: 0 }
+      a.sx += c[0]; a.sy += c[1]; a.n++; acc.set(rid, a)
+    }
+    return [...acc.entries()].map(([rid, a]) => ({ rid, name: regionMap[String(rid)] ?? '', x: a.sx / a.n, z: a.sy / a.n }))
+  }, [coords, sysMeta, regionMap])
+
+  // Canvas (her)tekenen bij data- of transform-wijziging.
   useEffect(() => {
     const cv = canvasRef.current
-    if (!cv || !proj) return
+    if (!cv || !base) return
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     cv.width = W * dpr; cv.height = H * dpr
     const ctx = cv.getContext('2d')!
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, H)
     for (const [sid, c] of Object.entries(coords)) {
-      const [x, y] = proj(c[0], c[1])
-      const sec = sysMeta[sid]?.[1] ?? 0
-      ctx.fillStyle = secColor(sec)
+      const [bx, by] = base(c[0], c[1])
+      const x = bx * tf.k + tf.x, y = by * tf.k + tf.y
+      if (x < -4 || x > W + 4 || y < -4 || y > H + 4) continue
+      ctx.fillStyle = secColor(sysMeta[sid]?.[1] ?? 0)
       ctx.globalAlpha = 0.7
-      ctx.beginPath()
-      ctx.arc(x, y, 1.1, 0, Math.PI * 2)
-      ctx.fill()
+      const s = 1.2 + (tf.k - 1) * 0.25
+      ctx.fillRect(x - s / 2, y - s / 2, s, s)
     }
     ctx.globalAlpha = 1
-  }, [coords, sysMeta, proj])
+  }, [coords, sysMeta, base, tf])
 
-  if (!proj) {
+  if (!base) {
     return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Kaart laden…</div>
   }
   const maxCount = Math.max(...memberNodes.map(n => n.members.length), 1)
 
+  // Muis → interne kaart-coördinaten (CSS-schaal compenseren).
+  const toLocal = (clientX: number, clientY: number): [number, number] => {
+    const r = wrapRef.current!.getBoundingClientRect()
+    return [(clientX - r.left) * (W / r.width), (clientY - r.top) * (H / r.height)]
+  }
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const [mx, my] = toLocal(e.clientX, e.clientY)
+    const f = e.deltaY < 0 ? 1.18 : 1 / 1.18
+    setTf(t => {
+      const k = Math.max(0.8, Math.min(16, t.k * f))
+      const fr = k / t.k
+      return { k, x: mx - (mx - t.x) * fr, y: my - (my - t.y) * fr }
+    })
+  }
+  const onDown = (e: React.MouseEvent) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: tf.x, oy: tf.y } }
+  const onMove = (e: React.MouseEvent) => {
+    if (!drag.current) return
+    const r = wrapRef.current!.getBoundingClientRect()
+    const sc = W / r.width
+    setTf(t => ({ ...t, x: drag.current!.ox + (e.clientX - drag.current!.sx) * sc, y: drag.current!.oy + (e.clientY - drag.current!.sy) * sc }))
+  }
+  const endDrag = () => { drag.current = null }
+
   return (
-    <div style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto' }} />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+    <div ref={wrapRef} onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
+      style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        {/* Regio-namen */}
+        {regions.map(rg => {
+          const [x, y] = screen(rg.x, rg.z)
+          if (x < 0 || x > W || y < 0 || y > H) return null
+          return <text key={rg.rid} x={x} y={y} textAnchor="middle" fontSize={tf.k >= 2 ? 9 : 8} fill="rgba(150,165,210,0.55)" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{rg.name}</text>
+        })}
+        {/* Fleet-leden */}
         {memberNodes.map(n => {
           const c = coords[String(n.sid)]
           if (!c) return null
-          const [x, y] = proj(c[0], c[1])
+          const [x, y] = screen(c[0], c[1])
           const r = 5 + (n.members.length / maxCount) * 9
           return (
             <g key={n.sid}>
@@ -141,6 +194,16 @@ function ClusterMap({ coords, sysMeta, memberNodes }: {
           )
         })}
       </svg>
+      {/* Zoom-knoppen */}
+      <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {[['+', 1.4], ['−', 1 / 1.4]].map(([lbl, f]) => (
+          <button key={lbl as string} onClick={() => setTf(t => ({ ...t, k: Math.max(0.8, Math.min(16, t.k * (f as number))) }))}
+            style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>{lbl}</button>
+        ))}
+        <button onClick={() => setTf({ k: 1, x: 0, y: 0 })} title="Reset"
+          style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⟲</button>
+      </div>
+      <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)' }}>sleep = pan · scroll = zoom</div>
     </div>
   )
 }
@@ -588,7 +651,7 @@ export default function Fleet() {
             </div>
           ) : view === 'map' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <ClusterMap coords={coords} sysMeta={sysMeta} memberNodes={fleetMap.memberNodes} />
+              <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} memberNodes={fleetMap.memberNodes} />
               {/* Per-systeem overzicht */}
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
                 {fleetMap.memberNodes.map(n => (
