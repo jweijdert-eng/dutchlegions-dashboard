@@ -80,7 +80,8 @@ function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const W = 860, H = 560, PAD = 24
+  // Staand canvas — New Eden is hoger (z-span) dan breed (x-span), net als de echte cluster-map.
+  const W = 660, H = 760, PAD = 30
   const [tf, setTf] = useState({ k: 1, x: 0, y: 0 })
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
 
@@ -173,7 +174,7 @@ function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
         {regions.map(rg => {
           const [x, y] = screen(rg.x, rg.z)
           if (x < 0 || x > W || y < 0 || y > H) return null
-          return <text key={rg.rid} x={x} y={y} textAnchor="middle" fontSize={tf.k >= 2 ? 9 : 8} fill="rgba(150,165,210,0.55)" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{rg.name}</text>
+          return <text key={rg.rid} x={x} y={y} textAnchor="middle" fontSize={8.5} fill="rgba(205,214,235,0.8)" stroke="#05050e" strokeWidth={0.5} paintOrder="stroke">{rg.name}</text>
         })}
         {/* Fleet-leden */}
         {memberNodes.map(n => {
@@ -202,6 +203,10 @@ function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
         ))}
         <button onClick={() => setTf({ k: 1, x: 0, y: 0 })} title="Reset"
           style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⟲</button>
+      </div>
+      {/* Kompas */}
+      <div style={{ position: 'absolute', top: 8, left: 10, color: 'rgba(205,214,235,0.7)', fontSize: '0.6rem', textAlign: 'center', lineHeight: 1 }}>
+        <div style={{ fontSize: '0.8rem' }}>↑</div>N
       </div>
       <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)' }}>sleep = pan · scroll = zoom</div>
     </div>
