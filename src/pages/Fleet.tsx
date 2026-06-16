@@ -165,7 +165,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
     const c = fc && coords[String(fc.sid)]
     if (!c) return
     didAuto.current = true
-    const k = 14
+    const k = 24
     const [bx, by] = base(c[0], c[1])
     setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
   }, [base, memberNodes, coords])
@@ -185,7 +185,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
     const [mx, my] = toLocal(e.clientX, e.clientY)
     const f = e.deltaY < 0 ? 1.18 : 1 / 1.18
     setTf(t => {
-      const k = Math.max(0.8, Math.min(16, t.k * f))
+      const k = Math.max(0.8, Math.min(40, t.k * f))
       const fr = k / t.k
       return { k, x: mx - (mx - t.x) * fr, y: my - (my - t.y) * fr }
     })
@@ -250,14 +250,14 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
       {/* Zoom-knoppen */}
       <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {[['+', 1.4], ['−', 1 / 1.4]].map(([lbl, f]) => (
-          <button key={lbl as string} onClick={() => setTf(t => ({ ...t, k: Math.max(0.8, Math.min(16, t.k * (f as number))) }))}
+          <button key={lbl as string} onClick={() => setTf(t => ({ ...t, k: Math.max(0.8, Math.min(40, t.k * (f as number))) }))}
             style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>{lbl}</button>
         ))}
         <button onClick={() => {
           const fc = memberNodes.find(n => n.isFc) ?? memberNodes[0]
           const c = fc && coords[String(fc.sid)]
           if (!c) { setTf({ k: 1, x: 0, y: 0 }); return }
-          const k = 14, [bx, by] = base(c[0], c[1])
+          const k = 24, [bx, by] = base(c[0], c[1])
           setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
         }} title="Centreer op FC"
           style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⌖</button>
