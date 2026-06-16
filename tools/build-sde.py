@@ -7,12 +7,15 @@ Output (compact, meegedeployd met de site → geen lokale server nodig):
   public/type-names.json  { typeId: "Naam" }                                  (published types, en)
   public/schematics.json  { id: { schematic_name, cycle_time, pins:[{type_id,is_input,quantity}] } } (PI)
 """
-import io, json, tarfile, urllib.request, os, gzip, sqlite3, tempfile
+import io, json, tarfile, urllib.request, os, gzip, sqlite3, tempfile, zipfile
 from datetime import datetime, timezone
 
 URL = 'https://data.everef.net/reference-data/reference-data-latest.tar.xz'
 LATEST = 'https://developers.eveonline.com/static-data/tranquility/latest.jsonl'
 FUZZ = 'https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz'
+# Officiële Tranquility static-data (JSONL-zip) — bevat het echte position2D-veld
+# dat de in-game New Eden-kaart gebruikt (2D 'schematic' layout, niet de ruwe 3D-projectie).
+SDE_JSONL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
 PUB = os.path.join(os.path.dirname(__file__), '..', 'public')
 
 print('Downloaden EVE Ref reference-data (~14MB)...')
@@ -82,11 +85,25 @@ write('systems.json', out_sys)
 out_reg = {str(rid): name for rid, name in con.execute('SELECT regionID, regionName FROM mapRegions')}
 write('regions.json', out_reg)
 
-# Systeem-coördinaten voor de New Eden cluster-kaart: { systemId: [x, z] }
-# (top-down, /1e12 afgerond). Alleen k-space (id < 31000000); wormhole/J-space ligt
-# op heel andere coords en zou de cluster-vorm vervormen.
-out_xy = {str(sid): [round(x / 1e12), round(z / 1e12)]
-          for sid, x, z in con.execute('SELECT solarSystemID, x, z FROM mapSolarSystems WHERE solarSystemID < 31000000')}
+# Systeem-coördinaten voor de New Eden cluster-kaart: { systemId: [x2d, y2d] }
+# Uit het officiële position2D-veld (Tranquility static-data) → exact dezelfde 2D
+# 'schematic' layout als de in-game star map (position2D.X ~ 3D-X, position2D.Y ~ 3D-Z).
+# /1e12 afgerond. Alleen k-space (id < 31000000); wormhole/J-space heeft geen zinnige
+# 2D-plek en zou de cluster-vorm vervormen.
+print('Downloaden officiële SDE JSONL-zip (~84MB) voor position2D...')
+sde_zip = urllib.request.urlopen(SDE_JSONL, timeout=600).read()
+out_xy = {}
+with zipfile.ZipFile(io.BytesIO(sde_zip)) as z:
+    with z.open('mapSolarSystems.jsonl') as f:
+        for raw in f:
+            s = json.loads(raw)
+            sid = s['_key']
+            if sid >= 31000000:
+                continue
+            p2 = s.get('position2D')
+            if not p2:
+                continue
+            out_xy[str(sid)] = [round(p2['x'] / 1e12), round(p2['y'] / 1e12)]
 write('system-coords.json', out_xy)
 
 # Stargate-buren: { systemId: [buurSystemId, ...] } — voor jump-afstand (BFS).
