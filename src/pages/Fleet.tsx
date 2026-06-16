@@ -213,11 +213,11 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           return <text key={rg.rid} x={x} y={y} textAnchor="middle" fontSize={8.5} fill="rgba(205,214,235,0.8)" stroke="#05050e" strokeWidth={0.5} paintOrder="stroke">{rg.name}</text>
         })}
         {/* Systeem-labels bij inzoomen (zoals de in-game star map) */}
-        {tf.k >= 4 && Object.entries(coords).map(([sid, c]) => {
+        {tf.k >= 5 && Object.entries(coords).map(([sid, c]) => {
           const [x, y] = screen(c[0], c[1])
           if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
           const name = sysMeta[sid]?.[0]; if (!name) return null
-          return <text key={sid} x={x + 4} y={y - 4} fontSize={7.5} fill="rgba(225,228,240,0.85)" stroke="#05050e" strokeWidth={0.4} paintOrder="stroke">{name}</text>
+          return <text key={sid} x={x + 3} y={y - 3} fontSize={5} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={0.35} paintOrder="stroke">{name}</text>
         })}
         {/* Fleet-leden — groene ring + aantal (zoals de in-game map) */}
         {memberNodes.map(n => {
@@ -232,7 +232,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
               {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1} strokeDasharray="3 2" />}
               <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#05050e" strokeWidth={0.8} />
               <text x={x} y={y + 2.6} textAnchor="middle" fontSize={Math.min(9, r + 1.5)} fontWeight={700} fill="#05050e">{n.members.length}</text>
-              <text x={x + r + 5} y={y + 3} fontSize={9.5} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.7} paintOrder="stroke">
+              <text x={x + r + 4} y={y + 2.5} fontSize={6.5} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.55} paintOrder="stroke">
                 {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
               </text>
             </g>
@@ -715,27 +715,32 @@ export default function Fleet() {
               {accessError}
             </div>
           ) : view === 'map' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} />
-              {/* Per-systeem overzicht */}
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {/* Per-systeem overzicht — compact, links */}
+              <div style={{ flex: '0 0 270px', maxWidth: 300, maxHeight: 760, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>
                 {fleetMap.memberNodes.map(n => (
-                  <div key={n.sid} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.45rem 1rem', borderBottom: '1px solid rgba(28,28,53,0.5)' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: secColor(n.sec), width: 30, textAlign: 'right' }}>{(Math.round(n.sec * 10) / 10).toFixed(1)}</span>
-                    <div style={{ minWidth: 150 }}>
-                      <SolarSystem name={n.name} systemId={n.sid} fontSize="0.75rem" />
-                      <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)' }}>{n.region}{n.jumps != null ? ` · ${n.jumps === 0 ? 'FC-systeem' : `${n.jumps} jumps`}` : ''}</div>
+                  <div key={n.sid} style={{ padding: '0.4rem 0.6rem', borderBottom: '1px solid rgba(28,28,53,0.5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: secColor(n.sec), width: 26, textAlign: 'right', flexShrink: 0 }}>{(Math.round(n.sec * 10) / 10).toFixed(1)}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <SolarSystem name={n.name} systemId={n.sid} fontSize="0.72rem" />
+                        <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)' }}>{n.region}{n.jumps != null ? ` · ${n.jumps === 0 ? 'FC' : `${n.jumps}j`}` : ''}</div>
+                      </div>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', flexShrink: 0 }}>{n.members.length}×</span>
                     </div>
-                    <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)', minWidth: 54 }}>{n.members.length} {n.members.length === 1 ? 'lid' : 'leden'}</span>
-                    <div style={{ display: 'flex', gap: '0.2rem', flexWrap: 'wrap', flex: 1 }}>
+                    <div style={{ display: 'flex', gap: '0.2rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
                       {n.members.map(m => (
                         <span key={m.character_id} title={`${m.characterName} — ${m.shipName}`} style={{ display: 'inline-flex', flexShrink: 0 }}>
-                          <EveImage category="characters" id={m.character_id} variation="portrait" size={32} px={22} round />
+                          <EveImage category="characters" id={m.character_id} variation="portrait" size={32} px={20} round />
                         </span>
                       ))}
                     </div>
                   </div>
                 ))}
+              </div>
+              {/* Kaart — rechts, begrensd zodat 'ie niet enorm wordt */}
+              <div style={{ flex: 1, minWidth: 320, maxWidth: 560 }}>
+                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} />
               </div>
             </div>
           ) : (
