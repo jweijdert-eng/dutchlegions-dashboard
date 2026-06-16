@@ -62,13 +62,20 @@ type PermHandle = FileSystemDirectoryHandle & {
   requestPermission: (d: object) => Promise<string>
 }
 
-async function findFiles(dir: FileSystemDirectoryHandle, prefixes: string[]): Promise<FileSystemFileHandle[]> {
-  const out: FileSystemFileHandle[] = []
+// EVE-bestandsnaam: "<Kanaalnaam>_YYYYMMDD_HHMMSS_<id>.txt".
+const CHAN_RE = /^(.*)_\d{8}_\d{6}_\d+\.txt$/
+
+async function scanDir(dir: FileSystemDirectoryHandle, prefixes: string[]):
+  Promise<{ matched: FileSystemFileHandle[]; channels: Set<string> }> {
+  const matched: FileSystemFileHandle[] = []
+  const channels = new Set<string>()
   for await (const [name, handle] of (dir as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
     if (handle.kind !== 'file' || !name.endsWith('.txt')) continue
-    if (prefixes.some(ch => name.startsWith(ch + '_'))) out.push(handle as FileSystemFileHandle)
+    const cm = CHAN_RE.exec(name)
+    if (cm) channels.add(cm[1])                       // alle aanwezige kanaalnamen verzamelen
+    if (prefixes.some(ch => name.startsWith(ch + '_'))) matched.push(handle as FileSystemFileHandle)
   }
-  return out
+  return { matched, channels }
 }
 
 function parseLine(line: string): Omit<SystemIntel, never> | null {
@@ -98,7 +105,7 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
 
 export type IntelStatus = 'unsupported' | 'idle' | 'denied' | 'live'
 
-export interface IntelDebug { files: number; entries: number }   // diagnose: gematchte bestanden + geparste meldingen-met-systeem
+export interface IntelDebug { files: number; entries: number; available: string[] }   // diagnose: gematchte bestanden, geparste meldingen, en álle aanwezige kanaalnamen
 
 export interface IntelResult {
   systems: Record<string, SystemIntel>
@@ -124,7 +131,7 @@ export function useIntelSystems(active: boolean): IntelResult {
 
   const [intel, setIntel]   = useState<Record<string, SystemIntel>>({})
   const [status, setStatus] = useState<IntelStatus>(INTEL_SUPPORTED ? 'idle' : 'unsupported')
-  const [debug, setDebug]   = useState<IntelDebug>({ files: 0, entries: 0 })
+  const [debug, setDebug]   = useState<IntelDebug>({ files: 0, entries: 0, available: [] })
   const latest    = useRef(new Map<string, SystemIntel>())  // system → meest recente melding
   const lastSize  = useRef(new Map<string, number>())
   const entryCount = useRef(0)                              // cumulatief geparste meldingen-met-systeem
@@ -135,9 +142,11 @@ export function useIntelSystems(active: boolean): IntelResult {
     if (!handle) return
     const watch = prefixKey ? prefixKey.split('|') : []
     let filesMatched = 0
+    let available: string[] = []
     try {
-      const files = await findFiles(handle, watch)
+      const { matched: files, channels } = await scanDir(handle, watch)
       filesMatched = files.length
+      available = [...channels].sort()
       for (const fh of files) {
         const file = await fh.getFile()
         const prev = lastSize.current.get(file.name) ?? 0
@@ -161,7 +170,7 @@ export function useIntelSystems(active: boolean): IntelResult {
       else snap[sys] = e
     }
     setIntel(snap)
-    setDebug({ files: filesMatched, entries: entryCount.current })
+    setDebug({ files: filesMatched, entries: entryCount.current, available })
   }
 
   // Verbind (vereist een user-gesture): herverbind de opgeslagen map, of kies er één.

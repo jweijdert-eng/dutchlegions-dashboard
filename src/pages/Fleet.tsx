@@ -857,6 +857,19 @@ export default function Fleet() {
               const list = Object.values(intel)
                 .filter(i => i.threat !== 'clear')
                 .sort((a, b) => b.time - a.time)
+              // Geen kanaalbestanden gevonden → toon welke kanalen er wél in de map staan.
+              if (intelDebug.files === 0) {
+                return <div style={{ fontSize: '0.66rem', color: 'var(--gold)', padding: '0.5rem 0.7rem', background: 'rgba(240,192,64,0.07)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, lineHeight: 1.6 }}>
+                  📡 Geen van je ingestelde intel-kanalen gevonden in de map. Zet de juiste in <strong>Admin → 📡 Intel-kanalen</strong>.
+                  {intelDebug.available.length > 0 ? (
+                    <div style={{ marginTop: '0.35rem', color: 'var(--text-dim)' }}>
+                      Kanalen in je map: {intelDebug.available.map(c => (
+                        <code key={c} style={{ background: '#05050e', border: '1px solid var(--border)', borderRadius: 2, padding: '0.05rem 0.3rem', margin: '0 0.15rem', color: 'var(--text)' }}>{c}</code>
+                      ))}
+                    </div>
+                  ) : <div style={{ marginTop: '0.35rem', color: 'var(--text-dim)' }}>Geen chatlog-bestanden in deze map — koppel je <code>…\EVE\logs\Chatlogs\</code>-map.</div>}
+                </div>
+              }
               return <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
                 <span style={{ color: nIntel ? 'var(--red)' : 'var(--text-dim)', fontWeight: 600 }}>
                   📡 Intel {nIntel ? `(${nIntel})` : '— geen recente meldingen'}
