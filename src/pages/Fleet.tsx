@@ -74,7 +74,7 @@ interface MemberNode {
 
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
-function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel }: {
+function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel, intelStatus, onConnectIntel }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
   regionMap: Record<string, string>
@@ -82,6 +82,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   memberNodes: MemberNode[]
   bridges: JumpBridge[]
   intel: Record<string, SystemIntel>
+  intelStatus: string
+  onConnectIntel: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -374,11 +376,16 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
             jump bridge
           </span>
         )}
-        {intelMarkers.length > 0 && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--red)' }}>
-            <svg width={10} height={10}><circle cx={5} cy={5} r={5} fill="#e05555" /><text x={5} y={8} textAnchor="middle" fontSize={7} fontWeight={700} fill="#fff">!</text></svg>
-            intel ({intelMarkers.length})
+        {intelStatus === 'live' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: intelMarkers.length ? 'var(--red)' : 'var(--text-dim)' }}>
+            <svg width={10} height={10}><circle cx={5} cy={5} r={5} fill={intelMarkers.length ? '#e05555' : '#445'} /><text x={5} y={8} textAnchor="middle" fontSize={7} fontWeight={700} fill="#fff">!</text></svg>
+            {intelMarkers.length ? `intel (${intelMarkers.length})` : 'intel: geen threats'}
           </span>
+        )}
+        {(intelStatus === 'idle' || intelStatus === 'denied') && (
+          <button onClick={onConnectIntel} style={{ pointerEvents: 'auto', background: 'rgba(0,180,216,0.1)', border: '1px solid rgba(0,180,216,0.4)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.56rem', padding: '0.1rem 0.4rem', cursor: 'pointer' }}>
+            📡 {intelStatus === 'denied' ? 'intel herverbinden' : 'verbind intel-chatlogs'}
+          </button>
         )}
       </div>
     </div>
@@ -396,7 +403,7 @@ export default function Fleet() {
   const [wings, setWings]             = useState<FleetWing[]>([])
   const [loading, setLoading]         = useState(true)
   const [notInFleet, setNotInFleet]   = useState(false)
-  const intel = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
+  const { systems: intel, status: intelStatus, connect: connectIntel } = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
   const [fleetErr, setFleetErr]       = useState<string | null>(null)   // foutreden bij 'niet in fleet'
   const [fleetToken, setFleetToken]   = useState<typeof tokens[number] | null>(null) // het account dat in de fleet zit
   const [myRole, setMyRole]           = useState<string | null>(null)
@@ -876,7 +883,7 @@ export default function Fleet() {
               </div>
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
               <div style={{ flex: 1, minWidth: 320, maxWidth: 680 }}>
-                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} />
+                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} onConnectIntel={connectIntel} />
               </div>
             </div>
           ) : (
@@ -884,7 +891,7 @@ export default function Fleet() {
               {/* Live-kaart ook op de Leden-tab — naast de ledentabel */}
               {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
                 <div style={{ flex: '1 1 420px', minWidth: 320, maxWidth: 600 }}>
-                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} />
+                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} onConnectIntel={connectIntel} />
                 </div>
               )}
               <div style={{ flex: '1 1 380px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>

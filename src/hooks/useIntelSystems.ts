@@ -47,7 +47,20 @@ async function loadDirHandle(): Promise<FileSystemDirectoryHandle | null> {
   })
 }
 
-type PermHandle = FileSystemDirectoryHandle & { queryPermission: (d: object) => Promise<string> }
+async function saveDirHandle(handle: FileSystemDirectoryHandle) {
+  const db = await openIDB()
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('dir', 'readwrite')
+    tx.objectStore('dir').put(handle, 'chatlogs')
+    tx.oncomplete = () => resolve()
+    tx.onerror    = () => reject(tx.error)
+  })
+}
+
+type PermHandle = FileSystemDirectoryHandle & {
+  queryPermission:   (d: object) => Promise<string>
+  requestPermission: (d: object) => Promise<string>
+}
 
 async function findFiles(dir: FileSystemDirectoryHandle, prefixes: string[]): Promise<FileSystemFileHandle[]> {
   const out: FileSystemFileHandle[] = []
@@ -83,61 +96,93 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
   }
 }
 
-export function useIntelSystems(active: boolean): Record<string, SystemIntel> {
+export type IntelStatus = 'unsupported' | 'idle' | 'denied' | 'live'
+
+export interface IntelResult {
+  systems: Record<string, SystemIntel>
+  status: IntelStatus
+  connect: () => Promise<void>
+}
+
+export function useIntelSystems(active: boolean): IntelResult {
   const { intelChannels } = useSiteConfig()
   const prefixes = (intelChannels.length ? intelChannels : DEFAULT_INTEL_CHANNELS).map(c => c.prefix)
   const prefixKey = prefixes.join('|')                      // stabiele dep voor de effect
 
-  const [intel, setIntel] = useState<Record<string, SystemIntel>>({})
-  const latest   = useRef(new Map<string, SystemIntel>())   // system → meest recente melding
-  const lastSize = useRef(new Map<string, number>())
+  const [intel, setIntel]   = useState<Record<string, SystemIntel>>({})
+  const [status, setStatus] = useState<IntelStatus>(INTEL_SUPPORTED ? 'idle' : 'unsupported')
+  const latest    = useRef(new Map<string, SystemIntel>())  // system → meest recente melding
+  const lastSize  = useRef(new Map<string, number>())
+  const handleRef = useRef<FileSystemDirectoryHandle | null>(null)
+
+  async function readOnce() {
+    const handle = handleRef.current
+    if (!handle) return
+    const watch = prefixKey ? prefixKey.split('|') : []
+    try {
+      const files = await findFiles(handle, watch)
+      for (const fh of files) {
+        const file = await fh.getFile()
+        const prev = lastSize.current.get(file.name) ?? 0
+        if (file.size === prev) continue
+        lastSize.current.set(file.name, file.size)
+        const text = await file.text()
+        for (const line of text.split('\n')) {
+          const e = parseLine(line.trim())
+          if (!e) continue
+          const cur = latest.current.get(e.system)
+          if (!cur || e.time >= cur.time) latest.current.set(e.system, e)
+        }
+      }
+    } catch { setStatus('denied') }                 // map weg of permissie ingetrokken
+
+    const cutoff = Date.now() - MAX_AGE             // verlopen meldingen opruimen
+    const snap: Record<string, SystemIntel> = {}
+    for (const [sys, e] of latest.current) {
+      if (e.time < cutoff) latest.current.delete(sys)
+      else snap[sys] = e
+    }
+    setIntel(snap)
+  }
+
+  // Verbind (vereist een user-gesture): herverbind de opgeslagen map, of kies er één.
+  async function connect() {
+    if (!INTEL_SUPPORTED) return
+    try {
+      let h = await loadDirHandle()
+      if (h) {
+        const perm = await (h as PermHandle).requestPermission({ mode: 'read' })
+        if (perm !== 'granted') h = null
+      }
+      if (!h) {
+        h = await (window as unknown as { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> })
+          .showDirectoryPicker({ mode: 'read' })
+        await saveDirHandle(h)
+      }
+      handleRef.current = h
+      lastSize.current.clear()
+      setStatus('live')
+      readOnce()
+    } catch { /* geannuleerd */ }
+  }
 
   useEffect(() => {
     if (!active || !INTEL_SUPPORTED) return
     let stop = false
-    let handle: FileSystemDirectoryHandle | null = null
-    const watch = prefixKey ? prefixKey.split('|') : []
 
-    async function poll() {
-      if (!handle || stop) return
-      try {
-        const files = await findFiles(handle, watch)
-        for (const fh of files) {
-          const file = await fh.getFile()
-          const prev = lastSize.current.get(file.name) ?? 0
-          if (file.size === prev) continue
-          lastSize.current.set(file.name, file.size)
-          const text = await file.text()
-          for (const line of text.split('\n')) {
-            const e = parseLine(line.trim())
-            if (!e) continue
-            const cur = latest.current.get(e.system)
-            if (!cur || e.time >= cur.time) latest.current.set(e.system, e)
-          }
-        }
-      } catch { /* map weg of permissie ingetrokken */ }
-
-      // Verlopen meldingen opruimen + snapshot naar de UI.
-      const cutoff = Date.now() - MAX_AGE
-      const snap: Record<string, SystemIntel> = {}
-      for (const [sys, e] of latest.current) {
-        if (e.time < cutoff) latest.current.delete(sys)
-        else snap[sys] = e
-      }
-      if (!stop) setIntel(snap)
-    }
-
+    // Probeer stil te verbinden met een al-toegestane map (bv. via de Intel-pagina).
     loadDirHandle().then(async h => {
-      if (!h) return
+      if (stop) return
+      if (!h) { setStatus('idle'); return }
       const perm = await (h as PermHandle).queryPermission({ mode: 'read' })
-      if (perm !== 'granted') return                // koppelen/herverbinden gebeurt op de Intel-pagina
-      handle = h
-      poll()
+      if (perm === 'granted') { handleRef.current = h; setStatus('live'); readOnce() }
+      else setStatus('denied')
     }).catch(() => {})
 
-    const iv = setInterval(poll, 3000)
+    const iv = setInterval(() => { if (!stop) readOnce() }, 3000)
     return () => { stop = true; clearInterval(iv) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, prefixKey])
 
-  return intel
+  return { systems: intel, status, connect }
 }
