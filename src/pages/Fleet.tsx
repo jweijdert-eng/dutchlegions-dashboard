@@ -181,17 +181,25 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     }
     ctx.stroke()
 
-    // 1b) Jump bridges (Ansiblex) — blauwe gestippelde lijn, los van de stargates.
+    // 1b) Jump bridges (Ansiblex) — groene gebogen lijn (zoals de in-game route).
     if (bridgeCoords.length) {
       ctx.save()
-      ctx.strokeStyle = 'rgba(0,180,216,0.85)'
-      ctx.lineWidth = Math.min(2, 0.8 + tf.k * 0.06)
-      ctx.setLineDash([5, 4])
+      ctx.strokeStyle = 'rgba(82,224,128,0.95)'
+      ctx.lineWidth = Math.min(2.4, 1 + tf.k * 0.07)
+      ctx.lineCap = 'round'
+      ctx.shadowColor = 'rgba(82,224,128,0.7)'
+      ctx.shadowBlur = 4
       ctx.beginPath()
       for (const [ca, cb] of bridgeCoords) {
         const [ax, ay] = scr(ca); const [bx, by] = scr(cb)
         if ((ax < 0 && bx < 0) || (ax > W && bx > W) || (ay < 0 && by < 0) || (ay > H && by > H)) continue
-        ctx.moveTo(ax, ay); ctx.lineTo(bx, by)
+        // Boog: controlepunt loodrecht op het midden van de verbinding.
+        const mx = (ax + bx) / 2, my = (ay + by) / 2
+        const dx = bx - ax, dy = by - ay
+        const len = Math.hypot(dx, dy) || 1
+        const off = len * 0.16
+        ctx.moveTo(ax, ay)
+        ctx.quadraticCurveTo(mx - (dy / len) * off, my + (dx / len) * off, bx, by)
       }
       ctx.stroke()
       ctx.restore()
@@ -361,8 +369,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
         <span>sleep = pan · scroll = zoom</span>
         {bridgeCoords.length > 0 && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--blue)' }}>
-            <svg width={18} height={6}><line x1={0} y1={3} x2={18} y2={3} stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="4 3" /></svg>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--green)' }}>
+            <svg width={18} height={8}><path d="M1 7 Q9 -1 17 5" fill="none" stroke="#52e080" strokeWidth={1.6} strokeLinecap="round" /></svg>
             jump bridge
           </span>
         )}
