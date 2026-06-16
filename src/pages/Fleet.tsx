@@ -90,6 +90,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const W = 660, H = 760, PAD = 30
   const [tf, setTf] = useState({ k: 1, x: 0, y: 0 })
   const [hoverSys, setHoverSys] = useState<string | null>(null)   // intel-marker waar de muis op staat
+  const [sovMap, setSovMap]     = useState<Record<number, number>>({})   // systemId → sov-alliance
+  const [allyNames, setAllyNames] = useState<Record<number, string>>({}) // allianceId → naam (lazy)
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const didAuto = useRef(false)
 
@@ -231,6 +233,28 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
   }, [base, memberNodes, coords])
 
+  // Sovereignty-kaart één keer ophalen zodra er intel is → header toont de sov-houder.
+  useEffect(() => {
+    if (Object.keys(intel).length === 0 || Object.keys(sovMap).length) return
+    fetch('https://esi.evetech.net/latest/sovereignty/map/?datasource=tranquility')
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: Array<{ system_id: number; alliance_id?: number }>) => {
+        const m: Record<number, number> = {}
+        for (const row of rows) if (row.alliance_id) m[row.system_id] = row.alliance_id
+        setSovMap(m)
+      }).catch(() => {})
+  }, [intel, sovMap])
+
+  // Naam van de sov-alliance van het gehoverde systeem ophalen (gecached).
+  useEffect(() => {
+    if (!hoverSys) return
+    const sid = nameToId.get(hoverSys)
+    const aid = sid ? sovMap[Number(sid)] : undefined
+    if (aid && !allyNames[aid]) {
+      resolveNames([aid]).then(map => { const n = map.get(aid); if (n) setAllyNames(p => ({ ...p, [aid]: n })) }).catch(() => {})
+    }
+  }, [hoverSys, sovMap, nameToId, allyNames])
+
   // Zoom met scrollwiel — native non-passive listener: React koppelt onWheel
   // passive, waardoor e.preventDefault() niet werkt en de pagina meescrollt.
   useEffect(() => {
@@ -360,15 +384,10 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const s = Math.max(0, Math.floor((Date.now() - t) / 1000))
           return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
         }
-        // Systeem-security (voor de kleur) + dominante alliance (header).
+        // Systeem-security (voor de kleur) + sov-houder (header).
         const sid = nameToId.get(hm.sys)
         const sec = sid ? sysMeta[sid]?.[1] ?? 0 : 0
-        const allyCount = new Map<number, { name?: string; n: number }>()
-        for (const e of hm.group.entries) {
-          const aid = e.enemies?.[0]?.allianceId
-          if (aid) { const cur = allyCount.get(aid) ?? { name: e.enemies?.[0]?.allianceName, n: 0 }; cur.n++; allyCount.set(aid, cur) }
-        }
-        const dom = [...allyCount.entries()].sort((a, b) => b[1].n - a[1].n)[0]
+        const sovAlly = sid ? sovMap[Number(sid)] : undefined
         return (
           <div style={{
             position: 'absolute', left: `${(hx / W) * 100}%`, top: `${(hy / H) * 100}%`,
@@ -384,11 +403,11 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               <span style={{ fontSize: '0.62rem', color: secColor(sec) }}>{(Math.round(sec * 10) / 10).toFixed(1)}</span>
               <span style={{ marginLeft: 'auto', fontSize: '0.66rem', fontVariantNumeric: 'tabular-nums', color: col, fontWeight: 700 }}>{mmss(hm.group.time)}</span>
             </div>
-            {/* Dominante alliance */}
-            {dom && (
+            {/* Sov-houder van het systeem */}
+            {sovAlly && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.55rem', borderBottom: `1px solid ${col}`, background: hm.threat ? 'rgba(224,85,85,0.1)' : 'rgba(240,160,48,0.1)' }}>
-                <EveImage category="alliances" id={dom[0]} variation="logo" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dom[1].name ?? 'Onbekende alliance'}</span>
+                <EveImage category="alliances" id={sovAlly} variation="logo" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{allyNames[sovAlly] ?? 'Sov-houder…'}</span>
               </div>
             )}
             {/* Rijen: portret + schip · naam + corp/alliance-tickers */}
@@ -414,8 +433,9 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                     <span style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: e.threat === 'threat' ? '#ff7676' : e.threat === 'clear' ? 'var(--green)' : '#f0c040' }}>
                       {name}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.55rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={32} px={12} style={{ borderRadius: 1, flexShrink: 0 }} />}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.55rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={32} px={16} style={{ borderRadius: 1, flexShrink: 0 }} />}
+                      {allyId && <EveImage category="alliances" id={allyId} variation="logo" size={32} px={16} style={{ borderRadius: 1, flexShrink: 0 }} />}
                       {tickers || e.message}
                     </span>
                   </span>
