@@ -202,26 +202,32 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
     setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
   }, [base, memberNodes, coords])
 
+  // Zoom met scrollwiel — native non-passive listener: React koppelt onWheel
+  // passive, waardoor e.preventDefault() niet werkt en de pagina meescrollt.
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      const mx = (e.clientX - r.left) * (W / r.width)
+      const my = (e.clientY - r.top) * (H / r.height)
+      const f = e.deltaY < 0 ? 1.18 : 1 / 1.18
+      setTf(t => {
+        const k = Math.max(0.8, Math.min(40, t.k * f))
+        const fr = k / t.k
+        return { k, x: mx - (mx - t.x) * fr, y: my - (my - t.y) * fr }
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [base])
+
   if (!base) {
     return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Kaart laden…</div>
   }
   const maxCount = Math.max(...memberNodes.map(n => n.members.length), 1)
 
-  // Muis → interne kaart-coördinaten (CSS-schaal compenseren).
-  const toLocal = (clientX: number, clientY: number): [number, number] => {
-    const r = wrapRef.current!.getBoundingClientRect()
-    return [(clientX - r.left) * (W / r.width), (clientY - r.top) * (H / r.height)]
-  }
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault()
-    const [mx, my] = toLocal(e.clientX, e.clientY)
-    const f = e.deltaY < 0 ? 1.18 : 1 / 1.18
-    setTf(t => {
-      const k = Math.max(0.8, Math.min(40, t.k * f))
-      const fr = k / t.k
-      return { k, x: mx - (mx - t.x) * fr, y: my - (my - t.y) * fr }
-    })
-  }
   const onDown = (e: React.MouseEvent) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: tf.x, oy: tf.y } }
   const onMove = (e: React.MouseEvent) => {
     const d = drag.current
@@ -242,7 +248,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
   const memLine    = memFont * 1.18
 
   return (
-    <div ref={wrapRef} onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
+    <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
