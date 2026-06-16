@@ -9,7 +9,7 @@ import {
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
 import { useSiteConfig, type JumpBridge } from '../hooks/useSiteConfig'
-import { useIntelSystems, type SystemIntel } from '../hooks/useIntelSystems'
+import { useIntelSystems, type SystemIntelGroup } from '../hooks/useIntelSystems'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
@@ -81,7 +81,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   adj: Record<string, number[]>
   memberNodes: MemberNode[]
   bridges: JumpBridge[]
-  intel: Record<string, SystemIntel>
+  intel: Record<string, SystemIntelGroup>
   intelStatus: string
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -144,12 +144,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 
   // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
-    const out: Array<{ c: [number, number]; sys: string; threat: boolean; info: SystemIntel }> = []
-    for (const [sys, info] of Object.entries(intel)) {
-      if (info.threat === 'clear') continue
+    const out: Array<{ c: [number, number]; sys: string; threat: boolean; group: SystemIntelGroup }> = []
+    for (const [sys, group] of Object.entries(intel)) {
+      if (group.threat === 'clear') continue
       const id = nameToId.get(sys)
       const c = id && coords[id]
-      if (c) out.push({ c, sys, threat: info.threat === 'threat', info })
+      if (c) out.push({ c, sys, threat: group.threat === 'threat', group })
     }
     return out
   }, [intel, nameToId, coords])
@@ -323,7 +323,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           )
         })}
         {/* Intel — rood !-icoon bij threat, oranje bij onbekende sighting (uit de intel-chats) */}
-        {intelMarkers.map(({ c, sys, threat, info }) => {
+        {intelMarkers.map(({ c, sys, threat, group }) => {
           const [x, y] = screen(c[0], c[1])
           if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return null
           const ir = Math.max(5, markerFont * 0.7)
@@ -341,60 +341,66 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               </circle>
               <circle cx={x} cy={y} r={ir} fill={col} stroke="#05050e" strokeWidth={ir * 0.12} />
               <text x={x} y={y + ir * 0.36} textAnchor="middle" fontSize={ir * 1.1} fontWeight={700} fill="#fff">!</text>
-              {info.count > 0 && (
-                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill={col} stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{info.count}+</text>
+              {group.count > 0 && (
+                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill={col} stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{group.count}+</text>
               )}
             </g>
           )
         })}
       </svg>
-      {/* Intel-tooltip bij hover — rijke info */}
+      {/* Intel-tooltip bij hover — in-game stijl: lijst van meldingen met mm:ss-timer */}
       {(() => {
         const hm = hoverSys ? intelMarkers.find(m => m.sys === hoverSys) : null
         if (!hm) return null
-        const info = hm.info
         const [hx, hy] = screen(hm.c[0], hm.c[1])
         if (hx < 0 || hx > W || hy < 0 || hy > H) return null
-        const mins = Math.floor((Date.now() - info.time) / 60000)
-        const ago = mins < 1 ? 'zojuist' : `${mins}m geleden`
         const col = hm.threat ? 'var(--red)' : '#f0a030'
         const onLeft = hx > W * 0.6
+        const mmss = (t: number) => {
+          const s = Math.max(0, Math.floor((Date.now() - t) / 1000))
+          return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+        }
         return (
           <div style={{
             position: 'absolute', left: `${(hx / W) * 100}%`, top: `${(hy / H) * 100}%`,
             transform: `translate(${onLeft ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
-            zIndex: 7, pointerEvents: 'none', width: 230,
-            background: 'rgba(8,10,20,0.96)', border: `1px solid ${col}`, borderRadius: 4,
-            padding: '0.5rem 0.6rem', boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            zIndex: 7, pointerEvents: 'none', width: 250,
+            background: 'rgba(6,8,16,0.97)', border: `1px solid ${col}`, borderRadius: 4,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.6)', overflow: 'hidden',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-              <span style={{ fontWeight: 700, color: col, fontSize: '0.8rem' }}>{hm.sys}</span>
-              <span style={{ fontSize: '0.58rem', fontWeight: 700, color: col, border: `1px solid ${col}`, borderRadius: 2, padding: '0.05rem 0.3rem' }}>
-                {hm.threat ? 'THREAT' : 'SIGHTING'}{info.count > 0 ? ` · ${info.count}+` : ''}
-              </span>
+            {/* Systeem-header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', borderBottom: `1px solid ${col}`, background: hm.threat ? 'rgba(224,85,85,0.12)' : 'rgba(240,160,48,0.12)' }}>
+              <span style={{ fontWeight: 700, color: col, fontSize: '0.78rem' }}>{hm.sys}</span>
+              <span style={{ fontSize: '0.55rem', fontWeight: 700, color: col }}>{hm.group.entries.length} melding(en)</span>
             </div>
-            {/* Gemelde vijand: schepen */}
-            {info.ships.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginBottom: '0.3rem' }}>
-                {info.ships.slice(0, 6).map(s => (
-                  <span key={s.typeId} title={s.name}><EveImage category="types" id={s.typeId} variation="icon" size={32} px={22} /></span>
-                ))}
-              </div>
-            )}
-            {/* Gemelde vijand: character / corp / alliance (uit de melding) */}
-            {info.enemies && info.enemies.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.3rem' }}>
-                {info.enemies.map(en => (
-                  <span key={`${en.kind}-${en.id}`} title={en.name} style={{ display: 'inline-flex' }}>
-                    <EveImage category={`${en.kind}s` as 'characters' | 'corporations' | 'alliances'} id={en.id} variation={en.kind === 'character' ? 'portrait' : 'logo'} size={32} px={20} round={en.kind === 'character'} style={en.kind !== 'character' ? { borderRadius: 2 } : undefined} />
+            {/* Rijen: icoon · naam · mm:ss */}
+            {hm.group.entries.map(e => {
+              const en = e.enemies && e.enemies[0]
+              const ship = e.ships[0]
+              return (
+                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.55rem', borderBottom: '1px solid rgba(40,46,70,0.5)' }}>
+                  {/* Icoon: vijand-entiteit > schip > waarschuwing */}
+                  <span style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {en ? (
+                      <EveImage category={`${en.kind}s` as 'characters' | 'corporations' | 'alliances'} id={en.id} variation={en.kind === 'character' ? 'portrait' : 'logo'} size={32} px={24} round={en.kind === 'character'} style={en.kind !== 'character' ? { borderRadius: 2 } : undefined} />
+                    ) : ship ? (
+                      <EveImage category="types" id={ship.typeId} variation="icon" size={32} px={24} />
+                    ) : (
+                      <span style={{ color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>
+                    )}
                   </span>
-                ))}
-              </div>
-            )}
-            <div style={{ fontSize: '0.68rem', color: 'var(--text)', lineHeight: 1.4, marginBottom: '0.35rem', wordBreak: 'break-word' }}>{info.message}</div>
-            <div style={{ fontSize: '0.56rem', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>via {info.reporter}</span><span>{ago}</span>
-            </div>
+                  {/* Naam + melding */}
+                  <span style={{ flex: 1, minWidth: 0, fontSize: '0.66rem', color: 'var(--text)', overflow: 'hidden' }}>
+                    <span style={{ display: 'block', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: e.threat === 'threat' ? '#ffb0b0' : e.threat === 'clear' ? 'var(--green)' : 'var(--text)' }}>
+                      {en ? en.name : ship ? ship.name : e.message}
+                    </span>
+                    <span style={{ display: 'block', fontSize: '0.56rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.message}</span>
+                  </span>
+                  {/* mm:ss timer */}
+                  <span style={{ flexShrink: 0, fontSize: '0.62rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-dim)' }}>{mmss(e.time)}</span>
+                </div>
+              )
+            })}
           </div>
         )
       })()}
@@ -939,7 +945,7 @@ export default function Fleet() {
                 {list.map(i => {
                   const mins = Math.floor((Date.now() - i.time) / 60000)
                   return (
-                    <span key={i.system} title={i.message}
+                    <span key={i.system} title={i.entries[0]?.message}
                       style={{ background: i.threat === 'threat' ? 'rgba(224,85,85,0.15)' : 'rgba(240,160,48,0.15)', color: i.threat === 'threat' ? 'var(--red)' : '#f0a030', border: `1px solid ${i.threat === 'threat' ? 'rgba(224,85,85,0.4)' : 'rgba(240,160,48,0.4)'}`, borderRadius: 3, padding: '0.1rem 0.4rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
                       {i.system}{i.count > 0 ? ` ${i.count}+` : ''} <span style={{ opacity: 0.6, fontWeight: 400 }}>{mins}m</span>
                     </span>

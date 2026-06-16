@@ -9,14 +9,24 @@ import { extractShips, SHIP_TYPE_IDS } from '../utils/intelShips'
 // Werkt alleen op Chrome/Edge (File System Access API) en als de map al gekoppeld is.
 
 export interface SystemIntel {
+  id: string                                      // uniek per chatregel (dedup)
   system: string                                  // hoofdletters, zoals op de kaart
   threat: 'clear' | 'threat' | 'unknown'
-  time: number                                    // ms (laatste melding)
+  time: number                                    // ms van deze melding
   count: number                                   // gemeld aantal (pilots/schepen), 0 = onbekend
   message: string
-  reporter: string                                // wie het meldde (alleen als tekst)
+  reporter: string                                // wie het meldde
   ships: { typeId: number; name: string }[]       // herkende scheepstypes in de melding
   enemies?: EnemyEntity[]                          // gemelde vijand (uit de melding geresolved)
+}
+
+// Eén systeem met zijn recente meldingen (nieuwste eerst), voor de in-game-stijl lijst.
+export interface SystemIntelGroup {
+  system: string
+  threat: 'clear' | 'threat' | 'unknown'          // van de nieuwste melding
+  time: number                                    // nieuwste melding
+  count: number                                   // van de nieuwste melding
+  entries: SystemIntel[]
 }
 
 export interface EnemyEntity { kind: 'character' | 'corporation' | 'alliance'; id: number; name: string }
@@ -145,6 +155,7 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
   const count    = Number(COUNT_RE.exec(message)?.[1] ?? 0)
 
   return {
+    id: `${reporter}|${rawTime}|${message}`,
     system: sysMatch[1].toUpperCase(),
     threat: isClear ? 'clear' : isThreat ? 'threat' : 'unknown',
     time, count, message, reporter,
@@ -157,12 +168,14 @@ export type IntelStatus = 'unsupported' | 'idle' | 'denied' | 'live'
 export interface IntelDebug { files: number; entries: number; available: string[] }   // diagnose: gematchte bestanden, geparste meldingen, en álle aanwezige kanaalnamen
 
 export interface IntelResult {
-  systems: Record<string, SystemIntel>
+  systems: Record<string, SystemIntelGroup>
   status: IntelStatus
   connect: () => Promise<void>
   chooseFolder: () => Promise<void>
   debug: IntelDebug
 }
+
+const MAX_ENTRIES = 10                            // max meldingen per systeem in de lijst
 
 // EVE-chatlogs zijn doorgaans UTF-16LE (met BOM). file.text() decodeert als UTF-8
 // → onleesbaar. Hier kijken we naar de BOM en decoderen we juist.
@@ -181,10 +194,10 @@ export function useIntelSystems(active: boolean): IntelResult {
   const prefixes = cfg.length ? cfg : DEFAULT_INTEL_CHANNELS.map(c => c.prefix)
   const prefixKey = prefixes.join('|')                      // stabiele dep voor de effect
 
-  const [intel, setIntel]   = useState<Record<string, SystemIntel>>({})
+  const [intel, setIntel]   = useState<Record<string, SystemIntelGroup>>({})
   const [status, setStatus] = useState<IntelStatus>(INTEL_SUPPORTED ? 'idle' : 'unsupported')
   const [debug, setDebug]   = useState<IntelDebug>({ files: 0, entries: 0, available: [] })
-  const latest    = useRef(new Map<string, SystemIntel>())  // system → meest recente melding
+  const bysystem  = useRef(new Map<string, Map<string, SystemIntel>>())  // system → (id → melding)
   const lastSize  = useRef(new Map<string, number>())
   const entryCount = useRef(0)                              // cumulatief geparste meldingen-met-systeem
   const handleRef = useRef<FileSystemDirectoryHandle | null>(null)
@@ -209,20 +222,28 @@ export function useIntelSystems(active: boolean): IntelResult {
           const e = parseLine(line.trim())
           if (!e) continue
           entryCount.current++
-          const cur = latest.current.get(e.system)
-          if (!cur || e.time >= cur.time) latest.current.set(e.system, e)
+          let inner = bysystem.current.get(e.system)
+          if (!inner) { inner = new Map(); bysystem.current.set(e.system, inner) }
+          if (!inner.has(e.id)) inner.set(e.id, e)   // dedup op regel-id
         }
       }
     } catch { setStatus('denied') }                 // map weg of permissie ingetrokken
 
     const cutoff = Date.now() - MAX_AGE             // verlopen meldingen opruimen
-    const snap: Record<string, SystemIntel> = {}
+    const snap: Record<string, SystemIntelGroup> = {}
     const unresolved: string[] = []
-    for (const [sys, e] of latest.current) {
-      if (e.time < cutoff) { latest.current.delete(sys); continue }
-      const enemies = _enemyCache.get(e.message)
-      snap[sys] = enemies ? { ...e, enemies } : e
-      if (!_enemyCache.has(e.message)) unresolved.push(e.message)
+    for (const [sys, inner] of bysystem.current) {
+      for (const [id, e] of inner) if (e.time < cutoff) inner.delete(id)
+      if (inner.size === 0) { bysystem.current.delete(sys); continue }
+      // nieuwste eerst, gecapt; vijand-resolutie per melding aanhaken
+      const entries = [...inner.values()].sort((a, b) => b.time - a.time).slice(0, MAX_ENTRIES)
+        .map(e => {
+          const enemies = _enemyCache.get(e.message)
+          if (!_enemyCache.has(e.message)) unresolved.push(e.message)
+          return enemies ? { ...e, enemies } : e
+        })
+      const top = entries[0]
+      snap[sys] = { system: sys, threat: top.threat, time: top.time, count: top.count, entries }
     }
     setIntel(snap)
     setDebug({ files: filesMatched, entries: entryCount.current, available })
@@ -246,7 +267,7 @@ export function useIntelSystems(active: boolean): IntelResult {
       handleRef.current = h
       lastSize.current.clear()
       entryCount.current = 0
-      latest.current.clear()
+      bysystem.current.clear()
       setStatus('live')
       readOnce()
     } catch { /* geannuleerd */ }
@@ -261,7 +282,7 @@ export function useIntelSystems(active: boolean): IntelResult {
       await saveDirHandle(h)
       handleRef.current = h
       lastSize.current.clear()
-      latest.current.clear()
+      bysystem.current.clear()
       entryCount.current = 0
       setStatus('live')
       readOnce()
