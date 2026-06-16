@@ -165,7 +165,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
     const c = fc && coords[String(fc.sid)]
     if (!c) return
     didAuto.current = true
-    const k = 6
+    const k = 9
     const [bx, by] = base(c[0], c[1])
     setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
   }, [base, memberNodes, coords])
@@ -235,6 +235,14 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
               <text x={x + r + 4} y={y + 2.5} fontSize={6.5} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.55} paintOrder="stroke">
                 {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
               </text>
+              {/* Member-namen onder de marker */}
+              {n.members.slice(0, 8).map((m, i) => (
+                <text key={m.character_id} x={x} y={y + r + 9 + i * 6.5} textAnchor="middle" fontSize={5.5}
+                  fill="rgba(225,232,245,0.92)" stroke="#05050e" strokeWidth={0.4} paintOrder="stroke">{m.characterName}</text>
+              ))}
+              {n.members.length > 8 && (
+                <text x={x} y={y + r + 9 + 8 * 6.5} textAnchor="middle" fontSize={5.5} fill="var(--text-dim)" stroke="#05050e" strokeWidth={0.4} paintOrder="stroke">+{n.members.length - 8} meer</text>
+              )}
             </g>
           )
         })}
@@ -249,7 +257,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           const fc = memberNodes.find(n => n.isFc) ?? memberNodes[0]
           const c = fc && coords[String(fc.sid)]
           if (!c) { setTf({ k: 1, x: 0, y: 0 }); return }
-          const k = 6, [bx, by] = base(c[0], c[1])
+          const k = 9, [bx, by] = base(c[0], c[1])
           setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
         }} title="Centreer op FC"
           style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⌖</button>
@@ -715,7 +723,7 @@ export default function Fleet() {
               {accessError}
             </div>
           ) : view === 'map' ? (
-            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
               {/* Per-systeem overzicht — compact, links */}
               <div style={{ flex: '0 0 270px', maxWidth: 300, maxHeight: 760, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>
                 {fleetMap.memberNodes.map(n => (
@@ -739,7 +747,7 @@ export default function Fleet() {
                 ))}
               </div>
               {/* Kaart — rechts, begrensd zodat 'ie niet enorm wordt */}
-              <div style={{ flex: 1, minWidth: 320, maxWidth: 560 }}>
+              <div style={{ flex: 1, minWidth: 320, maxWidth: 620, marginLeft: 'auto' }}>
                 <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} />
               </div>
             </div>
