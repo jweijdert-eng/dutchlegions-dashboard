@@ -279,7 +279,9 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       for (const url of e.message.match(DSCAN_RE) ?? []) {
         if (!dscan[url] && !dscanFetching.current.has(url)) {
           dscanFetching.current.add(url)
-          fetchDscanItems(url).then(groups => setDscan(p => ({ ...p, [url]: groups }))).catch(() => {})
+          fetchDscanItems(url)
+            .then(groups => setDscan(p => ({ ...p, [url]: groups })))
+            .catch(() => setDscan(p => ({ ...p, [url]: [] })))   // fout → stop met laden
         }
       }
     }
@@ -457,7 +459,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               const isChar = en?.kind === 'character'
               const corpId = isChar ? en!.corpId : en?.kind === 'corporation' ? en.id : undefined
               const allyId = isChar ? en!.allianceId : en?.kind === 'alliance' ? en.id : undefined
-              const name = en ? en.name : ship ? ship.name : e.message
+              const cleaned = e.message.replace(DSCAN_RE, '').replace(new RegExp(`\\b${e.system}\\b`, 'ig'), '').replace(/\s+/g, ' ').trim()
+              const name = en ? en.name : ship ? ship.name : (cleaned || (e.message.match(DSCAN_RE) ? 'D-Scan' : e.message))
               const allyName = en?.allianceName
               const structs = STRUCT_KEYWORDS.filter(s => structTypes[s.name] && s.kw.test(e.message))
               const nameCol = e.threat === 'threat' ? '#ff7676' : e.threat === 'clear' ? 'var(--green)' : '#f0c040'
@@ -497,7 +500,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                     const groups = dscan[url]
                     if (!groups) return <div key={url} style={{ fontSize: '0.55rem', color: 'var(--text-dim)', marginTop: 3, paddingLeft: '0.5rem' }}>◎ dscan laden…</div>
                     const ships = groups.filter(g => g.typeId)
-                    if (!ships.length) return null
+                    if (!ships.length) return <div key={url} style={{ fontSize: '0.55rem', color: 'var(--text-dim)', marginTop: 3, paddingLeft: '0.5rem' }}>◎ dscan — geen data (open de link in de chat)</div>
                     return (
                       <div key={url} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: 4, paddingLeft: '0.5rem' }}>
                         {ships.slice(0, 14).map(g => (
