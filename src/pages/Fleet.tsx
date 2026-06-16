@@ -201,6 +201,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
   }
   const endDrag = () => { drag.current = null }
 
+  // Labels meeschalen met de zoom (vaste SVG-units → anders blijven ze even klein bij inzoomen).
+  const sysFont    = Math.min(16, 3 + tf.k * 0.45)
+  const memFont    = Math.min(15, 3 + tf.k * 0.42)
+  const markerFont = Math.min(17, 4 + tf.k * 0.48)
+  const memLine    = memFont * 1.18
+
   return (
     <div ref={wrapRef} onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
@@ -217,7 +223,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           const [x, y] = screen(c[0], c[1])
           if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
           const name = sysMeta[sid]?.[0]; if (!name) return null
-          return <text key={sid} x={x + 3} y={y - 3} fontSize={5} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={0.35} paintOrder="stroke">{name}</text>
+          return <text key={sid} x={x + sysFont * 0.5} y={y - sysFont * 0.4} fontSize={sysFont} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={sysFont * 0.07} paintOrder="stroke">{name}</text>
         })}
         {/* Fleet-leden — groene ring + aantal (zoals de in-game map) */}
         {memberNodes.map(n => {
@@ -232,16 +238,16 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
               {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1} strokeDasharray="3 2" />}
               <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#05050e" strokeWidth={0.8} />
               <text x={x} y={y + 2.6} textAnchor="middle" fontSize={Math.min(9, r + 1.5)} fontWeight={700} fill="#05050e">{n.members.length}</text>
-              <text x={x + r + 4} y={y + 2.5} fontSize={6.5} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.55} paintOrder="stroke">
+              <text x={x + r + 4} y={y + markerFont * 0.38} fontSize={markerFont} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={markerFont * 0.085} paintOrder="stroke">
                 {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
               </text>
               {/* Member-namen onder de marker */}
               {n.members.slice(0, 8).map((m, i) => (
-                <text key={m.character_id} x={x} y={y + r + 9 + i * 6.5} textAnchor="middle" fontSize={5.5}
-                  fill="rgba(225,232,245,0.92)" stroke="#05050e" strokeWidth={0.4} paintOrder="stroke">{m.characterName}</text>
+                <text key={m.character_id} x={x} y={y + r + memFont + i * memLine} textAnchor="middle" fontSize={memFont}
+                  fill="rgba(225,232,245,0.92)" stroke="#05050e" strokeWidth={memFont * 0.07} paintOrder="stroke">{m.characterName}</text>
               ))}
               {n.members.length > 8 && (
-                <text x={x} y={y + r + 9 + 8 * 6.5} textAnchor="middle" fontSize={5.5} fill="var(--text-dim)" stroke="#05050e" strokeWidth={0.4} paintOrder="stroke">+{n.members.length - 8} meer</text>
+                <text x={x} y={y + r + memFont + 8 * memLine} textAnchor="middle" fontSize={memFont} fill="var(--text-dim)" stroke="#05050e" strokeWidth={memFont * 0.07} paintOrder="stroke">+{n.members.length - 8} meer</text>
               )}
             </g>
           )
