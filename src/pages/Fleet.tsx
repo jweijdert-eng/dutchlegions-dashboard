@@ -179,10 +179,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
   }
   const onDown = (e: React.MouseEvent) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: tf.x, oy: tf.y } }
   const onMove = (e: React.MouseEvent) => {
-    if (!drag.current) return
+    const d = drag.current
+    if (!d) return
     const r = wrapRef.current!.getBoundingClientRect()
     const sc = W / r.width
-    setTf(t => ({ ...t, x: drag.current!.ox + (e.clientX - drag.current!.sx) * sc, y: drag.current!.oy + (e.clientY - drag.current!.sy) * sc }))
+    const cx = e.clientX, cy = e.clientY
+    setTf(t => ({ ...t, x: d.ox + (cx - d.sx) * sc, y: d.oy + (cy - d.sy) * sc }))
   }
   const endDrag = () => { drag.current = null }
 
