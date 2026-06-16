@@ -89,10 +89,28 @@ async function resolveEnemies(message: string) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cands),
     })
     const data = res.ok ? await res.json() : {}
-    const enemies: EnemyEntity[] = []
+    let enemies: EnemyEntity[] = []
     for (const a of data.alliances ?? [])    enemies.push({ kind: 'alliance',    id: a.id, name: a.name })
     for (const c of data.corporations ?? []) enemies.push({ kind: 'corporation', id: c.id, name: c.name })
     for (const ch of data.characters ?? [])  enemies.push({ kind: 'character',   id: ch.id, name: ch.name })
+
+    // Dedup: een kortere naam die een aaneengesloten deel-frase is van een langere
+    // match weglaten ("Sella" valt weg als "SeLLa 4" ook matcht). Langste eerst.
+    const words = (s: string) => s.toLowerCase().split(/\s+/)
+    const subPhrase = (a: string[], b: string[]) => {
+      if (a.length >= b.length) return false
+      for (let i = 0; i + a.length <= b.length; i++) {
+        let ok = true
+        for (let j = 0; j < a.length; j++) if (a[j] !== b[i + j]) { ok = false; break }
+        if (ok) return true
+      }
+      return false
+    }
+    enemies.sort((x, y) => words(y.name).length - words(x.name).length)
+    const kept: EnemyEntity[] = []
+    for (const en of enemies) if (!kept.some(k => subPhrase(words(en.name), words(k.name)))) kept.push(en)
+    enemies = kept
+
     // Elke entiteit verrijken met corp/alliance-id + tickers + alliance-naam.
     await Promise.all(enemies.map(async en => {
       try {
