@@ -330,6 +330,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           return (
             <g key={`intel-${sys}`}>
               <title>{`${sys} — ${msg}`}</title>
+              {/* Pulserende ring (radar-ping) */}
+              <circle cx={x} cy={y} fill="none" stroke={col} strokeWidth={1.5}>
+                <animate attributeName="r" values={`${ir};${ir * 2.8}`} dur="1.5s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.85;0" dur="1.5s" repeatCount="indefinite" />
+                <animate attributeName="stroke-width" values="2;0.4" dur="1.5s" repeatCount="indefinite" />
+              </circle>
               <circle cx={x} cy={y} r={ir} fill={col} stroke="#05050e" strokeWidth={ir * 0.12} />
               <text x={x} y={y + ir * 0.36} textAnchor="middle" fontSize={ir * 1.1} fontWeight={700} fill="#fff">!</text>
               {count > 0 && (
