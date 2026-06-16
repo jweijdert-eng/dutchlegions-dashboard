@@ -202,6 +202,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
   const endDrag = () => { drag.current = null }
 
   // Labels meeschalen met de zoom (vaste SVG-units → anders blijven ze even klein bij inzoomen).
+  const sysFont    = Math.min(16, 3 + tf.k * 0.45)
   const memFont    = Math.min(15, 3 + tf.k * 0.42)
   const markerFont = Math.min(17, 4 + tf.k * 0.48)
   const memLine    = memFont * 1.18
@@ -216,6 +217,13 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           const [x, y] = screen(rg.x, rg.z)
           if (x < 0 || x > W || y < 0 || y > H) return null
           return <text key={rg.rid} x={x} y={y} textAnchor="middle" fontSize={8.5} fill="rgba(205,214,235,0.8)" stroke="#05050e" strokeWidth={0.5} paintOrder="stroke">{rg.name}</text>
+        })}
+        {/* Systeem-labels bij inzoomen (zoals de in-game star map) */}
+        {tf.k >= 5 && Object.entries(coords).map(([sid, c]) => {
+          const [x, y] = screen(c[0], c[1])
+          if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
+          const name = sysMeta[sid]?.[0]; if (!name) return null
+          return <text key={sid} x={x + sysFont * 0.5} y={y - sysFont * 0.4} fontSize={sysFont} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={sysFont * 0.07} paintOrder="stroke">{name}</text>
         })}
         {/* Fleet-leden — groene ring + aantal (zoals de in-game map) */}
         {memberNodes.map(n => {
