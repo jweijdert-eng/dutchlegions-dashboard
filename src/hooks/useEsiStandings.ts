@@ -14,14 +14,14 @@ interface CharInfo {
   alliance_id?: number
 }
 
-async function fetchContacts(characterId: number, token: string): Promise<Contact[]> {
+// Gepagineerde contacts ophalen voor een willekeurig contacts-endpoint.
+async function fetchContactsAt(path: string, token: string): Promise<Contact[]> {
   const all: Contact[] = []
   let page = 1
   while (true) {
-    const res = await fetch(
-      `${BASE}/characters/${characterId}/contacts/?datasource=tranquility&page=${page}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    const res = await fetch(`${BASE}${path}?datasource=tranquility&page=${page}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (!res.ok) break
     const data: Contact[] = await res.json()
     all.push(...data)
@@ -80,16 +80,21 @@ export function useEsiStandings(token: TokenData | undefined): (name: string) =>
   const nameTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const infoTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Fetch all contacts (character + corp + alliance)
+  // Standings ophalen: alliance- + corp- + persoonlijke contacts samenvoegen.
+  // Volgorde = oplopende prioriteit (persoonlijk overschrijft corp overschrijft alliance).
   useEffect(() => {
     if (!token) return
-    fetchContacts(token.characterId, token.accessToken)
-      .then(list => {
-        const map = new Map<number, number>()
-        list.forEach(c => map.set(c.contact_id, c.standing))
-        setContacts(map)
-      })
-      .catch(() => {})
+    let cancelled = false
+    ;(async () => {
+      const map = new Map<number, number>()
+      let corpId: number | undefined, allianceId: number | undefined
+      try { const info = await fetchCharInfo(token.characterId); corpId = info.corporation_id; allianceId = info.alliance_id } catch { /* ignore */ }
+      if (allianceId) { try { (await fetchContactsAt(`/alliances/${allianceId}/contacts/`, token.accessToken)).forEach(c => map.set(c.contact_id, c.standing)) } catch { /* geen scope/rol */ } }
+      if (corpId)     { try { (await fetchContactsAt(`/corporations/${corpId}/contacts/`, token.accessToken)).forEach(c => map.set(c.contact_id, c.standing)) } catch { /* geen scope/rol */ } }
+      try { (await fetchContactsAt(`/characters/${token.characterId}/contacts/`, token.accessToken)).forEach(c => map.set(c.contact_id, c.standing)) } catch { /* geen scope */ }
+      if (!cancelled) setContacts(map)
+    })()
+    return () => { cancelled = true }
   }, [token?.characterId])
 
   const flushCharInfos = useCallback(async () => {

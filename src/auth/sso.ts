@@ -29,6 +29,9 @@ const SCOPES = [
   'esi-ui.write_waypoint.v1',
   'esi-mail.send_mail.v1',
   'esi-characters.read_medals.v1',
+  'esi-characters.read_contacts.v1',
+  'esi-corporations.read_contacts.v1',
+  'esi-alliances.read_contacts.v1',
 ].join(' ')
 
 function base64url(bytes: Uint8Array): string {
