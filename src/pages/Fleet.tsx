@@ -9,6 +9,7 @@ import {
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
 import { useSiteConfig, type JumpBridge } from '../hooks/useSiteConfig'
+import { useIntelSystems, type SystemIntel } from '../hooks/useIntelSystems'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
@@ -73,13 +74,14 @@ interface MemberNode {
 
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
-function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
+function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
   regionMap: Record<string, string>
   adj: Record<string, number[]>
   memberNodes: MemberNode[]
   bridges: JumpBridge[]
+  intel: Record<string, SystemIntel>
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -119,10 +121,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
     return [...acc.entries()].map(([rid, a]) => ({ rid, name: regionMap[String(rid)] ?? '', x: a.sx / a.n, z: a.sy / a.n }))
   }, [coords, sysMeta, regionMap])
 
-  // Jump bridges → coördinaat-paren (systeem-namen resolven naar id's → coords).
+  // Systeemnaam (hoofdletters) → systeem-id, voor het resolven van bridges en intel.
+  const nameToId = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const [id, meta] of Object.entries(sysMeta)) m.set(meta[0].toUpperCase(), id)
+    return m
+  }, [sysMeta])
+
+  // Jump bridges → coördinaat-paren.
   const bridgeCoords = useMemo(() => {
-    const nameToId = new Map<string, string>()
-    for (const [id, meta] of Object.entries(sysMeta)) nameToId.set(meta[0].toUpperCase(), id)
     const out: Array<[[number, number], [number, number]]> = []
     for (const [a, b] of bridges) {
       const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
@@ -131,7 +138,19 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
       if (ca && cb) out.push([ca, cb])
     }
     return out
-  }, [bridges, sysMeta, coords])
+  }, [bridges, nameToId, coords])
+
+  // Intel-threats → kaart-markers (rood !-icoon + aantal). Alleen threats met coords.
+  const intelMarkers = useMemo(() => {
+    const out: Array<{ c: [number, number]; count: number; msg: string; sys: string }> = []
+    for (const [sys, info] of Object.entries(intel)) {
+      if (info.threat !== 'threat') continue
+      const id = nameToId.get(sys)
+      const c = id && coords[id]
+      if (c) out.push({ c, count: info.count, msg: info.message, sys })
+    }
+    return out
+  }, [intel, nameToId, coords])
 
   // Canvas (her)tekenen bij data- of transform-wijziging.
   useEffect(() => {
@@ -293,6 +312,22 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
             </g>
           )
         })}
+        {/* Intel-threats — rood !-icoon + gemeld aantal (uit de intel-chats) */}
+        {intelMarkers.map(({ c, count, msg, sys }) => {
+          const [x, y] = screen(c[0], c[1])
+          if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return null
+          const ir = Math.max(5, markerFont * 0.7)
+          return (
+            <g key={`intel-${sys}`}>
+              <title>{`${sys} — ${msg}`}</title>
+              <circle cx={x} cy={y} r={ir} fill="#e05555" stroke="#05050e" strokeWidth={ir * 0.12} />
+              <text x={x} y={y + ir * 0.36} textAnchor="middle" fontSize={ir * 1.1} fontWeight={700} fill="#fff">!</text>
+              {count > 0 && (
+                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill="#e05555" stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{count}+</text>
+              )}
+            </g>
+          )
+        })}
       </svg>
       {/* Zoom-knoppen */}
       <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -331,6 +366,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
             jump bridge
           </span>
         )}
+        {intelMarkers.length > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--red)' }}>
+            <svg width={10} height={10}><circle cx={5} cy={5} r={5} fill="#e05555" /><text x={5} y={8} textAnchor="middle" fontSize={7} fontWeight={700} fill="#fff">!</text></svg>
+            intel ({intelMarkers.length})
+          </span>
+        )}
       </div>
     </div>
   )
@@ -347,6 +388,7 @@ export default function Fleet() {
   const [wings, setWings]             = useState<FleetWing[]>([])
   const [loading, setLoading]         = useState(true)
   const [notInFleet, setNotInFleet]   = useState(false)
+  const intel = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
   const [fleetErr, setFleetErr]       = useState<string | null>(null)   // foutreden bij 'niet in fleet'
   const [fleetToken, setFleetToken]   = useState<typeof tokens[number] | null>(null) // het account dat in de fleet zit
   const [myRole, setMyRole]           = useState<string | null>(null)
@@ -826,7 +868,7 @@ export default function Fleet() {
               </div>
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
               <div style={{ flex: 1, minWidth: 320, maxWidth: 680 }}>
-                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} />
+                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} />
               </div>
             </div>
           ) : (
@@ -834,7 +876,7 @@ export default function Fleet() {
               {/* Live-kaart ook op de Leden-tab — naast de ledentabel */}
               {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
                 <div style={{ flex: '1 1 420px', minWidth: 320, maxWidth: 600 }}>
-                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} />
+                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} />
                 </div>
               )}
               <div style={{ flex: '1 1 380px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
