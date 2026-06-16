@@ -73,7 +73,7 @@ interface MemberNode {
   sec: number; region: string; jumps: number | undefined; isFc: boolean
 }
 
-const DSCAN_RE = /https?:\/\/dscan\.info\/v\/[a-f0-9]+/i
+const DSCAN_RE = /https?:\/\/dscan\.info\/v\/[a-f0-9]+/ig   // global → alle links in één melding
 
 // Structuur-trefwoorden in intel → het EVE-type waarvan het icoon getoond wordt.
 const STRUCT_KEYWORDS: { kw: RegExp; name: string }[] = [
@@ -276,10 +276,11 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     const g = intel[hoverSys]
     if (!g) return
     for (const e of g.entries) {
-      const url = e.message.match(DSCAN_RE)?.[0]
-      if (url && !dscan[url] && !dscanFetching.current.has(url)) {
-        dscanFetching.current.add(url)
-        fetchDscanItems(url).then(groups => setDscan(p => ({ ...p, [url]: groups }))).catch(() => {})
+      for (const url of e.message.match(DSCAN_RE) ?? []) {
+        if (!dscan[url] && !dscanFetching.current.has(url)) {
+          dscanFetching.current.add(url)
+          fetchDscanItems(url).then(groups => setDscan(p => ({ ...p, [url]: groups }))).catch(() => {})
+        }
       }
     }
   }, [hoverSys, intel, dscan])
@@ -491,17 +492,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                       <span style={{ fontSize: '0.66rem', color: 'var(--text)' }}>{ship.name}</span>
                     </div>
                   )}
-                  {/* dscan.info-link → schepen op grid */}
-                  {(() => {
-                    const url = e.message.match(DSCAN_RE)?.[0]
-                    const groups = url ? dscan[url] : undefined
-                    if (!url) return null
-                    if (!groups) return <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', marginTop: 3, paddingLeft: '0.5rem' }}>◎ dscan laden…</div>
+                  {/* dscan.info-link(s) → schepen op grid */}
+                  {(e.message.match(DSCAN_RE) ?? []).map(url => {
+                    const groups = dscan[url]
+                    if (!groups) return <div key={url} style={{ fontSize: '0.55rem', color: 'var(--text-dim)', marginTop: 3, paddingLeft: '0.5rem' }}>◎ dscan laden…</div>
                     const ships = groups.filter(g => g.typeId)
                     if (!ships.length) return null
                     return (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: 4, paddingLeft: '0.5rem' }}>
-                        {ships.slice(0, 12).map(g => (
+                      <div key={url} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: 4, paddingLeft: '0.5rem' }}>
+                        {ships.slice(0, 14).map(g => (
                           <span key={g.typeId} title={`${g.typeName} ×${g.count}`} style={{ position: 'relative', flexShrink: 0 }}>
                             <EveImage category="types" id={g.typeId!} variation="icon" size={64} px={28} />
                             {g.count > 1 && <span style={{ position: 'absolute', right: -2, bottom: -2, fontSize: '0.5rem', fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: 2, padding: '0 2px' }}>{g.count}</span>}
@@ -509,7 +508,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                         ))}
                       </div>
                     )
-                  })()}
+                  })}
                 </div>
               )
             })}
