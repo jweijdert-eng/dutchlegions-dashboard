@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSiteConfig } from './useSiteConfig'
 import { DEFAULT_INTEL_CHANNELS } from '../utils/intelChannels'
+import { extractShips } from '../utils/intelShips'
+import { resolveCharacterIds } from '../api/esi'
 
 // Leest dezelfde EVE-chatlogs als de Intel-pagina (via de Chatlogs-map die daar
 // gekoppeld is, opgeslagen in IndexedDB) en levert per systeem de meest recente
@@ -14,6 +16,31 @@ export interface SystemIntel {
   count: number                                   // gemeld aantal (pilots/schepen), 0 = onbekend
   message: string
   reporter: string
+  reporterId?: number                             // character-id van de melder (lazy resolved)
+  corpId?: number                                 // corp van de melder (lazy resolved)
+  allianceId?: number                             // alliance van de melder (lazy resolved)
+  ships: { typeId: number; name: string }[]       // herkende scheepstypes in de melding
+}
+
+// Cache: meldernaam → ids. Buiten de component zodat 'ie sessie-breed blijft.
+interface ReporterIds { charId: number; corpId?: number; allianceId?: number }
+const _reporterCache = new Map<string, ReporterIds | null>()   // null = bezig/onbekend
+
+// Resolve onbekende melders → character-id → corp/alliance-id (gebatcht, gecached).
+async function resolveReporters(names: string[]) {
+  const todo = names.filter(n => !_reporterCache.has(n))
+  if (!todo.length) return
+  todo.forEach(n => _reporterCache.set(n, null))            // markeer als bezig
+  const idMap = await resolveCharacterIds(todo)
+  const found: Array<{ name: string; id: number }> = []
+  for (const [name, id] of idMap) if (id) found.push({ name, id })
+  await Promise.all(found.map(async ({ name, id }) => {
+    try {
+      const r = await fetch(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`)
+        .then(res => (res.ok ? res.json() : null))
+      _reporterCache.set(name, { charId: id, corpId: r?.corporation_id, allianceId: r?.alliance_id })
+    } catch { _reporterCache.set(name, { charId: id }) }
+  }))
 }
 
 const MAX_AGE = 5 * 60 * 1000                     // ouder dan 5 min → van de kaart af
@@ -100,6 +127,7 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
     system: sysMatch[1].toUpperCase(),
     threat: isClear ? 'clear' : isThreat ? 'threat' : 'unknown',
     time, count, message, reporter,
+    ships: extractShips(message),
   }
 }
 
@@ -168,12 +196,16 @@ export function useIntelSystems(active: boolean): IntelResult {
 
     const cutoff = Date.now() - MAX_AGE             // verlopen meldingen opruimen
     const snap: Record<string, SystemIntel> = {}
+    const unresolved: string[] = []
     for (const [sys, e] of latest.current) {
-      if (e.time < cutoff) latest.current.delete(sys)
-      else snap[sys] = e
+      if (e.time < cutoff) { latest.current.delete(sys); continue }
+      const ids = _reporterCache.get(e.reporter)
+      snap[sys] = ids ? { ...e, reporterId: ids.charId, corpId: ids.corpId, allianceId: ids.allianceId } : e
+      if (!_reporterCache.has(e.reporter)) unresolved.push(e.reporter)
     }
     setIntel(snap)
     setDebug({ files: filesMatched, entries: entryCount.current, available })
+    if (unresolved.length) resolveReporters([...new Set(unresolved)])   // ids komen volgende poll mee
   }
 
   // Verbind (vereist een user-gesture): herverbind de opgeslagen map, of kies er één.

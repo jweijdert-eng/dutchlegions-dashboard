@@ -144,12 +144,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 
   // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
-    const out: Array<{ c: [number, number]; count: number; msg: string; sys: string; threat: boolean; reporter: string; time: number }> = []
+    const out: Array<{ c: [number, number]; sys: string; threat: boolean; info: SystemIntel }> = []
     for (const [sys, info] of Object.entries(intel)) {
       if (info.threat === 'clear') continue
       const id = nameToId.get(sys)
       const c = id && coords[id]
-      if (c) out.push({ c, count: info.count, msg: info.message, sys, threat: info.threat === 'threat', reporter: info.reporter, time: info.time })
+      if (c) out.push({ c, sys, threat: info.threat === 'threat', info })
     }
     return out
   }, [intel, nameToId, coords])
@@ -323,7 +323,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           )
         })}
         {/* Intel — rood !-icoon bij threat, oranje bij onbekende sighting (uit de intel-chats) */}
-        {intelMarkers.map(({ c, count, msg, sys, threat }) => {
+        {intelMarkers.map(({ c, sys, threat, info }) => {
           const [x, y] = screen(c[0], c[1])
           if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return null
           const ir = Math.max(5, markerFont * 0.7)
@@ -341,8 +341,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               </circle>
               <circle cx={x} cy={y} r={ir} fill={col} stroke="#05050e" strokeWidth={ir * 0.12} />
               <text x={x} y={y + ir * 0.36} textAnchor="middle" fontSize={ir * 1.1} fontWeight={700} fill="#fff">!</text>
-              {count > 0 && (
-                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill={col} stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{count}+</text>
+              {info.count > 0 && (
+                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill={col} stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{info.count}+</text>
               )}
             </g>
           )
@@ -352,9 +352,10 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       {(() => {
         const hm = hoverSys ? intelMarkers.find(m => m.sys === hoverSys) : null
         if (!hm) return null
+        const info = hm.info
         const [hx, hy] = screen(hm.c[0], hm.c[1])
         if (hx < 0 || hx > W || hy < 0 || hy > H) return null
-        const mins = Math.floor((Date.now() - hm.time) / 60000)
+        const mins = Math.floor((Date.now() - info.time) / 60000)
         const ago = mins < 1 ? 'zojuist' : `${mins}m geleden`
         const col = hm.threat ? 'var(--red)' : '#f0a030'
         const onLeft = hx > W * 0.6
@@ -362,19 +363,32 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           <div style={{
             position: 'absolute', left: `${(hx / W) * 100}%`, top: `${(hy / H) * 100}%`,
             transform: `translate(${onLeft ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
-            zIndex: 7, pointerEvents: 'none', width: 220,
+            zIndex: 7, pointerEvents: 'none', width: 230,
             background: 'rgba(8,10,20,0.96)', border: `1px solid ${col}`, borderRadius: 4,
             padding: '0.5rem 0.6rem', boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
               <span style={{ fontWeight: 700, color: col, fontSize: '0.8rem' }}>{hm.sys}</span>
               <span style={{ fontSize: '0.58rem', fontWeight: 700, color: col, border: `1px solid ${col}`, borderRadius: 2, padding: '0.05rem 0.3rem' }}>
-                {hm.threat ? 'THREAT' : 'SIGHTING'}{hm.count > 0 ? ` · ${hm.count}+` : ''}
+                {hm.threat ? 'THREAT' : 'SIGHTING'}{info.count > 0 ? ` · ${info.count}+` : ''}
               </span>
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text)', lineHeight: 1.4, marginBottom: '0.3rem', wordBreak: 'break-word' }}>{hm.msg}</div>
-            <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>{hm.reporter}</span><span>{ago}</span>
+            {/* Schepen */}
+            {info.ships.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginBottom: '0.3rem' }}>
+                {info.ships.slice(0, 6).map(s => (
+                  <span key={s.typeId} title={s.name}><EveImage category="types" id={s.typeId} variation="icon" size={32} px={22} /></span>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: '0.68rem', color: 'var(--text)', lineHeight: 1.4, marginBottom: '0.35rem', wordBreak: 'break-word' }}>{info.message}</div>
+            {/* Melder: portret + corp + alliance */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.58rem', color: 'var(--text-dim)' }}>
+              {info.reporterId && <EveImage category="characters" id={info.reporterId} variation="portrait" size={32} px={18} round />}
+              {info.corpId && <EveImage category="corporations" id={info.corpId} variation="logo" size={32} px={16} style={{ borderRadius: 2 }} />}
+              {info.allianceId && <EveImage category="alliances" id={info.allianceId} variation="logo" size={32} px={16} style={{ borderRadius: 2 }} />}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.reporter}</span>
+              <span style={{ marginLeft: 'auto', flexShrink: 0 }}>{ago}</span>
             </div>
           </div>
         )
