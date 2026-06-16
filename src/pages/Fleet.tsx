@@ -158,12 +158,13 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 
   // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
-    const out: Array<{ c: [number, number]; sys: string; threat: boolean; group: SystemIntelGroup }> = []
+    const out: Array<{ c: [number, number]; sys: string; threat: boolean; spike: boolean; group: SystemIntelGroup }> = []
     for (const [sys, group] of Object.entries(intel)) {
       if (group.threat === 'clear') continue
       const id = nameToId.get(sys)
       const c = id && coords[id]
-      if (c) out.push({ c, sys, threat: group.threat === 'threat', group })
+      const spike = group.entries.some(e => /\bspike\b/i.test(e.message))
+      if (c) out.push({ c, sys, threat: group.threat === 'threat', spike, group })
     }
     return out
   }, [intel, nameToId, coords])
@@ -345,6 +346,18 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   return (
     <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
+      <style>{`@keyframes spikePulse {0%,100%{box-shadow:0 0 0 0 rgba(240,160,48,0.6);background:rgba(224,85,85,0.92)}50%{box-shadow:0 0 18px 5px rgba(240,160,48,0.9);background:rgba(240,160,48,0.95)}}`}</style>
+      {/* SPIKE-waarschuwing — groot, pulserend rood/oranje */}
+      {intelMarkers.some(m => m.spike) && (
+        <div style={{
+          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 8, pointerEvents: 'none',
+          color: '#fff', fontWeight: 800, fontSize: '0.82rem', letterSpacing: '0.08em', textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+          padding: '0.45rem 1.1rem', borderRadius: 6, border: '2px solid #fff', whiteSpace: 'nowrap',
+          animation: 'spikePulse 0.8s ease-in-out infinite',
+        }}>
+          ⚠ SPIKE — {intelMarkers.filter(m => m.spike).map(m => m.sys).join(', ')}
+        </div>
+      )}
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
         {/* Regio-namen (alleen ver uitgezoomd; bij inzoomen storen ze) */}
@@ -389,7 +402,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           )
         })}
         {/* Intel — rood !-icoon bij threat, oranje bij onbekende sighting (uit de intel-chats) */}
-        {intelMarkers.map(({ c, sys, threat, group }) => {
+        {intelMarkers.map(({ c, sys, threat, spike, group }) => {
           const [x, y] = screen(c[0], c[1])
           if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return null
           const ir = Math.max(5, markerFont * 0.7)
@@ -399,6 +412,19 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               onMouseEnter={() => setHoverSys(sys)} onMouseLeave={() => setHoverSys(h => h === sys ? null : h)}>
               {/* Onzichtbaar hover-vlak (ruimer dan het icoon) */}
               <circle cx={x} cy={y} r={Math.max(ir * 1.8, 10)} fill="transparent" />
+              {/* SPIKE → grote, snelle dubbele puls (rood + oranje) */}
+              {spike && <>
+                <circle cx={x} cy={y} fill="none" stroke="#e05555" strokeWidth={3}>
+                  <animate attributeName="r" values={`${ir};${ir * 6}`} dur="1s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.95;0" dur="1s" repeatCount="indefinite" />
+                  <animate attributeName="stroke-width" values="3.5;0.5" dur="1s" repeatCount="indefinite" />
+                </circle>
+                <circle cx={x} cy={y} fill="none" stroke="#f0a030" strokeWidth={3}>
+                  <animate attributeName="r" values={`${ir};${ir * 6}`} dur="1s" begin="0.5s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.95;0" dur="1s" begin="0.5s" repeatCount="indefinite" />
+                  <animate attributeName="stroke-width" values="3.5;0.5" dur="1s" begin="0.5s" repeatCount="indefinite" />
+                </circle>
+              </>}
               {/* Pulserende ring (radar-ping) */}
               <circle cx={x} cy={y} fill="none" stroke={col} strokeWidth={1.5}>
                 <animate attributeName="r" values={`${ir};${ir * 2.8}`} dur="1.5s" repeatCount="indefinite" />
