@@ -297,7 +297,8 @@ export default function Intel() {
 
   // Intel-kanalen uit de site-config (beheerd in de Admin); valt terug op de defaults.
   const { intelChannels } = useSiteConfig()
-  const channels = intelChannels.length ? intelChannels : DEFAULT_INTEL_CHANNELS
+  const validChannels = intelChannels.filter(c => c.prefix.trim())
+  const channels = validChannels.length ? validChannels : DEFAULT_INTEL_CHANNELS
   const WATCH_CHANNELS = channels.map(c => c.prefix)
   const PRIORITY = WATCH_CHANNELS[0]
   const chLabel = (p: string) => channels.find(c => c.prefix === p)?.label || p

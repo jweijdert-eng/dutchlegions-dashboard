@@ -126,7 +126,9 @@ async function decodeFile(file: File): Promise<string> {
 
 export function useIntelSystems(active: boolean): IntelResult {
   const { intelChannels } = useSiteConfig()
-  const prefixes = (intelChannels.length ? intelChannels : DEFAULT_INTEL_CHANNELS).map(c => c.prefix)
+  // Lege/witruimte-prefixes negeren; niets bruikbaars → terug naar de defaults.
+  const cfg = intelChannels.map(c => c.prefix.trim()).filter(Boolean)
+  const prefixes = cfg.length ? cfg : DEFAULT_INTEL_CHANNELS.map(c => c.prefix)
   const prefixKey = prefixes.join('|')                      // stabiele dep voor de effect
 
   const [intel, setIntel]   = useState<Record<string, SystemIntel>>({})
