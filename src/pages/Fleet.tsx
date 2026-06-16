@@ -802,14 +802,14 @@ export default function Fleet() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {/* Live-kaart ook op de Leden-tab */}
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {/* Live-kaart ook op de Leden-tab — naast de ledentabel */}
               {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
-                <div style={{ maxWidth: 680 }}>
+                <div style={{ flex: '1 1 420px', minWidth: 320, maxWidth: 600 }}>
                   <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} />
                 </div>
               )}
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ flex: '1 1 380px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: memberCols, gap: '0.5rem' }}>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>KARAKTER</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>SHIP</span>
