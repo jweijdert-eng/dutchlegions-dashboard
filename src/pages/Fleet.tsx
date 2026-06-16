@@ -72,6 +72,12 @@ interface MemberNode {
   sec: number; region: string; jumps: number | undefined; isFc: boolean
 }
 
+// Structuur-trefwoorden in intel → het EVE-type waarvan het icoon getoond wordt.
+const STRUCT_KEYWORDS: { kw: RegExp; name: string }[] = [
+  { kw: /\bess\b/i,     name: 'Encounter Surveillance System' },
+  { kw: /\bskyhook\b/i, name: 'Orbital Skyhook' },
+]
+
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
 function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel, intelStatus }: {
@@ -92,7 +98,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [hoverSys, setHoverSys] = useState<string | null>(null)   // intel-marker waar de muis op staat
   const [sovMap, setSovMap]     = useState<Record<number, number>>({})   // systemId → sov-alliance
   const [allyNames, setAllyNames] = useState<Record<number, string>>({}) // allianceId → naam (lazy)
-  const [essType, setEssType]   = useState<number | undefined>()         // type-id van de ESS (voor het icoon)
+  const [structTypes, setStructTypes] = useState<Record<string, number>>({})  // structuur-naam → type-id (ESS, Skyhook…)
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const didAuto = useRef(false)
 
@@ -246,13 +252,17 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       }).catch(() => {})
   }, [intel, sovMap])
 
-  // ESS-type één keer resolven (voor het icoon bij ESS-meldingen).
+  // Structuur-types (ESS, Skyhook…) één keer resolven → iconen bij die meldingen.
   useEffect(() => {
+    const names = STRUCT_KEYWORDS.map(s => s.name)
     fetch('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(['Encounter Surveillance System']),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(names),
     }).then(r => (r.ok ? r.json() : null))
-      .then(d => { const id = d?.inventory_types?.[0]?.id; if (id) setEssType(id) })
-      .catch(() => {})
+      .then(d => {
+        const m: Record<string, number> = {}
+        for (const t of d?.inventory_types ?? []) m[t.name] = t.id
+        if (Object.keys(m).length) setStructTypes(m)
+      }).catch(() => {})
   }, [])
 
   // Naam van de sov-alliance van het gehoverde systeem ophalen (gecached).
@@ -429,7 +439,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               const allyId = isChar ? en!.allianceId : en?.kind === 'alliance' ? en.id : undefined
               const name = en ? en.name : ship ? ship.name : e.message
               const allyName = en?.allianceName
-              const isEss = /\bess\b/i.test(e.message)
+              const structs = STRUCT_KEYWORDS.filter(s => structTypes[s.name] && s.kw.test(e.message))
               const nameCol = e.threat === 'threat' ? '#ff7676' : e.threat === 'clear' ? 'var(--green)' : '#f0c040'
               return (
                 <div key={e.id} style={{ padding: '0.35rem 0.55rem', borderBottom: '1px solid rgba(40,46,70,0.5)' }}>
@@ -440,9 +450,11 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                     {allyId && <EveImage category="alliances" id={allyId} variation="logo" size={64} px={34} style={{ borderRadius: 2, flexShrink: 0 }} />}
                     {!en && (ship
                       ? <span title={ship.name} style={{ flexShrink: 0 }}><EveImage category="types" id={ship.typeId} variation="icon" size={64} px={36} /></span>
-                      : !isEss && <span style={{ flexShrink: 0, width: 34, textAlign: 'center', fontSize: '1.1rem', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>)}
-                    {/* ESS-icoon als er een ESS genoemd wordt */}
-                    {isEss && essType && <span title="ESS" style={{ flexShrink: 0 }}><EveImage category="types" id={essType} variation="icon" size={64} px={34} /></span>}
+                      : structs.length === 0 && <span style={{ flexShrink: 0, width: 34, textAlign: 'center', fontSize: '1.1rem', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>)}
+                    {/* Structuur-iconen (ESS, Skyhook…) als ze genoemd worden */}
+                    {structs.map(s => (
+                      <span key={s.name} title={s.name} style={{ flexShrink: 0 }}><EveImage category="types" id={structTypes[s.name]} variation="icon" size={64} px={34} /></span>
+                    ))}
                     {/* Naam + alliance-naam eronder */}
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
                       <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: nameCol }}>{name}</span>
