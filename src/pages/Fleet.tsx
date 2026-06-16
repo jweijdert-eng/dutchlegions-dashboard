@@ -517,7 +517,21 @@ export default function Fleet() {
   }
 
   const saveMotd = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, fleetToken!.accessToken, { motd: motdDraft }), 'MOTD opgeslagen')
-  const toggleFreeMove = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, fleetToken!.accessToken, { is_free_move: !fleetInfo?.is_free_move }), 'Free Move gewijzigd')
+  // Free Move: optimistisch direct omzetten (ESI cachet de GET een paar sec, dus
+  // anders lijkt er niets te gebeuren). Bij een fout draaien we 'm terug.
+  async function toggleFreeMove() {
+    if (!fleetToken || !charFleet) return
+    const next = !fleetInfo?.is_free_move
+    setBusy(true); setMsg(null)
+    setFleetInfo(fi => (fi ? { ...fi, is_free_move: next } : fi))
+    try {
+      await setFleetSettings(charFleet.fleet_id, fleetToken.accessToken, { is_free_move: next })
+      setMsg('Free Move gewijzigd')
+    } catch (e) {
+      setFleetInfo(fi => (fi ? { ...fi, is_free_move: !next } : fi))
+      setMsg(`Mislukt: ${(e as Error).message ?? 'fout'}`)
+    } finally { setBusy(false) }
+  }
   const kick = (memberId: number, name: string) => { if (confirm(`${name} uit de fleet verwijderen?`)) withBusy(() => kickFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId), `${name} verwijderd`) }
   const moveTo = (memberId: number, opt: { wingId: number; squadId: number }) =>
     withBusy(() => moveFleetMember(charFleet!.fleet_id, fleetToken!.accessToken, memberId, { role: 'squad_member', wing_id: opt.wingId, squad_id: opt.squadId }), 'Lid verplaatst')
