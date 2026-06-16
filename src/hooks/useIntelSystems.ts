@@ -111,6 +111,7 @@ export interface IntelResult {
   systems: Record<string, SystemIntel>
   status: IntelStatus
   connect: () => Promise<void>
+  chooseFolder: () => Promise<void>
   debug: IntelDebug
 }
 
@@ -192,6 +193,23 @@ export function useIntelSystems(active: boolean): IntelResult {
       handleRef.current = h
       lastSize.current.clear()
       entryCount.current = 0
+      latest.current.clear()
+      setStatus('live')
+      readOnce()
+    } catch { /* geannuleerd */ }
+  }
+
+  // Forceer altijd de mapkiezer (om bewust de juiste Chatlogs-map te kiezen).
+  async function chooseFolder() {
+    if (!INTEL_SUPPORTED) return
+    try {
+      const h = await (window as unknown as { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> })
+        .showDirectoryPicker({ mode: 'read' })
+      await saveDirHandle(h)
+      handleRef.current = h
+      lastSize.current.clear()
+      latest.current.clear()
+      entryCount.current = 0
       setStatus('live')
       readOnce()
     } catch { /* geannuleerd */ }
@@ -215,5 +233,5 @@ export function useIntelSystems(active: boolean): IntelResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, prefixKey])
 
-  return { systems: intel, status, connect, debug }
+  return { systems: intel, status, connect, chooseFolder, debug }
 }

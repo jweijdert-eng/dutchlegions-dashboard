@@ -398,7 +398,7 @@ export default function Fleet() {
   const [wings, setWings]             = useState<FleetWing[]>([])
   const [loading, setLoading]         = useState(true)
   const [notInFleet, setNotInFleet]   = useState(false)
-  const { systems: intel, status: intelStatus, connect: connectIntel, debug: intelDebug } = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
+  const { systems: intel, status: intelStatus, connect: connectIntel, chooseFolder: chooseIntelFolder, debug: intelDebug } = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
   const [fleetErr, setFleetErr]       = useState<string | null>(null)   // foutreden bij 'niet in fleet'
   const [fleetToken, setFleetToken]   = useState<typeof tokens[number] | null>(null) // het account dat in de fleet zit
   const [myRole, setMyRole]           = useState<string | null>(null)
@@ -867,7 +867,10 @@ export default function Fleet() {
                         <code key={c} style={{ background: '#05050e', border: '1px solid var(--border)', borderRadius: 2, padding: '0.05rem 0.3rem', margin: '0 0.15rem', color: 'var(--text)' }}>{c}</code>
                       ))}
                     </div>
-                  ) : <div style={{ marginTop: '0.35rem', color: 'var(--text-dim)' }}>Geen chatlog-bestanden in deze map — koppel je <code>…\EVE\logs\Chatlogs\</code>-map.</div>}
+                  ) : <div style={{ marginTop: '0.35rem', color: 'var(--text-dim)' }}>Geen chatlog-bestanden in deze map — je hebt waarschijnlijk de verkeerde map gekoppeld.</div>}
+                  <button onClick={chooseIntelFolder} style={{ marginTop: '0.45rem', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.66rem', fontWeight: 600, padding: '0.3rem 0.7rem', cursor: 'pointer' }}>
+                    📁 Kies je <code>…\EVE\logs\Chatlogs\</code>-map opnieuw
+                  </button>
                 </div>
               }
               return <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
