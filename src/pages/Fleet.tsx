@@ -1040,7 +1040,7 @@ export default function Fleet() {
                 ))}
               </div>
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
-              <div style={{ flex: 1, minWidth: 320, maxWidth: 680 }}>
+              <div style={{ flex: 1, minWidth: 320, maxWidth: 860 }}>
                 <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
               </div>
             </div>
@@ -1048,7 +1048,7 @@ export default function Fleet() {
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
               {/* Live-kaart ook op de Leden-tab — naast de ledentabel */}
               {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
-                <div style={{ flex: '1 1 420px', minWidth: 320, maxWidth: 600 }}>
+                <div style={{ flex: '1 1 480px', minWidth: 320, maxWidth: 760 }}>
                   <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
                 </div>
               )}
