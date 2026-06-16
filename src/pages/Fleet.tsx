@@ -85,6 +85,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
   const W = 660, H = 760, PAD = 30
   const [tf, setTf] = useState({ k: 1, x: 0, y: 0 })
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
+  const didAuto = useRef(false)
 
   // Basisprojectie (vast, fit alle coords). Daarna pas/zoom-transform eroverheen.
   const base = useMemo(() => {
@@ -151,11 +152,23 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
       if (x < -4 || x > W + 4 || y < -4 || y > H + 4) continue
       ctx.fillStyle = secColor(sysMeta[sid]?.[1] ?? 0)
       ctx.globalAlpha = 0.85
-      const s = 1.6 + (tf.k - 1) * 0.35
-      ctx.beginPath(); ctx.arc(x, y, s / 2 + 0.4, 0, Math.PI * 2); ctx.fill()
+      const s = 1.0 + (tf.k - 1) * 0.16
+      ctx.beginPath(); ctx.arc(x, y, Math.max(0.5, s / 2), 0, Math.PI * 2); ctx.fill()
     }
     ctx.globalAlpha = 1
   }, [coords, sysMeta, adj, base, tf])
+
+  // Auto-zoom: éénmalig inzoomen op de FC zodra coords + leden geladen zijn.
+  useEffect(() => {
+    if (didAuto.current || !base) return
+    const fc = memberNodes.find(n => n.isFc) ?? memberNodes[0]
+    const c = fc && coords[String(fc.sid)]
+    if (!c) return
+    didAuto.current = true
+    const k = 6
+    const [bx, by] = base(c[0], c[1])
+    setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
+  }, [base, memberNodes, coords])
 
   if (!base) {
     return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Kaart laden…</div>
@@ -211,15 +224,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           const c = coords[String(n.sid)]
           if (!c) return null
           const [x, y] = screen(c[0], c[1])
-          const r = 5 + (n.members.length / maxCount) * 7
+          const r = 3 + (n.members.length / maxCount) * 4
           return (
             <g key={n.sid}>
-              <circle cx={x} cy={y} r={r + 7} fill="#3ecf6e" fillOpacity={0.12} />
-              <circle cx={x} cy={y} r={r + 2} fill="none" stroke="#3ecf6e" strokeWidth={2} />
-              {n.isFc && <circle cx={x} cy={y} r={r + 6} fill="none" stroke="#f0c040" strokeWidth={1.2} strokeDasharray="3 2" />}
-              <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#05050e" strokeWidth={1} />
-              <text x={x} y={y + 3} textAnchor="middle" fontSize={9} fontWeight={700} fill="#05050e">{n.members.length}</text>
-              <text x={x + r + 7} y={y + 3} fontSize={10} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.7} paintOrder="stroke">
+              <circle cx={x} cy={y} r={r + 4} fill="#3ecf6e" fillOpacity={0.12} />
+              <circle cx={x} cy={y} r={r + 1.5} fill="none" stroke="#3ecf6e" strokeWidth={1.4} />
+              {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1} strokeDasharray="3 2" />}
+              <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#05050e" strokeWidth={0.8} />
+              <text x={x} y={y + 2.6} textAnchor="middle" fontSize={Math.min(9, r + 1.5)} fontWeight={700} fill="#05050e">{n.members.length}</text>
+              <text x={x + r + 5} y={y + 3} fontSize={9.5} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.7} paintOrder="stroke">
                 {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
               </text>
             </g>
@@ -232,8 +245,14 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           <button key={lbl as string} onClick={() => setTf(t => ({ ...t, k: Math.max(0.8, Math.min(16, t.k * (f as number))) }))}
             style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>{lbl}</button>
         ))}
-        <button onClick={() => setTf({ k: 1, x: 0, y: 0 })} title="Reset"
-          style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⟲</button>
+        <button onClick={() => {
+          const fc = memberNodes.find(n => n.isFc) ?? memberNodes[0]
+          const c = fc && coords[String(fc.sid)]
+          if (!c) { setTf({ k: 1, x: 0, y: 0 }); return }
+          const k = 6, [bx, by] = base(c[0], c[1])
+          setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
+        }} title="Centreer op FC"
+          style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⌖</button>
       </div>
       {/* Kompas + assen (zoals de officiële cluster-map: N boven, +X rechts/rood, +Y omhoog/groen) */}
       <svg width={84} height={84} viewBox="0 0 84 84" style={{ position: 'absolute', top: 6, left: 6 }}>
