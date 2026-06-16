@@ -184,11 +184,11 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     // 1b) Jump bridges (Ansiblex) — groene gebogen lijn (zoals de in-game route).
     if (bridgeCoords.length) {
       ctx.save()
-      ctx.strokeStyle = 'rgba(82,224,128,0.95)'
+      ctx.strokeStyle = 'rgba(82,224,128,0.5)'
       ctx.lineWidth = Math.min(2.4, 1 + tf.k * 0.07)
       ctx.lineCap = 'round'
-      ctx.shadowColor = 'rgba(82,224,128,0.7)'
-      ctx.shadowBlur = 4
+      ctx.shadowColor = 'rgba(82,224,128,0.3)'
+      ctx.shadowBlur = 3
       ctx.beginPath()
       for (const [ca, cb] of bridgeCoords) {
         const [ax, ay] = scr(ca); const [bx, by] = scr(cb)
