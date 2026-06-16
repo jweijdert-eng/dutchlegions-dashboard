@@ -74,7 +74,7 @@ interface MemberNode {
 
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
-function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel, intelStatus, onConnectIntel }: {
+function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel, intelStatus }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
   regionMap: Record<string, string>
@@ -83,7 +83,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   bridges: JumpBridge[]
   intel: Record<string, SystemIntel>
   intelStatus: string
-  onConnectIntel: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -279,22 +278,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   return (
     <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
-      {/* Intel-verbind-banner — prominent als de kaart geen chatlog-toegang heeft */}
-      {(intelStatus === 'idle' || intelStatus === 'denied') && (
-        <button onClick={onConnectIntel}
-          style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 6, pointerEvents: 'auto',
-            background: 'rgba(0,180,216,0.18)', border: '1px solid var(--blue)', borderRadius: 4, color: 'var(--blue)',
-            fontSize: '0.72rem', fontWeight: 600, padding: '0.4rem 0.9rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          📡 {intelStatus === 'denied' ? 'Intel-chatlogs herverbinden' : 'Koppel Chatlogs-map voor intel'}
-        </button>
-      )}
-      {intelStatus === 'unsupported' && (
-        <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
-          background: 'rgba(224,85,85,0.12)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 4, color: 'var(--red)',
-          fontSize: '0.62rem', padding: '0.3rem 0.7rem', whiteSpace: 'nowrap' }}>
-          Intel vereist Chrome/Edge
-        </div>
-      )}
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
         {/* Regio-namen (alleen ver uitgezoomd; bij inzoomen storen ze) */}
@@ -864,6 +847,22 @@ export default function Fleet() {
             </div>
           )}
 
+          {/* Intel-status — altijd zichtbaar in fleet, zodat je weet of de kaart intel heeft */}
+          {(() => {
+            const nIntel = Object.values(intel).filter(i => i.threat !== 'clear').length
+            if (intelStatus === 'unsupported') {
+              return <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>📡 Intel op de kaart vereist Chrome of Edge.</div>
+            }
+            if (intelStatus === 'live') {
+              return <div style={{ fontSize: '0.66rem', color: nIntel ? 'var(--red)' : 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>
+                📡 Intel verbonden — {nIntel ? `${nIntel} systeem(en) op de kaart` : 'geen recente meldingen'}
+              </div>
+            }
+            return <button onClick={connectIntel} style={{ textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, color: 'var(--blue)', padding: '0.45rem 0.7rem', background: 'rgba(0,180,216,0.1)', border: '1px solid var(--blue)', borderRadius: 3, cursor: 'pointer' }}>
+              📡 {intelStatus === 'denied' ? 'Klik om intel-chatlogs te herverbinden' : 'Klik om je Chatlogs-map te koppelen — intel op de kaart'}
+            </button>
+          })()}
+
           {/* Ledenlijst, kaart of foutmelding */}
           {accessError ? (
             <div style={{ background: 'rgba(240,192,64,0.06)', border: '1px solid rgba(240,192,64,0.25)', borderRadius: 3, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--gold)' }}>
@@ -895,7 +894,7 @@ export default function Fleet() {
               </div>
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
               <div style={{ flex: 1, minWidth: 320, maxWidth: 680 }}>
-                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} onConnectIntel={connectIntel} />
+                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
               </div>
             </div>
           ) : (
@@ -903,7 +902,7 @@ export default function Fleet() {
               {/* Live-kaart ook op de Leden-tab — naast de ledentabel */}
               {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
                 <div style={{ flex: '1 1 420px', minWidth: 320, maxWidth: 600 }}>
-                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} onConnectIntel={connectIntel} />
+                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
                 </div>
               )}
               <div style={{ flex: '1 1 380px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
