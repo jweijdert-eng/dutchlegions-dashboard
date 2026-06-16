@@ -436,6 +436,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               {group.count > 0 && (
                 <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill={col} stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{group.count}+</text>
               )}
+              {/* SPIKE-label op locatie (knipperend) */}
+              {spike && (
+                <text x={x} y={y - ir - markerFont * 1.4} textAnchor="middle" fontSize={markerFont * 1.3} fontWeight={800}
+                  fill="#e05555" stroke="#05050e" strokeWidth={markerFont * 0.12} paintOrder="stroke">
+                  ⚠ SPIKE
+                  <animate attributeName="fill" values="#e05555;#f0a030;#e05555" dur="0.8s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="1;0.45;1" dur="0.8s" repeatCount="indefinite" />
+                </text>
+              )}
             </g>
           )
         })}
