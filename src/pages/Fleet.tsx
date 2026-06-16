@@ -373,28 +373,31 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               <span style={{ fontWeight: 700, color: col, fontSize: '0.78rem' }}>{hm.sys}</span>
               <span style={{ fontSize: '0.55rem', fontWeight: 700, color: col }}>{hm.group.entries.length} melding(en)</span>
             </div>
-            {/* Rijen: icoon · naam · mm:ss */}
+            {/* Rijen: portret + schip · naam + corp/alliance · mm:ss (in-game stijl) */}
             {hm.group.entries.map(e => {
               const en = e.enemies && e.enemies[0]
               const ship = e.ships[0]
+              const isChar = en?.kind === 'character'
+              const corpId = isChar ? en!.corpId : en?.kind === 'corporation' ? en.id : undefined
+              const allyId = isChar ? en!.allianceId : en?.kind === 'alliance' ? en.id : undefined
+              const name = en ? en.name : ship ? ship.name : e.message
               return (
-                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.55rem', borderBottom: '1px solid rgba(40,46,70,0.5)' }}>
-                  {/* Icoon: vijand-entiteit > schip > waarschuwing */}
-                  <span style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {en ? (
-                      <EveImage category={`${en.kind}s` as 'characters' | 'corporations' | 'alliances'} id={en.id} variation={en.kind === 'character' ? 'portrait' : 'logo'} size={32} px={24} round={en.kind === 'character'} style={en.kind !== 'character' ? { borderRadius: 2 } : undefined} />
-                    ) : ship ? (
-                      <EveImage category="types" id={ship.typeId} variation="icon" size={32} px={24} />
-                    ) : (
-                      <span style={{ color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>
-                    )}
-                  </span>
-                  {/* Naam + melding */}
-                  <span style={{ flex: 1, minWidth: 0, fontSize: '0.66rem', color: 'var(--text)', overflow: 'hidden' }}>
-                    <span style={{ display: 'block', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: e.threat === 'threat' ? '#ffb0b0' : e.threat === 'clear' ? 'var(--green)' : 'var(--text)' }}>
-                      {en ? en.name : ship ? ship.name : e.message}
+                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.55rem', borderBottom: '1px solid rgba(40,46,70,0.5)' }}>
+                  {/* Portret (character) + schip-icoon */}
+                  {isChar && <EveImage category="characters" id={en!.id} variation="portrait" size={32} px={24} round style={{ flexShrink: 0 }} />}
+                  {ship
+                    ? <span title={ship.name} style={{ flexShrink: 0 }}><EveImage category="types" id={ship.typeId} variation="icon" size={32} px={24} /></span>
+                    : !isChar && !en && <span style={{ flexShrink: 0, width: 22, textAlign: 'center', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>}
+                  {/* Naam + corp/alliance-iconen */}
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                    <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: e.threat === 'threat' ? '#ffb0b0' : e.threat === 'clear' ? 'var(--green)' : 'var(--gold)' }}>
+                      {name}
                     </span>
-                    <span style={{ display: 'block', fontSize: '0.56rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.message}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: 1 }}>
+                      {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={32} px={14} style={{ borderRadius: 2 }} />}
+                      {allyId && <EveImage category="alliances" id={allyId} variation="logo" size={32} px={14} style={{ borderRadius: 2 }} />}
+                      <span style={{ fontSize: '0.55rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.message}</span>
+                    </span>
                   </span>
                   {/* mm:ss timer */}
                   <span style={{ flexShrink: 0, fontSize: '0.62rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-dim)' }}>{mmss(e.time)}</span>

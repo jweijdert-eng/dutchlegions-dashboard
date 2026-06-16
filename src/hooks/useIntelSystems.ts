@@ -29,7 +29,11 @@ export interface SystemIntelGroup {
   entries: SystemIntel[]
 }
 
-export interface EnemyEntity { kind: 'character' | 'corporation' | 'alliance'; id: number; name: string }
+export interface EnemyEntity {
+  kind: 'character' | 'corporation' | 'alliance'
+  id: number; name: string
+  corpId?: number; allianceId?: number            // alleen voor characters (lazy resolved)
+}
 
 // Cache: melding-tekst → gemelde vijanden. Buiten de component → sessie-breed.
 const _enemyCache = new Map<string, EnemyEntity[] | null>()   // null = bezig
@@ -70,6 +74,15 @@ async function resolveEnemies(message: string) {
     for (const a of data.alliances ?? [])    enemies.push({ kind: 'alliance',    id: a.id, name: a.name })
     for (const c of data.corporations ?? []) enemies.push({ kind: 'corporation', id: c.id, name: c.name })
     for (const ch of data.characters ?? [])  enemies.push({ kind: 'character',   id: ch.id, name: ch.name })
+    // Characters verrijken met corp/alliance (voor de iconen per rij).
+    await Promise.all(enemies.filter(e => e.kind === 'character').map(async ce => {
+      try {
+        const r = await fetch(`https://esi.evetech.net/latest/characters/${ce.id}/?datasource=tranquility`)
+          .then(res2 => (res2.ok ? res2.json() : null))
+        ce.corpId = r?.corporation_id
+        ce.allianceId = r?.alliance_id
+      } catch { /* laat leeg */ }
+    }))
     _enemyCache.set(message, enemies.slice(0, 8))
   } catch { _enemyCache.set(message, []) }
 }
