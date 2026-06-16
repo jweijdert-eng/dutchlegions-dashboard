@@ -398,7 +398,7 @@ export default function Fleet() {
   const [wings, setWings]             = useState<FleetWing[]>([])
   const [loading, setLoading]         = useState(true)
   const [notInFleet, setNotInFleet]   = useState(false)
-  const { systems: intel, status: intelStatus, connect: connectIntel } = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
+  const { systems: intel, status: intelStatus, connect: connectIntel, debug: intelDebug } = useIntelSystems(!notInFleet)   // intel-threats uit de chatlogs (voor de kaart)
   const [fleetErr, setFleetErr]       = useState<string | null>(null)   // foutreden bij 'niet in fleet'
   const [fleetToken, setFleetToken]   = useState<typeof tokens[number] | null>(null) // het account dat in de fleet zit
   const [myRole, setMyRole]           = useState<string | null>(null)
@@ -856,6 +856,9 @@ export default function Fleet() {
             if (intelStatus === 'live') {
               return <div style={{ fontSize: '0.66rem', color: nIntel ? 'var(--red)' : 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>
                 📡 Intel verbonden — {nIntel ? `${nIntel} systeem(en) op de kaart` : 'geen recente meldingen'}
+                <span style={{ color: 'var(--text-dim)', marginLeft: '0.5rem', fontSize: '0.58rem' }}>
+                  ({intelDebug.files} kanaalbestand(en), {intelDebug.entries} regels gelezen)
+                </span>
               </div>
             }
             return <button onClick={connectIntel} style={{ textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, color: 'var(--blue)', padding: '0.45rem 0.7rem', background: 'rgba(0,180,216,0.1)', border: '1px solid var(--blue)', borderRadius: 3, cursor: 'pointer' }}>

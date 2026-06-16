@@ -98,10 +98,23 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
 
 export type IntelStatus = 'unsupported' | 'idle' | 'denied' | 'live'
 
+export interface IntelDebug { files: number; entries: number }   // diagnose: gematchte bestanden + geparste meldingen-met-systeem
+
 export interface IntelResult {
   systems: Record<string, SystemIntel>
   status: IntelStatus
   connect: () => Promise<void>
+  debug: IntelDebug
+}
+
+// EVE-chatlogs zijn doorgaans UTF-16LE (met BOM). file.text() decodeert als UTF-8
+// → onleesbaar. Hier kijken we naar de BOM en decoderen we juist.
+async function decodeFile(file: File): Promise<string> {
+  const buf = await file.arrayBuffer()
+  const b = new Uint8Array(buf, 0, Math.min(2, buf.byteLength))
+  if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(buf)
+  if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(buf)
+  return new TextDecoder('utf-8').decode(buf)
 }
 
 export function useIntelSystems(active: boolean): IntelResult {
@@ -111,25 +124,30 @@ export function useIntelSystems(active: boolean): IntelResult {
 
   const [intel, setIntel]   = useState<Record<string, SystemIntel>>({})
   const [status, setStatus] = useState<IntelStatus>(INTEL_SUPPORTED ? 'idle' : 'unsupported')
+  const [debug, setDebug]   = useState<IntelDebug>({ files: 0, entries: 0 })
   const latest    = useRef(new Map<string, SystemIntel>())  // system → meest recente melding
   const lastSize  = useRef(new Map<string, number>())
+  const entryCount = useRef(0)                              // cumulatief geparste meldingen-met-systeem
   const handleRef = useRef<FileSystemDirectoryHandle | null>(null)
 
   async function readOnce() {
     const handle = handleRef.current
     if (!handle) return
     const watch = prefixKey ? prefixKey.split('|') : []
+    let filesMatched = 0
     try {
       const files = await findFiles(handle, watch)
+      filesMatched = files.length
       for (const fh of files) {
         const file = await fh.getFile()
         const prev = lastSize.current.get(file.name) ?? 0
         if (file.size === prev) continue
         lastSize.current.set(file.name, file.size)
-        const text = await file.text()
+        const text = await decodeFile(file)
         for (const line of text.split('\n')) {
           const e = parseLine(line.trim())
           if (!e) continue
+          entryCount.current++
           const cur = latest.current.get(e.system)
           if (!cur || e.time >= cur.time) latest.current.set(e.system, e)
         }
@@ -143,6 +161,7 @@ export function useIntelSystems(active: boolean): IntelResult {
       else snap[sys] = e
     }
     setIntel(snap)
+    setDebug({ files: filesMatched, entries: entryCount.current })
   }
 
   // Verbind (vereist een user-gesture): herverbind de opgeslagen map, of kies er één.
@@ -161,6 +180,7 @@ export function useIntelSystems(active: boolean): IntelResult {
       }
       handleRef.current = h
       lastSize.current.clear()
+      entryCount.current = 0
       setStatus('live')
       readOnce()
     } catch { /* geannuleerd */ }
@@ -184,5 +204,5 @@ export function useIntelSystems(active: boolean): IntelResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, prefixKey])
 
-  return { systems: intel, status, connect }
+  return { systems: intel, status, connect, debug }
 }
