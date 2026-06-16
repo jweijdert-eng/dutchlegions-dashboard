@@ -10,6 +10,7 @@ import {
 import { secColor } from '../utils/secColor'
 import { useSiteConfig, type JumpBridge } from '../hooks/useSiteConfig'
 import { useIntelSystems, type SystemIntelGroup } from '../hooks/useIntelSystems'
+import { fetchDscanItems, type DscanGroup } from '../utils/dscan'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
@@ -72,6 +73,8 @@ interface MemberNode {
   sec: number; region: string; jumps: number | undefined; isFc: boolean
 }
 
+const DSCAN_RE = /https?:\/\/dscan\.info\/v\/[a-f0-9]+/i
+
 // Structuur-trefwoorden in intel → het EVE-type waarvan het icoon getoond wordt.
 const STRUCT_KEYWORDS: { kw: RegExp; name: string }[] = [
   { kw: /\bess\b/i,     name: 'Encounter Surveillance System' },
@@ -99,6 +102,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [sovMap, setSovMap]     = useState<Record<number, number>>({})   // systemId → sov-alliance
   const [allyNames, setAllyNames] = useState<Record<number, string>>({}) // allianceId → naam (lazy)
   const [structTypes, setStructTypes] = useState<Record<string, number>>({})  // structuur-naam → type-id (ESS, Skyhook…)
+  const [dscan, setDscan]       = useState<Record<string, DscanGroup[]>>({})   // dscan-url → schepen
+  const dscanFetching           = useRef(new Set<string>())
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const didAuto = useRef(false)
 
@@ -264,6 +269,20 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
         if (Object.keys(m).length) setStructTypes(m)
       }).catch(() => {})
   }, [])
+
+  // dscan.info-links in het gehoverde systeem ophalen → scheepslijst (gecached).
+  useEffect(() => {
+    if (!hoverSys) return
+    const g = intel[hoverSys]
+    if (!g) return
+    for (const e of g.entries) {
+      const url = e.message.match(DSCAN_RE)?.[0]
+      if (url && !dscan[url] && !dscanFetching.current.has(url)) {
+        dscanFetching.current.add(url)
+        fetchDscanItems(url).then(groups => setDscan(p => ({ ...p, [url]: groups }))).catch(() => {})
+      }
+    }
+  }, [hoverSys, intel, dscan])
 
   // Naam van de sov-alliance van het gehoverde systeem ophalen (gecached).
   useEffect(() => {
@@ -472,6 +491,25 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                       <span style={{ fontSize: '0.66rem', color: 'var(--text)' }}>{ship.name}</span>
                     </div>
                   )}
+                  {/* dscan.info-link → schepen op grid */}
+                  {(() => {
+                    const url = e.message.match(DSCAN_RE)?.[0]
+                    const groups = url ? dscan[url] : undefined
+                    if (!url) return null
+                    if (!groups) return <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', marginTop: 3, paddingLeft: '0.5rem' }}>◎ dscan laden…</div>
+                    const ships = groups.filter(g => g.typeId)
+                    if (!ships.length) return null
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: 4, paddingLeft: '0.5rem' }}>
+                        {ships.slice(0, 12).map(g => (
+                          <span key={g.typeId} title={`${g.typeName} ×${g.count}`} style={{ position: 'relative', flexShrink: 0 }}>
+                            <EveImage category="types" id={g.typeId!} variation="icon" size={64} px={28} />
+                            {g.count > 1 && <span style={{ position: 'absolute', right: -2, bottom: -2, fontSize: '0.5rem', fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: 2, padding: '0 2px' }}>{g.count}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
