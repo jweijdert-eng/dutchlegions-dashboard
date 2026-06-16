@@ -199,9 +199,9 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
         const mx = (ax + bx) / 2, my = (ay + by) / 2
         const dx = bx - ax, dy = by - ay
         const len = Math.hypot(dx, dy) || 1
-        const off = len * 0.22
+        const off = len * 0.28
         ctx.moveTo(ax, ay)
-        ctx.quadraticCurveTo(mx - (dy / len) * off, my + (dx / len) * off, bx, by)
+        ctx.quadraticCurveTo(mx + (dy / len) * off, my - (dx / len) * off, bx, by)
       }
       ctx.stroke()
       ctx.restore()
