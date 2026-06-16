@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSiteConfig } from './useSiteConfig'
 import { DEFAULT_INTEL_CHANNELS } from '../utils/intelChannels'
-import { extractShips } from '../utils/intelShips'
-import { resolveCharacterIds } from '../api/esi'
+import { extractShips, SHIP_TYPE_IDS } from '../utils/intelShips'
 
 // Leest dezelfde EVE-chatlogs als de Intel-pagina (via de Chatlogs-map die daar
 // gekoppeld is, opgeslagen in IndexedDB) en levert per systeem de meest recente
@@ -15,32 +14,54 @@ export interface SystemIntel {
   time: number                                    // ms (laatste melding)
   count: number                                   // gemeld aantal (pilots/schepen), 0 = onbekend
   message: string
-  reporter: string
-  reporterId?: number                             // character-id van de melder (lazy resolved)
-  corpId?: number                                 // corp van de melder (lazy resolved)
-  allianceId?: number                             // alliance van de melder (lazy resolved)
+  reporter: string                                // wie het meldde (alleen als tekst)
   ships: { typeId: number; name: string }[]       // herkende scheepstypes in de melding
+  enemies?: EnemyEntity[]                          // gemelde vijand (uit de melding geresolved)
 }
 
-// Cache: meldernaam → ids. Buiten de component zodat 'ie sessie-breed blijft.
-interface ReporterIds { charId: number; corpId?: number; allianceId?: number }
-const _reporterCache = new Map<string, ReporterIds | null>()   // null = bezig/onbekend
+export interface EnemyEntity { kind: 'character' | 'corporation' | 'alliance'; id: number; name: string }
 
-// Resolve onbekende melders → character-id → corp/alliance-id (gebatcht, gecached).
-async function resolveReporters(names: string[]) {
-  const todo = names.filter(n => !_reporterCache.has(n))
-  if (!todo.length) return
-  todo.forEach(n => _reporterCache.set(n, null))            // markeer als bezig
-  const idMap = await resolveCharacterIds(todo)
-  const found: Array<{ name: string; id: number }> = []
-  for (const [name, id] of idMap) if (id) found.push({ name, id })
-  await Promise.all(found.map(async ({ name, id }) => {
-    try {
-      const r = await fetch(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`)
-        .then(res => (res.ok ? res.json() : null))
-      _reporterCache.set(name, { charId: id, corpId: r?.corporation_id, allianceId: r?.alliance_id })
-    } catch { _reporterCache.set(name, { charId: id }) }
-  }))
+// Cache: melding-tekst → gemelde vijanden. Buiten de component → sessie-breed.
+const _enemyCache = new Map<string, EnemyEntity[] | null>()   // null = bezig
+
+// Kandidaat-namen uit een melding halen (1–3 woorden), zonder schip-/intel-jargon.
+const STOP = new Set([
+  ...Object.keys(SHIP_TYPE_IDS),
+  'nv', 'nvt', 'clr', 'clear', 'safe', 'neut', 'neuts', 'cyno', 'red', 'reds', 'hostile', 'hostiles',
+  'gate', 'station', 'dock', 'docked', 'undock', 'jump', 'jumped', 'spike', 'local', 'blue', 'blues',
+  'gang', 'fleet', 'roam', 'roaming', 'bubble', 'bubbles', 'camp', 'camped', 'inbound', 'system',
+])
+function enemyCandidates(message: string): string[] {
+  const words = message.replace(/https?:\/\/\S+/g, ' ').split(/[^A-Za-z0-9'-]+/).filter(Boolean)
+  const out = new Set<string>()
+  for (let i = 0; i < words.length; i++) {
+    for (let len = 1; len <= 3 && i + len <= words.length; len++) {
+      const seq = words.slice(i, i + len)
+      if (len === 1 && (STOP.has(seq[0].toLowerCase()) || seq[0].length < 3 || /^\d+$/.test(seq[0]))) continue
+      const s = seq.join(' ')
+      if (s.length >= 3) out.add(s)
+    }
+  }
+  return [...out].slice(0, 50)
+}
+
+// Resolve de in de melding genoemde vijand → character/corp/alliance (gebatcht, gecached).
+async function resolveEnemies(message: string) {
+  if (_enemyCache.has(message)) return
+  _enemyCache.set(message, null)
+  const cands = enemyCandidates(message)
+  if (!cands.length) { _enemyCache.set(message, []); return }
+  try {
+    const res = await fetch('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cands),
+    })
+    const data = res.ok ? await res.json() : {}
+    const enemies: EnemyEntity[] = []
+    for (const a of data.alliances ?? [])    enemies.push({ kind: 'alliance',    id: a.id, name: a.name })
+    for (const c of data.corporations ?? []) enemies.push({ kind: 'corporation', id: c.id, name: c.name })
+    for (const ch of data.characters ?? [])  enemies.push({ kind: 'character',   id: ch.id, name: ch.name })
+    _enemyCache.set(message, enemies.slice(0, 8))
+  } catch { _enemyCache.set(message, []) }
 }
 
 const MAX_AGE = 5 * 60 * 1000                     // ouder dan 5 min → van de kaart af
@@ -199,13 +220,13 @@ export function useIntelSystems(active: boolean): IntelResult {
     const unresolved: string[] = []
     for (const [sys, e] of latest.current) {
       if (e.time < cutoff) { latest.current.delete(sys); continue }
-      const ids = _reporterCache.get(e.reporter)
-      snap[sys] = ids ? { ...e, reporterId: ids.charId, corpId: ids.corpId, allianceId: ids.allianceId } : e
-      if (!_reporterCache.has(e.reporter)) unresolved.push(e.reporter)
+      const enemies = _enemyCache.get(e.message)
+      snap[sys] = enemies ? { ...e, enemies } : e
+      if (!_enemyCache.has(e.message)) unresolved.push(e.message)
     }
     setIntel(snap)
     setDebug({ files: filesMatched, entries: entryCount.current, available })
-    if (unresolved.length) resolveReporters([...new Set(unresolved)])   // ids komen volgende poll mee
+    for (const msg of new Set(unresolved)) resolveEnemies(msg)   // vijand komt volgende poll mee
   }
 
   // Verbind (vereist een user-gesture): herverbind de opgeslagen map, of kies er één.

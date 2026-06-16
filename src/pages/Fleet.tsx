@@ -373,7 +373,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                 {hm.threat ? 'THREAT' : 'SIGHTING'}{info.count > 0 ? ` · ${info.count}+` : ''}
               </span>
             </div>
-            {/* Schepen */}
+            {/* Gemelde vijand: schepen */}
             {info.ships.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginBottom: '0.3rem' }}>
                 {info.ships.slice(0, 6).map(s => (
@@ -381,14 +381,19 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                 ))}
               </div>
             )}
+            {/* Gemelde vijand: character / corp / alliance (uit de melding) */}
+            {info.enemies && info.enemies.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.3rem' }}>
+                {info.enemies.map(en => (
+                  <span key={`${en.kind}-${en.id}`} title={en.name} style={{ display: 'inline-flex' }}>
+                    <EveImage category={`${en.kind}s` as 'characters' | 'corporations' | 'alliances'} id={en.id} variation={en.kind === 'character' ? 'portrait' : 'logo'} size={32} px={20} round={en.kind === 'character'} style={en.kind !== 'character' ? { borderRadius: 2 } : undefined} />
+                  </span>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: '0.68rem', color: 'var(--text)', lineHeight: 1.4, marginBottom: '0.35rem', wordBreak: 'break-word' }}>{info.message}</div>
-            {/* Melder: portret + corp + alliance */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.58rem', color: 'var(--text-dim)' }}>
-              {info.reporterId && <EveImage category="characters" id={info.reporterId} variation="portrait" size={32} px={18} round />}
-              {info.corpId && <EveImage category="corporations" id={info.corpId} variation="logo" size={32} px={16} style={{ borderRadius: 2 }} />}
-              {info.allianceId && <EveImage category="alliances" id={info.allianceId} variation="logo" size={32} px={16} style={{ borderRadius: 2 }} />}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.reporter}</span>
-              <span style={{ marginLeft: 'auto', flexShrink: 0 }}>{ago}</span>
+            <div style={{ fontSize: '0.56rem', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>via {info.reporter}</span><span>{ago}</span>
             </div>
           </div>
         )
