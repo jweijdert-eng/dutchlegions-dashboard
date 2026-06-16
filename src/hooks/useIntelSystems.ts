@@ -16,7 +16,7 @@ export interface SystemIntel {
   reporter: string
 }
 
-const MAX_AGE = 20 * 60 * 1000                    // ouder dan 20 min → van de kaart af
+const MAX_AGE = 45 * 60 * 1000                    // ouder dan 45 min → van de kaart af
 
 const CLEAR_RE  = /\b(nv|nvt|clr|clear|safe)\b/i
 const THREAT_RE = /\b(\d{1,3}\+?|carrier|carriers|dread|dreads|super|supers|titan|titans|fax|faxes|cyno|rorqual|recon|recons|battleship|battleships|bs|bc|bcs|logi|logis|bomber|bombers|hic|hics|dic|dics|blops|sabre|flycatcher|heretic|eris|proteus|tengu|loki|legion|rapier|arazu|huginn|curse|pilgrim|stiletto|crow|malediction|interceptor|interdictor|bubble|bubbles|spike|neut|neuts)\b/i
@@ -199,7 +199,7 @@ export function useIntelSystems(active: boolean): IntelResult {
       else setStatus('denied')
     }).catch(() => {})
 
-    const iv = setInterval(() => { if (!stop) readOnce() }, 3000)
+    const iv = setInterval(() => { if (!stop) readOnce() }, 1000)
     return () => { stop = true; clearInterval(iv) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, prefixKey])

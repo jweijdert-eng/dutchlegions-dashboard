@@ -854,10 +854,24 @@ export default function Fleet() {
               return <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>📡 Intel op de kaart vereist Chrome of Edge.</div>
             }
             if (intelStatus === 'live') {
-              return <div style={{ fontSize: '0.66rem', color: nIntel ? 'var(--red)' : 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>
-                📡 Intel verbonden — {nIntel ? `${nIntel} systeem(en) op de kaart` : 'geen recente meldingen'}
-                <span style={{ color: 'var(--text-dim)', marginLeft: '0.5rem', fontSize: '0.58rem' }}>
-                  ({intelDebug.files} kanaalbestand(en), {intelDebug.entries} regels gelezen)
+              const list = Object.values(intel)
+                .filter(i => i.threat !== 'clear')
+                .sort((a, b) => b.time - a.time)
+              return <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+                <span style={{ color: nIntel ? 'var(--red)' : 'var(--text-dim)', fontWeight: 600 }}>
+                  📡 Intel {nIntel ? `(${nIntel})` : '— geen recente meldingen'}
+                </span>
+                {list.map(i => {
+                  const mins = Math.floor((Date.now() - i.time) / 60000)
+                  return (
+                    <span key={i.system} title={i.message}
+                      style={{ background: i.threat === 'threat' ? 'rgba(224,85,85,0.15)' : 'rgba(240,160,48,0.15)', color: i.threat === 'threat' ? 'var(--red)' : '#f0a030', border: `1px solid ${i.threat === 'threat' ? 'rgba(224,85,85,0.4)' : 'rgba(240,160,48,0.4)'}`, borderRadius: 3, padding: '0.1rem 0.4rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {i.system}{i.count > 0 ? ` ${i.count}+` : ''} <span style={{ opacity: 0.6, fontWeight: 400 }}>{mins}m</span>
+                    </span>
+                  )
+                })}
+                <span style={{ marginLeft: 'auto', fontSize: '0.55rem', opacity: 0.6 }}>
+                  {intelDebug.files} bestand(en) · {intelDebug.entries} regels
                 </span>
               </div>
             }
