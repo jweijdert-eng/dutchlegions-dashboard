@@ -142,14 +142,14 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     return out
   }, [bridges, nameToId, coords])
 
-  // Intel-threats → kaart-markers (rood !-icoon + aantal). Alleen threats met coords.
+  // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
-    const out: Array<{ c: [number, number]; count: number; msg: string; sys: string }> = []
+    const out: Array<{ c: [number, number]; count: number; msg: string; sys: string; threat: boolean }> = []
     for (const [sys, info] of Object.entries(intel)) {
-      if (info.threat !== 'threat') continue
+      if (info.threat === 'clear') continue
       const id = nameToId.get(sys)
       const c = id && coords[id]
-      if (c) out.push({ c, count: info.count, msg: info.message, sys })
+      if (c) out.push({ c, count: info.count, msg: info.message, sys, threat: info.threat === 'threat' })
     }
     return out
   }, [intel, nameToId, coords])
@@ -279,6 +279,22 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   return (
     <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
+      {/* Intel-verbind-banner — prominent als de kaart geen chatlog-toegang heeft */}
+      {(intelStatus === 'idle' || intelStatus === 'denied') && (
+        <button onClick={onConnectIntel}
+          style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 6, pointerEvents: 'auto',
+            background: 'rgba(0,180,216,0.18)', border: '1px solid var(--blue)', borderRadius: 4, color: 'var(--blue)',
+            fontSize: '0.72rem', fontWeight: 600, padding: '0.4rem 0.9rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          📡 {intelStatus === 'denied' ? 'Intel-chatlogs herverbinden' : 'Koppel Chatlogs-map voor intel'}
+        </button>
+      )}
+      {intelStatus === 'unsupported' && (
+        <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
+          background: 'rgba(224,85,85,0.12)', border: '1px solid rgba(224,85,85,0.3)', borderRadius: 4, color: 'var(--red)',
+          fontSize: '0.62rem', padding: '0.3rem 0.7rem', whiteSpace: 'nowrap' }}>
+          Intel vereist Chrome/Edge
+        </div>
+      )}
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
         {/* Regio-namen (alleen ver uitgezoomd; bij inzoomen storen ze) */}
@@ -322,18 +338,19 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
             </g>
           )
         })}
-        {/* Intel-threats — rood !-icoon + gemeld aantal (uit de intel-chats) */}
-        {intelMarkers.map(({ c, count, msg, sys }) => {
+        {/* Intel — rood !-icoon bij threat, oranje bij onbekende sighting (uit de intel-chats) */}
+        {intelMarkers.map(({ c, count, msg, sys, threat }) => {
           const [x, y] = screen(c[0], c[1])
           if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return null
           const ir = Math.max(5, markerFont * 0.7)
+          const col = threat ? '#e05555' : '#f0a030'
           return (
             <g key={`intel-${sys}`}>
               <title>{`${sys} — ${msg}`}</title>
-              <circle cx={x} cy={y} r={ir} fill="#e05555" stroke="#05050e" strokeWidth={ir * 0.12} />
+              <circle cx={x} cy={y} r={ir} fill={col} stroke="#05050e" strokeWidth={ir * 0.12} />
               <text x={x} y={y + ir * 0.36} textAnchor="middle" fontSize={ir * 1.1} fontWeight={700} fill="#fff">!</text>
               {count > 0 && (
-                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill="#e05555" stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{count}+</text>
+                <text x={x} y={y - ir - 1} textAnchor="middle" fontSize={ir * 0.95} fontWeight={700} fill={col} stroke="#05050e" strokeWidth={ir * 0.09} paintOrder="stroke">{count}+</text>
               )}
             </g>
           )
@@ -379,13 +396,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
         {intelStatus === 'live' && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: intelMarkers.length ? 'var(--red)' : 'var(--text-dim)' }}>
             <svg width={10} height={10}><circle cx={5} cy={5} r={5} fill={intelMarkers.length ? '#e05555' : '#445'} /><text x={5} y={8} textAnchor="middle" fontSize={7} fontWeight={700} fill="#fff">!</text></svg>
-            {intelMarkers.length ? `intel (${intelMarkers.length})` : 'intel: geen threats'}
+            {intelMarkers.length ? `intel (${intelMarkers.length})` : 'intel: niks recent'}
           </span>
-        )}
-        {(intelStatus === 'idle' || intelStatus === 'denied') && (
-          <button onClick={onConnectIntel} style={{ pointerEvents: 'auto', background: 'rgba(0,180,216,0.1)', border: '1px solid rgba(0,180,216,0.4)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.56rem', padding: '0.1rem 0.4rem', cursor: 'pointer' }}>
-            📡 {intelStatus === 'denied' ? 'intel herverbinden' : 'verbind intel-chatlogs'}
-          </button>
         )}
       </div>
     </div>
