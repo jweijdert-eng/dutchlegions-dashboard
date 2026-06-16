@@ -360,20 +360,38 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const s = Math.max(0, Math.floor((Date.now() - t) / 1000))
           return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
         }
+        // Systeem-security (voor de kleur) + dominante alliance (header).
+        const sid = nameToId.get(hm.sys)
+        const sec = sid ? sysMeta[sid]?.[1] ?? 0 : 0
+        const allyCount = new Map<number, { name?: string; n: number }>()
+        for (const e of hm.group.entries) {
+          const aid = e.enemies?.[0]?.allianceId
+          if (aid) { const cur = allyCount.get(aid) ?? { name: e.enemies?.[0]?.allianceName, n: 0 }; cur.n++; allyCount.set(aid, cur) }
+        }
+        const dom = [...allyCount.entries()].sort((a, b) => b[1].n - a[1].n)[0]
         return (
           <div style={{
             position: 'absolute', left: `${(hx / W) * 100}%`, top: `${(hy / H) * 100}%`,
             transform: `translate(${onLeft ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
-            zIndex: 7, pointerEvents: 'none', width: 250,
-            background: 'rgba(6,8,16,0.97)', border: `1px solid ${col}`, borderRadius: 4,
+            zIndex: 7, pointerEvents: 'none', width: 256,
+            background: 'rgba(6,8,16,0.97)', border: `1px solid ${col}`, borderRadius: 5,
             boxShadow: '0 4px 16px rgba(0,0,0,0.6)', overflow: 'hidden',
           }}>
             {/* Systeem-header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', borderBottom: `1px solid ${col}`, background: hm.threat ? 'rgba(224,85,85,0.12)' : 'rgba(240,160,48,0.12)' }}>
-              <span style={{ fontWeight: 700, color: col, fontSize: '0.78rem' }}>{hm.sys}</span>
-              <span style={{ fontSize: '0.55rem', fontWeight: 700, color: col }}>{hm.group.entries.length} melding(en)</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.55rem', background: 'rgba(255,255,255,0.04)' }}>
+              <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#05050e', background: col, borderRadius: 3, padding: '0.05rem 0.35rem' }}>{hm.group.entries.length}</span>
+              <span style={{ fontWeight: 700, fontSize: '0.82rem', color: secColor(sec) }}>{hm.sys}</span>
+              <span style={{ fontSize: '0.62rem', color: secColor(sec) }}>{(Math.round(sec * 10) / 10).toFixed(1)}</span>
+              <span style={{ marginLeft: 'auto', fontSize: '0.66rem', fontVariantNumeric: 'tabular-nums', color: col, fontWeight: 700 }}>{mmss(hm.group.time)}</span>
             </div>
-            {/* Rijen: portret + schip · naam + corp/alliance · mm:ss (in-game stijl) */}
+            {/* Dominante alliance */}
+            {dom && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.55rem', borderBottom: `1px solid ${col}`, background: hm.threat ? 'rgba(224,85,85,0.1)' : 'rgba(240,160,48,0.1)' }}>
+                <EveImage category="alliances" id={dom[0]} variation="logo" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dom[1].name ?? 'Onbekende alliance'}</span>
+              </div>
+            )}
+            {/* Rijen: portret + schip · naam + corp/alliance-tickers */}
             {hm.group.entries.map(e => {
               const en = e.enemies && e.enemies[0]
               const ship = e.ships[0]
@@ -381,26 +399,26 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               const corpId = isChar ? en!.corpId : en?.kind === 'corporation' ? en.id : undefined
               const allyId = isChar ? en!.allianceId : en?.kind === 'alliance' ? en.id : undefined
               const name = en ? en.name : ship ? ship.name : e.message
+              const tickers = [en?.corpTicker, en?.allianceTicker].filter(Boolean).join(' ')
               return (
                 <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.55rem', borderBottom: '1px solid rgba(40,46,70,0.5)' }}>
-                  {/* Portret (character) + schip-icoon */}
-                  {isChar && <EveImage category="characters" id={en!.id} variation="portrait" size={32} px={24} round style={{ flexShrink: 0 }} />}
+                  {/* Portret + schip */}
+                  {isChar
+                    ? <EveImage category="characters" id={en!.id} variation="portrait" size={32} px={28} style={{ flexShrink: 0 }} />
+                    : <span style={{ flexShrink: 0, width: 28 }} />}
                   {ship
-                    ? <span title={ship.name} style={{ flexShrink: 0 }}><EveImage category="types" id={ship.typeId} variation="icon" size={32} px={24} /></span>
-                    : !isChar && !en && <span style={{ flexShrink: 0, width: 22, textAlign: 'center', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>}
-                  {/* Naam + corp/alliance-iconen */}
+                    ? <span title={ship.name} style={{ flexShrink: 0 }}><EveImage category="types" id={ship.typeId} variation="icon" size={32} px={26} /></span>
+                    : <span style={{ flexShrink: 0, width: 26, textAlign: 'center', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>{en ? '' : '!'}</span>}
+                  {/* Naam + tickers */}
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                    <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: e.threat === 'threat' ? '#ffb0b0' : e.threat === 'clear' ? 'var(--green)' : 'var(--gold)' }}>
+                    <span style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: e.threat === 'threat' ? '#ff7676' : e.threat === 'clear' ? 'var(--green)' : '#f0c040' }}>
                       {name}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: 1 }}>
-                      {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={32} px={14} style={{ borderRadius: 2 }} />}
-                      {allyId && <EveImage category="alliances" id={allyId} variation="logo" size={32} px={14} style={{ borderRadius: 2 }} />}
-                      <span style={{ fontSize: '0.55rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.message}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.55rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={32} px={12} style={{ borderRadius: 1, flexShrink: 0 }} />}
+                      {tickers || e.message}
                     </span>
                   </span>
-                  {/* mm:ss timer */}
-                  <span style={{ flexShrink: 0, fontSize: '0.62rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-dim)' }}>{mmss(e.time)}</span>
                 </div>
               )
             })}

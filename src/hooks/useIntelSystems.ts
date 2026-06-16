@@ -32,7 +32,26 @@ export interface SystemIntelGroup {
 export interface EnemyEntity {
   kind: 'character' | 'corporation' | 'alliance'
   id: number; name: string
-  corpId?: number; allianceId?: number            // alleen voor characters (lazy resolved)
+  corpId?: number; allianceId?: number            // lazy resolved
+  corpTicker?: string; allianceTicker?: string; allianceName?: string
+}
+
+// Globale caches per id (ticker/naam veranderen nauwelijks).
+const _corpInfo = new Map<number, { ticker?: string; allianceId?: number }>()
+const _allyInfo = new Map<number, { ticker?: string; name?: string }>()
+async function corpInfo(id: number) {
+  if (!_corpInfo.has(id)) {
+    try { const r = await fetch(`https://esi.evetech.net/latest/corporations/${id}/?datasource=tranquility`).then(x => (x.ok ? x.json() : null)); _corpInfo.set(id, { ticker: r?.ticker, allianceId: r?.alliance_id }) }
+    catch { _corpInfo.set(id, {}) }
+  }
+  return _corpInfo.get(id)!
+}
+async function allyInfo(id: number) {
+  if (!_allyInfo.has(id)) {
+    try { const r = await fetch(`https://esi.evetech.net/latest/alliances/${id}/?datasource=tranquility`).then(x => (x.ok ? x.json() : null)); _allyInfo.set(id, { ticker: r?.ticker, name: r?.name }) }
+    catch { _allyInfo.set(id, {}) }
+  }
+  return _allyInfo.get(id)!
 }
 
 // Cache: melding-tekst → gemelde vijanden. Buiten de component → sessie-breed.
@@ -74,13 +93,19 @@ async function resolveEnemies(message: string) {
     for (const a of data.alliances ?? [])    enemies.push({ kind: 'alliance',    id: a.id, name: a.name })
     for (const c of data.corporations ?? []) enemies.push({ kind: 'corporation', id: c.id, name: c.name })
     for (const ch of data.characters ?? [])  enemies.push({ kind: 'character',   id: ch.id, name: ch.name })
-    // Characters verrijken met corp/alliance (voor de iconen per rij).
-    await Promise.all(enemies.filter(e => e.kind === 'character').map(async ce => {
+    // Elke entiteit verrijken met corp/alliance-id + tickers + alliance-naam.
+    await Promise.all(enemies.map(async en => {
       try {
-        const r = await fetch(`https://esi.evetech.net/latest/characters/${ce.id}/?datasource=tranquility`)
-          .then(res2 => (res2.ok ? res2.json() : null))
-        ce.corpId = r?.corporation_id
-        ce.allianceId = r?.alliance_id
+        if (en.kind === 'character') {
+          const r = await fetch(`https://esi.evetech.net/latest/characters/${en.id}/?datasource=tranquility`).then(x => (x.ok ? x.json() : null))
+          en.corpId = r?.corporation_id; en.allianceId = r?.alliance_id
+        } else if (en.kind === 'corporation') {
+          en.corpId = en.id; en.allianceId = (await corpInfo(en.id)).allianceId
+        } else {
+          en.allianceId = en.id
+        }
+        if (en.corpId) en.corpTicker = (await corpInfo(en.corpId)).ticker
+        if (en.allianceId) { const ai = await allyInfo(en.allianceId); en.allianceTicker = ai.ticker; en.allianceName = ai.name }
       } catch { /* laat leeg */ }
     }))
     _enemyCache.set(message, enemies.slice(0, 8))
