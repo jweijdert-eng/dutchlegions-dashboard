@@ -165,7 +165,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
     const c = fc && coords[String(fc.sid)]
     if (!c) return
     didAuto.current = true
-    const k = 9
+    const k = 14
     const [bx, by] = base(c[0], c[1])
     setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
   }, [base, memberNodes, coords])
@@ -257,7 +257,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
           const fc = memberNodes.find(n => n.isFc) ?? memberNodes[0]
           const c = fc && coords[String(fc.sid)]
           if (!c) { setTf({ k: 1, x: 0, y: 0 }); return }
-          const k = 9, [bx, by] = base(c[0], c[1])
+          const k = 14, [bx, by] = base(c[0], c[1])
           setTf({ k, x: W / 2 - bx * k, y: H / 2 - by * k })
         }} title="Centreer op FC"
           style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⌖</button>
@@ -723,7 +723,7 @@ export default function Fleet() {
               {accessError}
             </div>
           ) : view === 'map' ? (
-            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
               {/* Per-systeem overzicht — compact, links */}
               <div style={{ flex: '0 0 270px', maxWidth: 300, maxHeight: 760, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3 }}>
                 {fleetMap.memberNodes.map(n => (
@@ -746,8 +746,8 @@ export default function Fleet() {
                   </div>
                 ))}
               </div>
-              {/* Kaart — rechts, begrensd zodat 'ie niet enorm wordt */}
-              <div style={{ flex: 1, minWidth: 320, maxWidth: 620, marginLeft: 'auto' }}>
+              {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
+              <div style={{ flex: 1, minWidth: 320, maxWidth: 680 }}>
                 <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} />
               </div>
             </div>
