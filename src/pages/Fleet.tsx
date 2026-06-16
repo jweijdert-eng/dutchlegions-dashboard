@@ -517,18 +517,26 @@ export default function Fleet() {
   }
 
   const saveMotd = () => withBusy(() => setFleetSettings(charFleet!.fleet_id, fleetToken!.accessToken, { motd: motdDraft }), 'MOTD opgeslagen')
-  // Free Move: optimistisch direct omzetten (ESI cachet de GET een paar sec, dus
-  // anders lijkt er niets te gebeuren). Bij een fout draaien we 'm terug.
+  // Free Move: optimistisch omzetten + daarna verifiëren met de échte ESI-stand.
+  // Zo zelf-corrigeert de knop als de getoonde waarde achterliep, en zien we het
+  // meteen als ESI de wijziging (204) tóch niet in-game toepast.
   async function toggleFreeMove() {
     if (!fleetToken || !charFleet) return
-    const next = !fleetInfo?.is_free_move
+    const target = !fleetInfo?.is_free_move
     setBusy(true); setMsg(null)
-    setFleetInfo(fi => (fi ? { ...fi, is_free_move: next } : fi))
+    setFleetInfo(fi => (fi ? { ...fi, is_free_move: target } : fi))
     try {
-      await setFleetSettings(charFleet.fleet_id, fleetToken.accessToken, { is_free_move: next })
-      setMsg('Free Move gewijzigd')
+      await setFleetSettings(charFleet.fleet_id, fleetToken.accessToken, { is_free_move: target })
+      setMsg(`Free Move → ${target ? 'AAN' : 'UIT'} verzonden…`)
+      // Even wachten zodat ESI's eigen cache verloopt, dan de echte stand ophalen.
+      await new Promise(r => setTimeout(r, 4000))
+      const fresh = await getFleetInfo(charFleet.fleet_id, fleetToken.accessToken)
+      setFleetInfo(fresh)
+      setMsg(fresh.is_free_move === target
+        ? `Free Move staat nu ${target ? 'AAN' : 'UIT'}`
+        : '⚠ ESI paste het niet toe in-game — alleen de échte fleet-boss (de FC bovenaan de fleet) mag dit zetten.')
     } catch (e) {
-      setFleetInfo(fi => (fi ? { ...fi, is_free_move: !next } : fi))
+      setFleetInfo(fi => (fi ? { ...fi, is_free_move: !target } : fi))
       setMsg(`Mislukt: ${(e as Error).message ?? 'fout'}`)
     } finally { setBusy(false) }
   }
