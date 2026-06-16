@@ -361,14 +361,14 @@ export default function Fleet() {
   const [sysMeta, setSysMeta]   = useState<Record<string, [string, number, number]>>({})
   const [regionMap, setRegionMap] = useState<Record<string, string>>({})
 
-  // Pas de zware kaart-bundels alleen laden als de kaart geopend wordt.
+  // Kaart-bundels laden zodra je in een fleet zit — de kaart staat nu op beide tabs.
   useEffect(() => {
-    if (view !== 'map') return
+    if (notInFleet) return
     getSystemCoords().then(setCoords).catch(() => {})
     getSystemJumps().then(setAdj).catch(() => {})
     getSystems().then(setSysMeta).catch(() => {})
     getRegions().then(setRegionMap).catch(() => {})
-  }, [view])
+  }, [notInFleet])
 
   async function load() {
     if (tokens.length === 0) return
@@ -802,7 +802,14 @@ export default function Fleet() {
               </div>
             </div>
           ) : (
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* Live-kaart ook op de Leden-tab */}
+              {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
+                <div style={{ maxWidth: 680 }}>
+                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} />
+                </div>
+              )}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: memberCols, gap: '0.5rem' }}>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>KARAKTER</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>SHIP</span>
@@ -864,6 +871,7 @@ export default function Fleet() {
                   </div>
                 )
               })}
+              </div>
             </div>
           )}
 
