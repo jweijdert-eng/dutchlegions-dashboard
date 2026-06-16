@@ -143,6 +143,7 @@ export default function Admin() {
   const [accent, setAccent] = useState('')
   const [links, setLinks] = useState<CorpLink[]>([])
   const [bridges, setBridges] = useState<JumpBridge[]>([])
+  const [bridgePaste, setBridgePaste] = useState('')
   const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
@@ -207,6 +208,42 @@ export default function Admin() {
     setAccent(hex)
     applyAccent(hex)               // live preview
     saveSiteConfig(hex, links)
+  }
+
+  // Bulk-plak: één bridge per regel. Scheider tussen de twee systemen mag »/›/→/↔/->/|/,/;/tab
+  // of gewoon een spatie; een trailing " - Ansiblex Jump Gate" wordt weggeknipt.
+  function parseBridgePaste(text: string): JumpBridge[] {
+    const seen = new Set<string>()
+    const out: JumpBridge[] = []
+    for (let line of text.split(/\r?\n/)) {
+      line = line.trim().replace(/\s*[-–—]\s*ansiblex.*$/i, '').trim()
+      if (!line) continue
+      let parts = line.split(/\s*(?:»|›|→|↔|<->|->|=>|\||\t|,|;)\s*/).filter(Boolean)
+      if (parts.length < 2) parts = line.split(/\s+/).filter(Boolean)   // val terug op spatie
+      if (parts.length < 2) continue
+      const a = parts[0].trim().toUpperCase(), b = parts[1].trim().toUpperCase()
+      if (!a || !b || a === b) continue
+      const key = [a, b].sort().join('|')
+      if (seen.has(key)) continue
+      seen.add(key); out.push([a, b])
+    }
+    return out
+  }
+
+  // Verwerk de plaktekst → voeg toe aan de bestaande lijst (deduped) en sla op.
+  function applyBridgePaste() {
+    const parsed = parseBridgePaste(bridgePaste)
+    if (!parsed.length) return
+    const seen = new Set(bridges.map(b => [b[0].toUpperCase(), b[1].toUpperCase()].sort().join('|')))
+    const merged = [...bridges]
+    for (const p of parsed) {
+      const key = [p[0], p[1]].sort().join('|')
+      if (seen.has(key)) continue
+      seen.add(key); merged.push(p)
+    }
+    setBridges(merged)
+    setBridgePaste('')
+    saveSiteConfig(accent, links, merged)
   }
 
   async function fetchBpInfo() {
@@ -773,6 +810,26 @@ export default function Admin() {
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>🌉 Jump bridges (fleet-kaart)</div>
               <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>Ansiblex-verbindingen staan niet in de SDE — voer ze hier in als paar systeem-namen (bv. <code>BKG-Q2</code> ↔ <code>9F-7PZ</code>). Ze worden op de fleet-kaart als blauwe lijn getekend.</div>
+
+              {/* Bulk-plakken: alle bridges in één keer */}
+              <div style={{ marginBottom: '0.8rem' }}>
+                <textarea
+                  value={bridgePaste}
+                  onChange={e => setBridgePaste(e.target.value)}
+                  rows={4}
+                  placeholder={'Plak hier alle bridges — één per regel, bv.:\nBKG-Q2 » 9F-7PZ\n9F-7PZ » C-LP3N\nof: BKG-Q2, 9F-7PZ'}
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', fontFamily: 'monospace', padding: '0.45rem 0.6rem', outline: 'none', resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.35rem' }}>
+                  <button
+                    onClick={applyBridgePaste}
+                    disabled={!bridgePaste.trim()}
+                    style={{ background: 'rgba(62,207,110,0.12)', border: '1px solid var(--green)', borderRadius: 3, color: 'var(--green)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: bridgePaste.trim() ? 'pointer' : 'not-allowed', opacity: bridgePaste.trim() ? 1 : 0.5 }}
+                  >Inlezen & toevoegen</button>
+                  {bridgePaste.trim() && <span style={{ fontSize: '0.64rem', color: 'var(--text-dim)' }}>{parseBridgePaste(bridgePaste).length} bridge(s) herkend</span>}
+                </div>
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                 {bridges.map((b, i) => (
                   <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
