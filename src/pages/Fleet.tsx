@@ -89,6 +89,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   // Staand canvas — New Eden is hoger (z-span) dan breed (x-span), net als de echte cluster-map.
   const W = 660, H = 760, PAD = 30
   const [tf, setTf] = useState({ k: 1, x: 0, y: 0 })
+  const [hoverSys, setHoverSys] = useState<string | null>(null)   // intel-marker waar de muis op staat
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const didAuto = useRef(false)
 
@@ -143,12 +144,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 
   // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
-    const out: Array<{ c: [number, number]; count: number; msg: string; sys: string; threat: boolean }> = []
+    const out: Array<{ c: [number, number]; count: number; msg: string; sys: string; threat: boolean; reporter: string; time: number }> = []
     for (const [sys, info] of Object.entries(intel)) {
       if (info.threat === 'clear') continue
       const id = nameToId.get(sys)
       const c = id && coords[id]
-      if (c) out.push({ c, count: info.count, msg: info.message, sys, threat: info.threat === 'threat' })
+      if (c) out.push({ c, count: info.count, msg: info.message, sys, threat: info.threat === 'threat', reporter: info.reporter, time: info.time })
     }
     return out
   }, [intel, nameToId, coords])
@@ -328,8 +329,10 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const ir = Math.max(5, markerFont * 0.7)
           const col = threat ? '#e05555' : '#f0a030'
           return (
-            <g key={`intel-${sys}`}>
-              <title>{`${sys} — ${msg}`}</title>
+            <g key={`intel-${sys}`} style={{ pointerEvents: 'auto', cursor: 'help' }}
+              onMouseEnter={() => setHoverSys(sys)} onMouseLeave={() => setHoverSys(h => h === sys ? null : h)}>
+              {/* Onzichtbaar hover-vlak (ruimer dan het icoon) */}
+              <circle cx={x} cy={y} r={Math.max(ir * 1.8, 10)} fill="transparent" />
               {/* Pulserende ring (radar-ping) */}
               <circle cx={x} cy={y} fill="none" stroke={col} strokeWidth={1.5}>
                 <animate attributeName="r" values={`${ir};${ir * 2.8}`} dur="1.5s" repeatCount="indefinite" />
@@ -345,6 +348,37 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           )
         })}
       </svg>
+      {/* Intel-tooltip bij hover — rijke info */}
+      {(() => {
+        const hm = hoverSys ? intelMarkers.find(m => m.sys === hoverSys) : null
+        if (!hm) return null
+        const [hx, hy] = screen(hm.c[0], hm.c[1])
+        if (hx < 0 || hx > W || hy < 0 || hy > H) return null
+        const mins = Math.floor((Date.now() - hm.time) / 60000)
+        const ago = mins < 1 ? 'zojuist' : `${mins}m geleden`
+        const col = hm.threat ? 'var(--red)' : '#f0a030'
+        const onLeft = hx > W * 0.6
+        return (
+          <div style={{
+            position: 'absolute', left: `${(hx / W) * 100}%`, top: `${(hy / H) * 100}%`,
+            transform: `translate(${onLeft ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
+            zIndex: 7, pointerEvents: 'none', width: 220,
+            background: 'rgba(8,10,20,0.96)', border: `1px solid ${col}`, borderRadius: 4,
+            padding: '0.5rem 0.6rem', boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+              <span style={{ fontWeight: 700, color: col, fontSize: '0.8rem' }}>{hm.sys}</span>
+              <span style={{ fontSize: '0.58rem', fontWeight: 700, color: col, border: `1px solid ${col}`, borderRadius: 2, padding: '0.05rem 0.3rem' }}>
+                {hm.threat ? 'THREAT' : 'SIGHTING'}{hm.count > 0 ? ` · ${hm.count}+` : ''}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text)', lineHeight: 1.4, marginBottom: '0.3rem', wordBreak: 'break-word' }}>{hm.msg}</div>
+            <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{hm.reporter}</span><span>{ago}</span>
+            </div>
+          </div>
+        )
+      })()}
       {/* Zoom-knoppen */}
       <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {[['+', 1.4], ['−', 1 / 1.4]].map(([lbl, f]) => (
