@@ -8,6 +8,7 @@ import {
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
+import { useSiteConfig, type JumpBridge } from '../hooks/useSiteConfig'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
@@ -72,12 +73,13 @@ interface MemberNode {
 
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
-function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
+function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
   regionMap: Record<string, string>
   adj: Record<string, number[]>
   memberNodes: MemberNode[]
+  bridges: JumpBridge[]
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -117,6 +119,20 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
     return [...acc.entries()].map(([rid, a]) => ({ rid, name: regionMap[String(rid)] ?? '', x: a.sx / a.n, z: a.sy / a.n }))
   }, [coords, sysMeta, regionMap])
 
+  // Jump bridges → coördinaat-paren (systeem-namen resolven naar id's → coords).
+  const bridgeCoords = useMemo(() => {
+    const nameToId = new Map<string, string>()
+    for (const [id, meta] of Object.entries(sysMeta)) nameToId.set(meta[0].toUpperCase(), id)
+    const out: Array<[[number, number], [number, number]]> = []
+    for (const [a, b] of bridges) {
+      const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
+      if (!ia || !ib) continue
+      const ca = coords[ia], cb = coords[ib]
+      if (ca && cb) out.push([ca, cb])
+    }
+    return out
+  }, [bridges, sysMeta, coords])
+
   // Canvas (her)tekenen bij data- of transform-wijziging.
   useEffect(() => {
     const cv = canvasRef.current
@@ -146,6 +162,22 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
     }
     ctx.stroke()
 
+    // 1b) Jump bridges (Ansiblex) — blauwe gestippelde lijn, los van de stargates.
+    if (bridgeCoords.length) {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(0,180,216,0.85)'
+      ctx.lineWidth = Math.min(2, 0.8 + tf.k * 0.06)
+      ctx.setLineDash([5, 4])
+      ctx.beginPath()
+      for (const [ca, cb] of bridgeCoords) {
+        const [ax, ay] = scr(ca); const [bx, by] = scr(cb)
+        if ((ax < 0 && bx < 0) || (ax > W && bx > W) || (ay < 0 && by < 0) || (ay > H && by > H)) continue
+        ctx.moveTo(ax, ay); ctx.lineTo(bx, by)
+      }
+      ctx.stroke()
+      ctx.restore()
+    }
+
     // 2) Systemen als dots (gekleurd op security).
     for (const [sid, c] of Object.entries(coords)) {
       const [x, y] = scr(c)
@@ -156,7 +188,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
       ctx.beginPath(); ctx.arc(x, y, Math.max(0.5, s / 2), 0, Math.PI * 2); ctx.fill()
     }
     ctx.globalAlpha = 1
-  }, [coords, sysMeta, adj, base, tf])
+  }, [coords, sysMeta, adj, base, tf, bridgeCoords])
 
   // Auto-zoom: éénmalig inzoomen op de FC zodra coords + leden geladen zijn.
   useEffect(() => {
@@ -285,7 +317,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
         <polygon points="40,70 34,67 34,73" fill="#e05555" />
         <text x={30} y={82} fontSize={9} fontWeight={700} fill="#e05555">+X</text>
       </svg>
-      <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)' }}>sleep = pan · scroll = zoom</div>
+      <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <span>sleep = pan · scroll = zoom</span>
+        {bridgeCoords.length > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--blue)' }}>
+            <svg width={18} height={6}><line x1={0} y1={3} x2={18} y2={3} stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="4 3" /></svg>
+            jump bridge
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -293,6 +333,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
 export default function Fleet() {
   // Álle accounts, niet alleen de geselecteerde — je kunt met een ander character in fleet zitten.
   const { tokens } = useAuth()
+  const { bridges: siteBridges } = useSiteConfig()
 
   const [charFleet, setCharFleet]     = useState<CharacterFleet | null>(null)
   const [fleetInfo, setFleetInfo]     = useState<FleetInfo | null>(null)
@@ -757,7 +798,7 @@ export default function Fleet() {
               </div>
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
               <div style={{ flex: 1, minWidth: 320, maxWidth: 680 }}>
-                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} />
+                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} />
               </div>
             </div>
           ) : (

@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react'
 // Publieke site-config uit /api/siteconfig.php: accentkleur + handige links.
 // Beheerd op de Admin-pagina. Module-gecachet zodat componenten één fetch delen.
 export interface CorpLink { label: string; url: string }
-export interface SiteConfig { accent: string; links: CorpLink[] }
+export type JumpBridge = [string, string]   // paar systeem-namen
+export interface SiteConfig { accent: string; links: CorpLink[]; bridges: JumpBridge[] }
 
-const EMPTY: SiteConfig = { accent: '', links: [] }
+const EMPTY: SiteConfig = { accent: '', links: [], bridges: [] }
 let _cache: SiteConfig | null = null
 let _inflight: Promise<SiteConfig> | null = null
 
@@ -22,7 +23,11 @@ export function fetchSiteConfig(force = false): Promise<SiteConfig> {
     _inflight = fetch('/api/siteconfig.php')
       .then(r => (r.ok ? r.json() : EMPTY))
       .then((d: SiteConfig) => {
-        _cache = { accent: d?.accent ?? '', links: Array.isArray(d?.links) ? d.links : [] }
+        _cache = {
+          accent: d?.accent ?? '',
+          links: Array.isArray(d?.links) ? d.links : [],
+          bridges: Array.isArray(d?.bridges) ? d.bridges.filter(b => Array.isArray(b) && b.length === 2) : [],
+        }
         applyAccent(_cache.accent)
         return _cache
       })

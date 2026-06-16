@@ -5,7 +5,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import { useLayoutMode } from '../context/LayoutModeContext'
 import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
 import EveImage from '../components/EveImage'
-import { fetchSiteConfig, applyAccent, type CorpLink } from '../hooks/useSiteConfig'
+import { fetchSiteConfig, applyAccent, type CorpLink, type JumpBridge } from '../hooks/useSiteConfig'
 
 const ADMIN_CHAR_ID = 1831618559
 
@@ -142,6 +142,7 @@ export default function Admin() {
   const [motdSaved, setMotdSaved] = useState(false)
   const [accent, setAccent] = useState('')
   const [links, setLinks] = useState<CorpLink[]>([])
+  const [bridges, setBridges] = useState<JumpBridge[]>([])
   const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
@@ -185,15 +186,17 @@ export default function Admin() {
       const d = await fetch('/api/siteconfig.php', { cache: 'no-cache' }).then(r => r.json())
       setAccent(d.accent ?? '')
       setLinks(Array.isArray(d.links) ? d.links : [])
+      setBridges(Array.isArray(d.bridges) ? d.bridges.filter((b: unknown) => Array.isArray(b) && b.length === 2) : [])
     } catch { /* ignore */ }
   }
 
-  async function saveSiteConfig(nextAccent: string, nextLinks: CorpLink[]) {
+  async function saveSiteConfig(nextAccent: string, nextLinks: CorpLink[], nextBridges: JumpBridge[] = bridges) {
     if (!adminToken) return
     const cleanLinks = nextLinks.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
+    const cleanBridges = nextBridges.filter(b => b[0]?.trim() && b[1]?.trim())
     await fetch('/api/siteconfig.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, accent: nextAccent, links: cleanLinks }),
+      body: JSON.stringify({ characterId: adminToken.characterId, accent: nextAccent, links: cleanLinks, bridges: cleanBridges }),
     }).catch(() => {})
     applyAccent(nextAccent)        // direct site-breed toepassen
     fetchSiteConfig(true)          // module-cache verversen voor de rest van de app
@@ -761,6 +764,43 @@ export default function Admin() {
                 >+ Link toevoegen</button>
                 <button
                   onClick={() => saveSiteConfig(accent, links)}
+                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
+                >Opslaan</button>
+              </div>
+            </div>
+
+            {/* Jump bridges (fleet-kaart) */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>🌉 Jump bridges (fleet-kaart)</div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>Ansiblex-verbindingen staan niet in de SDE — voer ze hier in als paar systeem-namen (bv. <code>BKG-Q2</code> ↔ <code>9F-7PZ</code>). Ze worden op de fleet-kaart als blauwe lijn getekend.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {bridges.map((b, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <input
+                      value={b[0]}
+                      onChange={e => setBridges(bs => bs.map((x, j) => j === i ? [e.target.value, x[1]] : x))}
+                      placeholder="Systeem A"
+                      style={{ width: 130, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
+                    />
+                    <span style={{ color: 'var(--text-dim)' }}>↔</span>
+                    <input
+                      value={b[1]}
+                      onChange={e => setBridges(bs => bs.map((x, j) => j === i ? [x[0], e.target.value] : x))}
+                      placeholder="Systeem B"
+                      style={{ width: 130, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
+                    />
+                    <button onClick={() => setBridges(bs => bs.filter((_, j) => j !== i))} title="Verwijderen"
+                      style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--red)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>×</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.65rem' }}>
+                <button
+                  onClick={() => setBridges(bs => bs.length < 100 ? [...bs, ['', '']] : bs)}
+                  style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
+                >+ Bridge toevoegen</button>
+                <button
+                  onClick={() => saveSiteConfig(accent, links, bridges)}
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>

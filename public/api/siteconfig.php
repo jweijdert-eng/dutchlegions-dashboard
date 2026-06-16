@@ -10,7 +10,7 @@ function valid_hex(string $c): bool { return (bool)preg_match('/^#[0-9a-fA-F]{6}
 // GET: publieke site-config (accentkleur + handige links) — voor iedereen leesbaar.
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('theme_accent','corp_links')");
+        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('theme_accent','corp_links','jump_bridges')");
         $rows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) $rows[$r['key']] = $r['value'];
 
@@ -22,7 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $decoded = json_decode($rows['corp_links'], true);
             if (is_array($decoded)) $links = $decoded;
         }
-        echo json_encode(['accent' => $accent, 'links' => $links]);
+
+        $bridges = [];
+        if (!empty($rows['jump_bridges'])) {
+            $decoded = json_decode($rows['jump_bridges'], true);
+            if (is_array($decoded)) $bridges = $decoded;
+        }
+        echo json_encode(['accent' => $accent, 'links' => $links, 'bridges' => $bridges]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
     }
@@ -49,11 +55,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (count($links) >= 12) break;
         }
 
+        // Jump bridges saneren: paren van twee systeem-namen, max 100.
+        $bridges = [];
+        foreach ((array)($data['bridges'] ?? []) as $b) {
+            if (!is_array($b) || count($b) < 2) continue;
+            $a = strtoupper(trim((string)$b[0]));
+            $c = strtoupper(trim((string)$b[1]));
+            if ($a === '' || $c === '') continue;
+            $bridges[] = [mb_substr($a, 0, 32), mb_substr($c, 0, 32)];
+            if (count($bridges) >= 100) break;
+        }
+
         $stmt = $pdo->prepare('INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?');
         $stmt->execute(['theme_accent', $accent, $accent]);
         $json = json_encode($links);
         $stmt->execute(['corp_links', $json, $json]);
-        echo json_encode(['ok' => true, 'accent' => $accent, 'links' => $links]);
+        $bjson = json_encode($bridges);
+        $stmt->execute(['jump_bridges', $bjson, $bjson]);
+        echo json_encode(['ok' => true, 'accent' => $accent, 'links' => $links, 'bridges' => $bridges]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
     }
