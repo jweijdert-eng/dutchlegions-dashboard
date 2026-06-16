@@ -10,7 +10,7 @@ function valid_hex(string $c): bool { return (bool)preg_match('/^#[0-9a-fA-F]{6}
 // GET: publieke site-config (accentkleur + handige links) — voor iedereen leesbaar.
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('theme_accent','corp_links','jump_bridges')");
+        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('theme_accent','corp_links','jump_bridges','intel_channels')");
         $rows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) $rows[$r['key']] = $r['value'];
 
@@ -28,7 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $decoded = json_decode($rows['jump_bridges'], true);
             if (is_array($decoded)) $bridges = $decoded;
         }
-        echo json_encode(['accent' => $accent, 'links' => $links, 'bridges' => $bridges]);
+
+        $intelChannels = [];
+        if (!empty($rows['intel_channels'])) {
+            $decoded = json_decode($rows['intel_channels'], true);
+            if (is_array($decoded)) $intelChannels = $decoded;
+        }
+        echo json_encode(['accent' => $accent, 'links' => $links, 'bridges' => $bridges, 'intelChannels' => $intelChannels]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
     }
@@ -66,13 +72,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (count($bridges) >= 100) break;
         }
 
+        // Intel-kanalen saneren: { prefix, label }, prefix verplicht, max 30.
+        $intelChannels = [];
+        foreach ((array)($data['intelChannels'] ?? []) as $c) {
+            $prefix = trim((string)($c['prefix'] ?? ''));
+            $label  = trim((string)($c['label'] ?? ''));
+            if ($prefix === '') continue;
+            $intelChannels[] = ['prefix' => mb_substr($prefix, 0, 64), 'label' => mb_substr($label, 0, 40)];
+            if (count($intelChannels) >= 30) break;
+        }
+
         $stmt = $pdo->prepare('INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?');
         $stmt->execute(['theme_accent', $accent, $accent]);
         $json = json_encode($links);
         $stmt->execute(['corp_links', $json, $json]);
         $bjson = json_encode($bridges);
         $stmt->execute(['jump_bridges', $bjson, $bjson]);
-        echo json_encode(['ok' => true, 'accent' => $accent, 'links' => $links, 'bridges' => $bridges]);
+        $cjson = json_encode($intelChannels);
+        $stmt->execute(['intel_channels', $cjson, $cjson]);
+        echo json_encode(['ok' => true, 'accent' => $accent, 'links' => $links, 'bridges' => $bridges, 'intelChannels' => $intelChannels]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
     }

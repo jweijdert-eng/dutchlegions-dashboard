@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { fetchDscanItems, type DscanGroup } from '../utils/dscan'
+import { useSiteConfig } from '../hooks/useSiteConfig'
+import { DEFAULT_INTEL_CHANNELS } from '../utils/intelChannels'
 
 interface IntelEntry {
   id: string
@@ -53,15 +55,6 @@ const SHIP_TYPE_IDS: Record<string, number> = {
   // Bombers (generic → Nemesis)
   nemesis: 12023, manticore: 12032, hound: 12034, purifier: 12038,
   bomber: 12023, bombers: 12023,
-}
-
-const WATCH_CHANNELS = ['wc.Dek+Fa+PB', 'wc.Vale+Tr+Ge', 'wc.Venal+Br+Te']
-const PRIORITY       = 'wc.Dek+Fa+PB'
-
-const CH_LABEL: Record<string, string> = {
-  'wc.Dek+Fa+PB':    'Dek / Fa / PB',
-  'wc.Vale+Tr+Ge':   'Vale / Tr / Ge',
-  'wc.Venal+Br+Te':  'Venal / Br / Te',
 }
 
 const SHIP_PATTERN = `\\b(${Object.keys(SHIP_TYPE_IDS).sort((a, b) => b.length - a.length).join('|')})s?\\b`
@@ -286,7 +279,7 @@ export default function Intel() {
   const [needsPermission, setNeedsPermission] = useState(false)
   const [storedHandle, setStoredHandle]     = useState<FileSystemDirectoryHandle | null>(null)
   const [entries, setEntries]               = useState<IntelEntry[]>([])
-  const [activeTab, setActiveTab]           = useState<string>(PRIORITY)
+  const [activeTab, setActiveTab]           = useState<string>(() => DEFAULT_INTEL_CHANNELS[0].prefix)
   const [filter, setFilter]                 = useState('')
   const [threatOnly, setThreatOnly]         = useState(false)
   const [soundOn, setSoundOn]               = useState(true)
@@ -302,8 +295,21 @@ export default function Intel() {
   const activeTabRef     = useRef(activeTab)
   const resolvedReporters = useRef(new Set<string>())
 
+  // Intel-kanalen uit de site-config (beheerd in de Admin); valt terug op de defaults.
+  const { intelChannels } = useSiteConfig()
+  const channels = intelChannels.length ? intelChannels : DEFAULT_INTEL_CHANNELS
+  const WATCH_CHANNELS = channels.map(c => c.prefix)
+  const PRIORITY = WATCH_CHANNELS[0]
+  const chLabel = (p: string) => channels.find(c => c.prefix === p)?.label || p
+
   // Keep activeTabRef in sync
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+
+  // Als de geconfigureerde kanalen veranderen en het actieve tabblad bestaat niet meer,
+  // val terug op het eerste kanaal.
+  useEffect(() => {
+    if (activeTab !== 'all' && !WATCH_CHANNELS.includes(activeTab)) setActiveTab(PRIORITY)
+  }, [activeTab, WATCH_CHANNELS.join('|'), PRIORITY])
 
   // Tick every 20s to update relative times and age dimming
   useEffect(() => {
@@ -468,7 +474,8 @@ export default function Intel() {
     poll()
     const iv = setInterval(poll, 1000)
     return () => clearInterval(iv)
-  }, [dirHandle, soundOn])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirHandle, soundOn, WATCH_CHANNELS.join('|')])
 
   const tabEntries = activeTab === 'all'
     ? entries
@@ -543,7 +550,7 @@ export default function Intel() {
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
             {WATCH_CHANNELS.map(ch => (
               <div key={ch} style={{ fontSize: '0.65rem', color: ch === PRIORITY ? 'var(--gold)' : 'var(--text-dim)', background: 'var(--surface)', border: `1px solid ${ch === PRIORITY ? 'rgba(240,192,64,0.3)' : 'var(--border)'}`, borderRadius: 2, padding: '0.2rem 0.6rem' }}>
-                {CH_LABEL[ch] ?? ch}{ch === PRIORITY ? ' ★' : ''}
+                {chLabel(ch)}{ch === PRIORITY ? ' ★' : ''}
               </div>
             ))}
           </div>
@@ -562,7 +569,7 @@ export default function Intel() {
               <TabBtn
                 key={ch}
                 label={ch}
-                shortLabel={CH_LABEL[ch] ?? ch}
+                shortLabel={chLabel(ch)}
                 active={activeTab === ch}
                 badge={entries.filter(e => e.channel === ch && e.threat === 'threat').length}
                 highlight={ch === PRIORITY}
@@ -658,7 +665,7 @@ export default function Intel() {
                   </span>
                   {activeTab === 'all' && (
                     <span style={{ fontSize: '0.56rem', color: e.channel === PRIORITY ? 'rgba(240,192,64,0.5)' : 'var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {CH_LABEL[e.channel] ?? e.channel}
+                      {chLabel(e.channel)}
                     </span>
                   )}
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

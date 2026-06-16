@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSiteConfig } from './useSiteConfig'
+import { DEFAULT_INTEL_CHANNELS } from '../utils/intelChannels'
 
 // Leest dezelfde EVE-chatlogs als de Intel-pagina (via de Chatlogs-map die daar
 // gekoppeld is, opgeslagen in IndexedDB) en levert per systeem de meest recente
@@ -14,8 +16,6 @@ export interface SystemIntel {
   reporter: string
 }
 
-// Zelfde kanalen als de Intel-pagina.
-const WATCH_CHANNELS = ['wc.Dek+Fa+PB', 'wc.Vale+Tr+Ge', 'wc.Venal+Br+Te']
 const MAX_AGE = 20 * 60 * 1000                    // ouder dan 20 min → van de kaart af
 
 const CLEAR_RE  = /\b(nv|nvt|clr|clear|safe)\b/i
@@ -49,11 +49,11 @@ async function loadDirHandle(): Promise<FileSystemDirectoryHandle | null> {
 
 type PermHandle = FileSystemDirectoryHandle & { queryPermission: (d: object) => Promise<string> }
 
-async function findFiles(dir: FileSystemDirectoryHandle): Promise<FileSystemFileHandle[]> {
+async function findFiles(dir: FileSystemDirectoryHandle, prefixes: string[]): Promise<FileSystemFileHandle[]> {
   const out: FileSystemFileHandle[] = []
   for await (const [name, handle] of (dir as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
     if (handle.kind !== 'file' || !name.endsWith('.txt')) continue
-    if (WATCH_CHANNELS.some(ch => name.startsWith(ch + '_'))) out.push(handle as FileSystemFileHandle)
+    if (prefixes.some(ch => name.startsWith(ch + '_'))) out.push(handle as FileSystemFileHandle)
   }
   return out
 }
@@ -84,6 +84,10 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
 }
 
 export function useIntelSystems(active: boolean): Record<string, SystemIntel> {
+  const { intelChannels } = useSiteConfig()
+  const prefixes = (intelChannels.length ? intelChannels : DEFAULT_INTEL_CHANNELS).map(c => c.prefix)
+  const prefixKey = prefixes.join('|')                      // stabiele dep voor de effect
+
   const [intel, setIntel] = useState<Record<string, SystemIntel>>({})
   const latest   = useRef(new Map<string, SystemIntel>())   // system → meest recente melding
   const lastSize = useRef(new Map<string, number>())
@@ -92,11 +96,12 @@ export function useIntelSystems(active: boolean): Record<string, SystemIntel> {
     if (!active || !INTEL_SUPPORTED) return
     let stop = false
     let handle: FileSystemDirectoryHandle | null = null
+    const watch = prefixKey ? prefixKey.split('|') : []
 
     async function poll() {
       if (!handle || stop) return
       try {
-        const files = await findFiles(handle)
+        const files = await findFiles(handle, watch)
         for (const fh of files) {
           const file = await fh.getFile()
           const prev = lastSize.current.get(file.name) ?? 0
@@ -132,7 +137,7 @@ export function useIntelSystems(active: boolean): Record<string, SystemIntel> {
 
     const iv = setInterval(poll, 3000)
     return () => { stop = true; clearInterval(iv) }
-  }, [active])
+  }, [active, prefixKey])
 
   return intel
 }

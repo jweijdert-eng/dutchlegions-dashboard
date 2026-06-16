@@ -6,6 +6,7 @@ import { useLayoutMode } from '../context/LayoutModeContext'
 import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
 import EveImage from '../components/EveImage'
 import { fetchSiteConfig, applyAccent, type CorpLink, type JumpBridge } from '../hooks/useSiteConfig'
+import { DEFAULT_INTEL_CHANNELS, type IntelChannel } from '../utils/intelChannels'
 
 const ADMIN_CHAR_ID = 1831618559
 
@@ -144,6 +145,7 @@ export default function Admin() {
   const [links, setLinks] = useState<CorpLink[]>([])
   const [bridges, setBridges] = useState<JumpBridge[]>([])
   const [bridgePaste, setBridgePaste] = useState('')
+  const [intelChannels, setIntelChannels] = useState<IntelChannel[]>([])
   const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
@@ -188,16 +190,18 @@ export default function Admin() {
       setAccent(d.accent ?? '')
       setLinks(Array.isArray(d.links) ? d.links : [])
       setBridges(Array.isArray(d.bridges) ? d.bridges.filter((b: unknown) => Array.isArray(b) && b.length === 2) : [])
+      setIntelChannels(Array.isArray(d.intelChannels) ? d.intelChannels.filter((c: IntelChannel) => c?.prefix?.trim()) : [])
     } catch { /* ignore */ }
   }
 
-  async function saveSiteConfig(nextAccent: string, nextLinks: CorpLink[], nextBridges: JumpBridge[] = bridges) {
+  async function saveSiteConfig(nextAccent: string, nextLinks: CorpLink[], nextBridges: JumpBridge[] = bridges, nextIntel: IntelChannel[] = intelChannels) {
     if (!adminToken) return
     const cleanLinks = nextLinks.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
     const cleanBridges = nextBridges.filter(b => b[0]?.trim() && b[1]?.trim())
+    const cleanIntel = nextIntel.filter(c => c.prefix.trim()).map(c => ({ prefix: c.prefix.trim(), label: c.label.trim() }))
     await fetch('/api/siteconfig.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, accent: nextAccent, links: cleanLinks, bridges: cleanBridges }),
+      body: JSON.stringify({ characterId: adminToken.characterId, accent: nextAccent, links: cleanLinks, bridges: cleanBridges, intelChannels: cleanIntel }),
     }).catch(() => {})
     applyAccent(nextAccent)        // direct site-breed toepassen
     fetchSiteConfig(true)          // module-cache verversen voor de rest van de app
@@ -859,6 +863,53 @@ export default function Admin() {
                 <button
                   onClick={() => saveSiteConfig(accent, links, bridges)}
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
+                >Opslaan</button>
+              </div>
+            </div>
+
+            {/* Intel-kanalen (Intel-pagina + fleet-kaart) */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>📡 Intel-kanalen</div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>
+                De chat-kanalen die de Intel-pagina én de fleet-kaart uitlezen. <code>Prefix</code> = begin van de chatlog-bestandsnaam (bv. <code>wc.Dek+Fa+PB</code>), <code>label</code> is voor de weergave. Leeg = standaard ({DEFAULT_INTEL_CHANNELS.map(c => c.label).join(', ')}).
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {intelChannels.map((c, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <input
+                      value={c.prefix}
+                      onChange={e => setIntelChannels(cs => cs.map((x, j) => j === i ? { ...x, prefix: e.target.value } : x))}
+                      placeholder="wc.Dek+Fa+PB"
+                      style={{ flex: 1, minWidth: 0, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', fontFamily: 'monospace', padding: '0.35rem 0.5rem', outline: 'none' }}
+                    />
+                    <input
+                      value={c.label}
+                      onChange={e => setIntelChannels(cs => cs.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                      placeholder="Label (weergave)"
+                      style={{ width: 150, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
+                    />
+                    <button onClick={() => setIntelChannels(cs => cs.filter((_, j) => j !== i))} title="Verwijderen"
+                      style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--red)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>×</button>
+                  </div>
+                ))}
+                {intelChannels.length === 0 && (
+                  <div style={{ fontSize: '0.64rem', color: 'var(--text-dim)' }}>Geen eigen kanalen — de standaardkanalen worden gebruikt.</div>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
+                <button
+                  onClick={() => setIntelChannels(cs => cs.length < 30 ? [...cs, { prefix: '', label: '' }] : cs)}
+                  style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
+                >+ Kanaal toevoegen</button>
+                {intelChannels.length === 0 && (
+                  <button
+                    onClick={() => setIntelChannels(DEFAULT_INTEL_CHANNELS.map(c => ({ ...c })))}
+                    style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
+                  >Standaardkanalen invullen</button>
+                )}
+                <button
+                  onClick={() => saveSiteConfig(accent, links, bridges, intelChannels)}
+                  style={{ marginLeft: 'auto', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
             </div>
