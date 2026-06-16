@@ -72,10 +72,11 @@ interface MemberNode {
 
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
-function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
+function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
   regionMap: Record<string, string>
+  adj: Record<string, number[]>
   memberNodes: MemberNode[]
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -124,17 +125,37 @@ function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
     const ctx = cv.getContext('2d')!
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, H)
+    const scr = (c: [number, number]): [number, number] => { const [bx, by] = base(c[0], c[1]); return [bx * tf.k + tf.x, by * tf.k + tf.y] }
+
+    // 1) Stargate-lijnen (zoals de in-game star map).
+    ctx.strokeStyle = 'rgba(190,70,130,0.45)'
+    ctx.lineWidth = Math.min(1.4, 0.5 + tf.k * 0.12)
+    ctx.beginPath()
+    for (const [sid, neighbors] of Object.entries(adj)) {
+      const ca = coords[sid]; if (!ca) continue
+      const sidN = Number(sid)
+      const [ax, ay] = scr(ca)
+      for (const nb of neighbors) {
+        if (sidN > nb) continue                 // elke gate één keer
+        const cb = coords[String(nb)]; if (!cb) continue
+        const [bx, by] = scr(cb)
+        if ((ax < 0 && bx < 0) || (ax > W && bx > W) || (ay < 0 && by < 0) || (ay > H && by > H)) continue
+        ctx.moveTo(ax, ay); ctx.lineTo(bx, by)
+      }
+    }
+    ctx.stroke()
+
+    // 2) Systemen als dots (gekleurd op security).
     for (const [sid, c] of Object.entries(coords)) {
-      const [bx, by] = base(c[0], c[1])
-      const x = bx * tf.k + tf.x, y = by * tf.k + tf.y
+      const [x, y] = scr(c)
       if (x < -4 || x > W + 4 || y < -4 || y > H + 4) continue
       ctx.fillStyle = secColor(sysMeta[sid]?.[1] ?? 0)
-      ctx.globalAlpha = 0.7
-      const s = 1.2 + (tf.k - 1) * 0.25
-      ctx.fillRect(x - s / 2, y - s / 2, s, s)
+      ctx.globalAlpha = 0.85
+      const s = 1.6 + (tf.k - 1) * 0.35
+      ctx.beginPath(); ctx.arc(x, y, s / 2 + 0.4, 0, Math.PI * 2); ctx.fill()
     }
     ctx.globalAlpha = 1
-  }, [coords, sysMeta, base, tf])
+  }, [coords, sysMeta, adj, base, tf])
 
   if (!base) {
     return <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Kaart laden…</div>
@@ -170,25 +191,33 @@ function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        {/* Regio-namen */}
-        {regions.map(rg => {
+        {/* Regio-namen (alleen ver uitgezoomd; bij inzoomen storen ze) */}
+        {tf.k < 5 && regions.map(rg => {
           const [x, y] = screen(rg.x, rg.z)
           if (x < 0 || x > W || y < 0 || y > H) return null
           return <text key={rg.rid} x={x} y={y} textAnchor="middle" fontSize={8.5} fill="rgba(205,214,235,0.8)" stroke="#05050e" strokeWidth={0.5} paintOrder="stroke">{rg.name}</text>
         })}
-        {/* Fleet-leden */}
+        {/* Systeem-labels bij inzoomen (zoals de in-game star map) */}
+        {tf.k >= 4 && Object.entries(coords).map(([sid, c]) => {
+          const [x, y] = screen(c[0], c[1])
+          if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
+          const name = sysMeta[sid]?.[0]; if (!name) return null
+          return <text key={sid} x={x + 4} y={y - 4} fontSize={7.5} fill="rgba(225,228,240,0.85)" stroke="#05050e" strokeWidth={0.4} paintOrder="stroke">{name}</text>
+        })}
+        {/* Fleet-leden — groene ring + aantal (zoals de in-game map) */}
         {memberNodes.map(n => {
           const c = coords[String(n.sid)]
           if (!c) return null
           const [x, y] = screen(c[0], c[1])
-          const r = 5 + (n.members.length / maxCount) * 9
+          const r = 5 + (n.members.length / maxCount) * 7
           return (
             <g key={n.sid}>
-              <circle cx={x} cy={y} r={r + 6} fill={secColor(n.sec)} fillOpacity={0.18} />
-              {n.isFc && <circle cx={x} cy={y} r={r + 3} fill="none" stroke="#f0c040" strokeWidth={1.5} strokeDasharray="3 2" />}
-              <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#fff" strokeWidth={1} />
+              <circle cx={x} cy={y} r={r + 7} fill="#3ecf6e" fillOpacity={0.12} />
+              <circle cx={x} cy={y} r={r + 2} fill="none" stroke="#3ecf6e" strokeWidth={2} />
+              {n.isFc && <circle cx={x} cy={y} r={r + 6} fill="none" stroke="#f0c040" strokeWidth={1.2} strokeDasharray="3 2" />}
+              <circle cx={x} cy={y} r={r} fill={secColor(n.sec)} stroke="#05050e" strokeWidth={1} />
               <text x={x} y={y + 3} textAnchor="middle" fontSize={9} fontWeight={700} fill="#05050e">{n.members.length}</text>
-              <text x={x + r + 3} y={y + 3} fontSize={10} fontWeight={600} fill="#fff" stroke="#05050e" strokeWidth={0.6} paintOrder="stroke">
+              <text x={x + r + 7} y={y + 3} fontSize={10} fontWeight={700} fill="#fff" stroke="#05050e" strokeWidth={0.7} paintOrder="stroke">
                 {n.name}{n.jumps != null && n.jumps > 0 ? ` · ${n.jumps}j` : n.isFc ? ' · FC' : ''}
               </text>
             </g>
@@ -204,10 +233,20 @@ function ClusterMap({ coords, sysMeta, regionMap, memberNodes }: {
         <button onClick={() => setTf({ k: 1, x: 0, y: 0 })} title="Reset"
           style={{ width: 26, height: 26, background: 'rgba(11,11,26,0.85)', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>⟲</button>
       </div>
-      {/* Kompas */}
-      <div style={{ position: 'absolute', top: 8, left: 10, color: 'rgba(205,214,235,0.7)', fontSize: '0.6rem', textAlign: 'center', lineHeight: 1 }}>
-        <div style={{ fontSize: '0.8rem' }}>↑</div>N
-      </div>
+      {/* Kompas + assen (zoals de officiële cluster-map: N boven, +X rechts/rood, +Y omhoog/groen) */}
+      <svg width={84} height={84} viewBox="0 0 84 84" style={{ position: 'absolute', top: 6, left: 6 }}>
+        <text x={42} y={12} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">N</text>
+        <polygon points="42,16 38,40 42,34 46,40" fill="#fff" />
+        <polygon points="42,72 38,48 42,54 46,48" fill="rgba(255,255,255,0.5)" />
+        {/* +Y groen omhoog */}
+        <line x1={14} y1={70} x2={14} y2={46} stroke="#3ecf6e" strokeWidth={2} />
+        <polygon points="14,44 11,50 17,50" fill="#3ecf6e" />
+        <text x={20} y={50} fontSize={9} fontWeight={700} fill="#3ecf6e">+Y</text>
+        {/* +X rood rechts */}
+        <line x1={14} y1={70} x2={38} y2={70} stroke="#e05555" strokeWidth={2} />
+        <polygon points="40,70 34,67 34,73" fill="#e05555" />
+        <text x={30} y={82} fontSize={9} fontWeight={700} fill="#e05555">+X</text>
+      </svg>
       <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)' }}>sleep = pan · scroll = zoom</div>
     </div>
   )
@@ -656,7 +695,7 @@ export default function Fleet() {
             </div>
           ) : view === 'map' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} memberNodes={fleetMap.memberNodes} />
+              <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} />
               {/* Per-systeem overzicht */}
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
                 {fleetMap.memberNodes.map(n => (
