@@ -229,19 +229,41 @@ export function useIntelSystems(active: boolean): IntelResult {
       }
     } catch { setStatus('denied') }                 // map weg of permissie ingetrokken
 
-    const cutoff = Date.now() - MAX_AGE             // verlopen meldingen opruimen
-    const snap: Record<string, SystemIntelGroup> = {}
+    const cutoff = Date.now() - MAX_AGE
     const unresolved: string[] = []
+    // Per vijand (character/corp/alliance) z'n NIEUWSTE locatie bijhouden → een naam
+    // die elders opduikt verdwijnt automatisch van de oude plek. Ship-only/onbekende
+    // meldingen blijven gewoon in hun eigen systeem staan.
+    const enemyLatest = new Map<string, { entity: EnemyEntity; e: SystemIntel; system: string }>()
+    const shipOnly: Array<{ system: string; e: SystemIntel }> = []
     for (const [sys, inner] of bysystem.current) {
-      for (const [id, e] of inner) if (e.time < cutoff) inner.delete(id)
-      if (inner.size === 0) { bysystem.current.delete(sys); continue }
-      // nieuwste eerst, gecapt; vijand-resolutie per melding aanhaken
-      const entries = [...inner.values()].sort((a, b) => b.time - a.time).slice(0, MAX_ENTRIES)
-        .map(e => {
-          const enemies = _enemyCache.get(e.message)
-          if (!_enemyCache.has(e.message)) unresolved.push(e.message)
-          return enemies ? { ...e, enemies } : e
-        })
+      for (const [id, e] of inner) {
+        if (e.time < cutoff) { inner.delete(id); continue }
+        const enemies = _enemyCache.get(e.message)
+        if (!_enemyCache.has(e.message)) unresolved.push(e.message)
+        if (enemies && enemies.length) {
+          for (const en of enemies) {
+            const key = `${en.kind}:${en.id}`
+            const cur = enemyLatest.get(key)
+            if (!cur || e.time > cur.e.time) enemyLatest.set(key, { entity: en, e, system: sys })
+          }
+        } else {
+          shipOnly.push({ system: sys, e })          // (nog) geen vijand-entiteit
+        }
+      }
+      if (inner.size === 0) bysystem.current.delete(sys)
+    }
+
+    // Rijen per systeem opbouwen: vijand-rijen (op huidige locatie) + ship-only-rijen.
+    const rows = new Map<string, SystemIntel[]>()
+    const push = (sys: string, row: SystemIntel) => { const a = rows.get(sys); if (a) a.push(row); else rows.set(sys, [row]) }
+    for (const { entity, e, system } of enemyLatest.values())
+      push(system, { ...e, id: `${e.id}|${entity.kind}:${entity.id}`, enemies: [entity] })
+    for (const { system, e } of shipOnly) push(system, e)
+
+    const snap: Record<string, SystemIntelGroup> = {}
+    for (const [sys, list] of rows) {
+      const entries = list.sort((a, b) => b.time - a.time).slice(0, MAX_ENTRIES)
       const top = entries[0]
       snap[sys] = { system: sys, threat: top.threat, time: top.time, count: top.count, entries }
     }
