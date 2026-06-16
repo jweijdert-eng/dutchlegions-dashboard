@@ -204,6 +204,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
   // Labels meeschalen met de zoom (vaste SVG-units → anders blijven ze even klein bij inzoomen).
   const sysFont    = Math.min(16, 3 + tf.k * 0.45)
   const memFont    = Math.min(15, 3 + tf.k * 0.42)
+  // Systemen met een fleet-marker krijgen géén los dot-label (de marker toont de naam al).
+  const memberSids = new Set(memberNodes.map(n => String(n.sid)))
   const markerFont = Math.min(17, 4 + tf.k * 0.48)
   const memLine    = memFont * 1.18
 
@@ -220,6 +222,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes }: {
         })}
         {/* Systeem-labels bij inzoomen (zoals de in-game star map) */}
         {tf.k >= 5 && Object.entries(coords).map(([sid, c]) => {
+          if (memberSids.has(sid)) return null
           const [x, y] = screen(c[0], c[1])
           if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
           const name = sysMeta[sid]?.[0]; if (!name) return null
