@@ -1247,6 +1247,13 @@ async function esiWrite(path: string, token: string, method: 'PUT' | 'POST' | 'D
     try { const j = await res.json() as { error?: string }; if (j?.error) detail = ` — ${j.error}` } catch { /* geen json */ }
     throw new Error(`ESI ${method} ${path}: ${res.status}${detail}`)
   }
+  // Na een geslaagde fleet-write de gecachte /fleets/{id}/-GETs (info/members/wings)
+  // wissen — anders geeft de eerstvolgende reload nog de oude (gecachte) waarde terug
+  // en lijkt bv. de Free Move-toggle niets te doen.
+  const fleetBase = path.match(/^\/fleets\/\d+\//)
+  if (fleetBase) {
+    for (const k of [..._cache.keys()]) if (k.includes(fleetBase[0])) _cache.delete(k)
+  }
 }
 
 export type FleetRole = 'fleet_commander' | 'wing_commander' | 'squad_commander' | 'squad_member'
