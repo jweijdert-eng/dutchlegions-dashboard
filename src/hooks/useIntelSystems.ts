@@ -116,7 +116,14 @@ const MAX_AGE = 5 * 60 * 1000                     // ouder dan 5 min → van de 
 
 const CLEAR_RE  = /\b(nv|nvt|clr|clear|safe)\b/i
 const THREAT_RE = /\b(\d{1,3}\+?|carrier|carriers|dread|dreads|super|supers|titan|titans|fax|faxes|cyno|rorqual|recon|recons|battleship|battleships|bs|bc|bcs|logi|logis|bomber|bombers|hic|hics|dic|dics|blops|sabre|flycatcher|heretic|eris|proteus|tengu|loki|legion|rapier|arazu|huginn|curse|pilgrim|stiletto|crow|malediction|interceptor|interdictor|bubble|bubbles|spike|neut|neuts)\b/i
-const SYSTEM_RE = /\b([A-Z][A-Z0-9-]{2,}[A-Z0-9]|[A-Z][A-Z0-9]{2}-[A-Z][A-Z0-9]{1,2})\b/
+// Nullsec-systeemcode: 1–4 alfanumeriek, koppelteken, 1–4 alfanumeriek (bv. 6-AOLS,
+// BKG-Q2, J9-5MQ, 1DH-SX, 9-4RP2). Mag met een cijfer beginnen; moet een letter bevatten
+// (anders is "5-10" e.d. ook een match). Global → we zoeken de eerste geldige code.
+const SYSTEM_RE = /\b([A-Z0-9]{1,4}-[A-Z0-9]{1,4})\b/g
+function findSystem(message: string): string | null {
+  for (const m of message.matchAll(SYSTEM_RE)) if (/[A-Z]/.test(m[1])) return m[1].toUpperCase()
+  return null
+}
 const COUNT_RE  = /\b(\d{1,3})\+?\b/              // eerste getal in het bericht = gemeld aantal
 
 export const INTEL_SUPPORTED = typeof window !== 'undefined' && !!(window as { showDirectoryPicker?: unknown }).showDirectoryPicker
@@ -182,8 +189,8 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
   const message  = rawMsg.trim()
   if (reporter === 'EVE System') return null
 
-  const sysMatch = SYSTEM_RE.exec(message)
-  if (!sysMatch) return null                       // zonder systeem geen kaart-marker
+  const system = findSystem(message)
+  if (!system) return null                         // zonder (echt) systeem geen kaart-marker
 
   const [datePart, timePart] = rawTime.split(' ')
   const time = new Date(`${datePart.replace(/\./g, '-')}T${timePart}Z`).getTime()
@@ -194,7 +201,7 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
 
   return {
     id: `${reporter}|${rawTime}|${message}`,
-    system: sysMatch[1].toUpperCase(),
+    system,
     threat: isClear ? 'clear' : isThreat ? 'threat' : 'unknown',
     time, count, message, reporter,
     ships: extractShips(message),
