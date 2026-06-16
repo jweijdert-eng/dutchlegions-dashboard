@@ -392,7 +392,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           <div style={{
             position: 'absolute', left: `${(hx / W) * 100}%`, top: `${(hy / H) * 100}%`,
             transform: `translate(${onLeft ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
-            zIndex: 7, pointerEvents: 'none', width: 256,
+            zIndex: 7, pointerEvents: 'none', width: 296,
             background: 'rgba(6,8,16,0.97)', border: `1px solid ${col}`, borderRadius: 5,
             boxShadow: '0 4px 16px rgba(0,0,0,0.6)', overflow: 'hidden',
           }}>
@@ -406,7 +406,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
             {/* Sov-houder van het systeem */}
             {sovAlly && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.55rem', borderBottom: `1px solid ${col}`, background: hm.threat ? 'rgba(224,85,85,0.1)' : 'rgba(240,160,48,0.1)' }}>
-                <EveImage category="alliances" id={sovAlly} variation="logo" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
+                <EveImage category="alliances" id={sovAlly} variation="logo" size={64} px={26} style={{ borderRadius: 2, flexShrink: 0 }} />
                 <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{allyNames[sovAlly] ?? 'Sov-houder…'}</span>
               </div>
             )}
@@ -422,19 +422,19 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
               const nameCol = e.threat === 'threat' ? '#ff7676' : e.threat === 'clear' ? 'var(--green)' : '#f0c040'
               return (
                 <div key={e.id} style={{ padding: '0.35rem 0.55rem', borderBottom: '1px solid rgba(40,46,70,0.5)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     {/* Iconen: character · corp · alliance */}
-                    {isChar && <EveImage category="characters" id={en!.id} variation="portrait" size={32} px={28} style={{ flexShrink: 0 }} />}
-                    {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={32} px={24} style={{ borderRadius: 2, flexShrink: 0 }} />}
-                    {allyId && <EveImage category="alliances" id={allyId} variation="logo" size={32} px={24} style={{ borderRadius: 2, flexShrink: 0 }} />}
+                    {isChar && <EveImage category="characters" id={en!.id} variation="portrait" size={64} px={40} style={{ flexShrink: 0 }} />}
+                    {corpId && <EveImage category="corporations" id={corpId} variation="logo" size={64} px={34} style={{ borderRadius: 2, flexShrink: 0 }} />}
+                    {allyId && <EveImage category="alliances" id={allyId} variation="logo" size={64} px={34} style={{ borderRadius: 2, flexShrink: 0 }} />}
                     {!en && (ship
-                      ? <span title={ship.name} style={{ flexShrink: 0 }}><EveImage category="types" id={ship.typeId} variation="icon" size={32} px={26} /></span>
-                      : <span style={{ flexShrink: 0, width: 26, textAlign: 'center', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>)}
+                      ? <span title={ship.name} style={{ flexShrink: 0 }}><EveImage category="types" id={ship.typeId} variation="icon" size={64} px={36} /></span>
+                      : <span style={{ flexShrink: 0, width: 34, textAlign: 'center', fontSize: '1.1rem', color: e.threat === 'threat' ? 'var(--red)' : '#f0a030', fontWeight: 700 }}>!</span>)}
                     {/* Naam + alliance-naam eronder */}
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                      <span style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: nameCol }}>{name}</span>
+                      <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: nameCol }}>{name}</span>
                       {(allyName || en?.corpTicker) && (
-                        <span style={{ display: 'block', fontSize: '0.56rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span style={{ display: 'block', fontSize: '0.58rem', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {allyName ?? [en?.corpTicker, en?.allianceTicker].filter(Boolean).join(' ')}
                         </span>
                       )}
@@ -442,9 +442,9 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                   </div>
                   {/* Schip eronder (als bij de character een schip gemeld is) */}
                   {en && ship && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: 3, paddingLeft: '0.4rem' }}>
-                      <EveImage category="types" id={ship.typeId} variation="icon" size={32} px={20} style={{ flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.62rem', color: 'var(--text)' }}>{ship.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 4, paddingLeft: '0.5rem' }}>
+                      <EveImage category="types" id={ship.typeId} variation="icon" size={64} px={30} style={{ flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.66rem', color: 'var(--text)' }}>{ship.name}</span>
                     </div>
                   )}
                 </div>
