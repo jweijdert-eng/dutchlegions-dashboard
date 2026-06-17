@@ -42,18 +42,15 @@ const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e0
 export const DEFAULT_NAV: NavItem[] = [
   { label: 'Dashboard',   path: '/',           icon: '▣', badge: null },
   { label: 'Character',   path: '/character',  icon: '◈', badge: null },
-  { label: 'Wallet',      path: '/wallet',     icon: '◑', badge: null },
-  { label: 'Market',      path: '/market',     icon: '◊', badge: null },
+  { label: 'Finance',     path: '/wallet',     icon: '◑', badge: null },
   { label: 'Killboard',   path: '/kills',      icon: '◉', badge: null },
   { label: 'Fleet',       path: '/fleet',      icon: '⚑', badge: null },
   { label: 'Ratting',     path: '/ratting',    icon: '⦿', badge: null },
-  { label: 'Hauling',     path: '/hauling',    icon: '⇶', badge: null },
   { label: 'Industry',    path: '/industry',   icon: '◫', badge: 'jobs' },
   { label: 'Mining',      path: '/mining',     icon: '⬟', badge: null },
   { label: 'Planets',     path: '/planets',    icon: '○', badge: null },
   { label: 'Fittings',    path: '/fittings',   icon: '⌬', badge: null },
   { label: 'Blueprints',  path: '/blueprints', icon: '⬡', badge: null },
-  { label: 'Contracts',   path: '/contracts',  icon: '◧', badge: null },
   { label: 'Build vs Buy',path: '/buildvsbuy', icon: '⚙', badge: null },
 ]
 
@@ -78,6 +75,12 @@ const CHARACTER_SUBITEMS: SubItem[] = [
   { label: 'Mail',      to: '/mail',   icon: '✉' },
   { label: 'Assets',    to: '/assets', icon: '◫' },
   { label: 'Notities',  to: '/notes',  icon: '✎' },
+]
+const FINANCE_SUBITEMS: SubItem[] = [
+  { label: 'Wallet',    to: '/wallet',    icon: '◑' },
+  { label: 'Market',    to: '/market',    icon: '◊' },
+  { label: 'Contracts', to: '/contracts', icon: '◧' },
+  { label: 'Hauling',   to: '/hauling',   icon: '⇶' },
 ]
 
 function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean; subItems?: SubItem[] }) {
@@ -587,7 +590,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           <SortableContext items={visibleNav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {visibleNav.map(item => (
               <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
-                subItems={item.path === '/kills' ? KILLS_SUBITEMS : item.path === '/character' ? CHARACTER_SUBITEMS : undefined} />
+                subItems={item.path === '/kills' ? KILLS_SUBITEMS : item.path === '/character' ? CHARACTER_SUBITEMS : item.path === '/wallet' ? FINANCE_SUBITEMS : undefined} />
             ))}
           </SortableContext>
         </DndContext>
