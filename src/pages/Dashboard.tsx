@@ -585,7 +585,7 @@ export default function Dashboard() {
   const { editMode, setEditMode, previewMode } = useLayoutMode()
   const member = useMemberSettings()
   const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(loadOrder)
-  const [charOrder, setCharOrder]     = useState<number[]>([])
+  const [charOrder, setCharOrder]     = useState<number[]>(() => loadCharOrder(allTokens.map(t => t.characterId)))
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
