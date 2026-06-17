@@ -88,6 +88,24 @@
     .rmeta { font-size:.62rem; color:var(--text-dim); margin-top:.1rem; display:flex; align-items:center; gap:.3rem; flex-wrap:wrap; }
     .rmeta img { width:16px; height:16px; border-radius:2px; }
     .rstats { font-size:.62rem; color:var(--text-dim); margin-top:.2rem; }
+    /* Admin toolbar / stats / verdict */
+    .astats { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.9rem; }
+    .stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.5rem .85rem; min-width:78px; cursor:pointer; transition:border-color .15s; }
+    .stat:hover { border-color:var(--blue); }
+    .stat.on { border-color:var(--blue); background:rgba(0,180,216,.08); }
+    .stat .n { font-size:1.25rem; font-weight:800; line-height:1; }
+    .stat .l { font-size:.58rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.06em; margin-top:.25rem; }
+    .atools { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:.9rem; }
+    .atools input, .atools select { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:.45rem .6rem; font-size:.74rem; font-family:inherit; }
+    .atools input { flex:1; min-width:160px; }
+    .atools input:focus, .atools select:focus { outline:none; border-color:var(--blue); }
+    .rcard { position:relative; }
+    .rcard .vdot { position:absolute; top:.55rem; right:.6rem; width:9px; height:9px; border-radius:50%; }
+    .vdot.v-bad { background:var(--red); box-shadow:0 0 6px var(--red); } .vdot.v-warn { background:var(--gold); } .vdot.v-ok { background:var(--green); }
+    .racts { display:flex; gap:.3rem; margin-top:.4rem; }
+    .racts button { border:1px solid var(--border); background:transparent; border-radius:5px; font-size:.62rem; font-weight:600; padding:.2rem .5rem; cursor:pointer; color:var(--text-dim); }
+    .racts button:hover { border-color:currentColor; }
+    .racts .a-acc:hover { color:var(--green); } .racts .a-rej:hover { color:var(--red); } .racts .a-del:hover { color:var(--red); }
     @media (max-width:640px) { .side { width:64px; } .side-h .nm,.side-h .org,.ni .lbl,.ni .ct { display:none; } }
   </style>
 </head>
@@ -282,13 +300,10 @@
     };
     const SECTION_ORDER = ['overview','skills','wallet','mails','contracts','standings','history'];
 
-    // Vetting-check (admin): vergelijk recruit met DL + Insidious standings + cyno-skills.
-    async function runVetting(d, adminToken, selfId){
-      const flags=[];
-      const rs=d.riskSkills||(d.cynoSkills||[]);
-      if(rs.length){ const grp={}; for(const s of rs){ const l=s.label||riskLabel(s.name)||'Overig'; (grp[l]=grp[l]||[]).push(esc(s.name)+' L'+s.level); }
-        flags.push({lvl:'warn', txt:'Risk-skills: '+Object.keys(grp).map(k=>'<b>'+k+'</b> ('+grp[k].join(', ')+')').join(' · ')}); }
-      else flags.push({lvl:'ok', txt:'Geen cyno/covert/blops/recon/jump-skills.'});
+    // Vijandenlijst (standing<0) van Dutch Legions + Insidious — id → {standing, src}
+    let _enemyCache=null;
+    async function fetchEnemySet(adminToken){
+      if(_enemyCache) return _enemyCache;
       const enemy=new Map();
       try{
         const me=await esi('/characters/'+ADMIN_CHAR_ID+'/');
@@ -297,6 +312,32 @@
         if(me.alliance_id) srcs.push(['Insidious', await esi('/alliances/'+me.alliance_id+'/contacts/',adminToken).catch(()=>null)]);
         for(const [src,arr] of srcs){ if(Array.isArray(arr)) for(const c of arr){ if(c.standing<0 && !enemy.has(c.contact_id)) enemy.set(c.contact_id,{standing:c.standing,src}); } }
       }catch{}
+      if(enemy.size) _enemyCache=enemy;
+      return enemy;
+    }
+
+    // Snelle verdict-indicatie voor de lijst (alleen synchrone checks, geen affiliation-calls)
+    function quickVerdict(d, enemy){
+      let bad=0, warn=0;
+      if(d.riskSkills?.length||d.cynoSkills?.length) warn++;
+      if((d.mails||[]).some(m=>scanText((m.subject||'')+' '+(m.body||'')).length)) warn++;
+      if(enemy&&enemy.size){
+        if((d.corpHistory||[]).some(h=>enemy.has(h.corpId)||(h.allianceId&&enemy.has(h.allianceId)))) bad++;
+        if((d.standings||[]).some(s=>s.standing>0&&enemy.has(s.id))) bad++;
+        if((d.mails||[]).some(m=>enemy.has(m.fromId)||(m.toIds||[]).some(r=>enemy.has(r)))) bad++;
+        if((d.contracts||[]).some(c=>[c.issuerId,c.assigneeId,c.acceptorId].some(p=>enemy.has(p)))) bad++;
+      }
+      return bad?{c:'bad',t:'VERDACHT'}:warn?{c:'warn',t:'CONTROLEER'}:{c:'ok',t:'VEILIG'};
+    }
+
+    // Vetting-check (admin, detail): vergelijk recruit met DL + Insidious standings + skills + mail + contracten.
+    async function runVetting(d, adminToken, selfId){
+      const flags=[];
+      const rs=d.riskSkills||(d.cynoSkills||[]);
+      if(rs.length){ const grp={}; for(const s of rs){ const l=s.label||riskLabel(s.name)||'Overig'; (grp[l]=grp[l]||[]).push(esc(s.name)+' L'+s.level); }
+        flags.push({lvl:'warn', txt:'Risk-skills: '+Object.keys(grp).map(k=>'<b>'+k+'</b> ('+grp[k].join(', ')+')').join(' · ')}); }
+      else flags.push({lvl:'ok', txt:'Geen cyno/covert/blops/recon/jump-skills.'});
+      const enemy=await fetchEnemySet(adminToken);
       if(!enemy.size){ flags.push({lvl:'info', txt:'Kon DL/Insidious-standings niet laden (geen leesrechten op corp/alliance-contacts?). Standing- en historie-check overgeslagen.'}); return flags; }
       // Werkgevershistorie: zat hij in een vijandige corp/alliance?
       const hh=[]; for(const h of (d.corpHistory||[])){ if(enemy.has(h.corpId))hh.push(esc(h.corpName)+' (corp)'); if(h.allianceId&&enemy.has(h.allianceId))hh.push(esc(h.allianceName||h.corpName)+' (alliance)'); }
@@ -390,19 +431,64 @@
 
     // ── Admin: lijst + detail ────────────────────────────────────────────────────
     async function renderAdmin(t){
-      root.innerHTML='<div class="main"><div class="ahead"><h1>Recruiting <span>· Aanmeldingen</span></h1><button class="btn" id="logout">Uitloggen</button></div><div id="list"><div class="spinner"></div></div></div>';
+      root.innerHTML='<div class="main"><div class="ahead"><h1>Recruiting <span>· Aanmeldingen</span></h1><div style="display:flex;gap:.5rem"><button class="btn" id="refresh">↻ Vernieuwen</button><button class="btn" id="logout">Uitloggen</button></div></div><div id="list"><div class="center" style="padding:2rem 0"><div class="spinner"></div><div class="sub">Aanmeldingen + DL/Insidious-standings laden…</div></div></div></div>';
       document.getElementById('logout').onclick=()=>{ localStorage.removeItem(STORE_KEY); location.href=REDIRECT_URI; };
+      document.getElementById('refresh').onclick=()=>{ _enemyCache=null; renderAdmin(t); };
       const list=document.getElementById('list'); let rows=[];
       try { const r=await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)); if(!r.ok)throw new Error(r.status===403?'Geen toegang':('HTTP '+r.status)); rows=await r.json(); }
       catch(e){ list.innerHTML='<div class="err">Kon aanmeldingen niet laden: '+esc(e.message||'')+'</div>'; return; }
       if(!rows.length){ list.innerHTML='<div class="empty">Nog geen aanmeldingen.</div>'; return; }
       const parsed=rows.map(r=>{ let d={}; try{d=JSON.parse(r.data)||{};}catch{} return {...r,d}; });
-      list.innerHTML='<div class="rgrid">'+parsed.map(r=>{ const d=r.d; return ''+
-        '<div class="rcard" data-id="'+r.character_id+'"><img class="p" src="https://images.evetech.net/characters/'+r.character_id+'/portrait?size=64" alt="" />'+
-        '<div style="flex:1;min-width:0"><div class="rname">'+esc(d.name||r.name||('#'+r.character_id))+' '+statusBadge(r.status)+(d.cynoSkills?.length?' <span class="badge" style="background:rgba(240,192,64,.18);color:var(--gold)">⚠ CYNO</span>':'')+'</div>'+
-        '<div class="rmeta">'+(d.corpId?'<img src="https://images.evetech.net/corporations/'+d.corpId+'/logo?size=32">':'')+esc(d.corpName||'')+(d.allianceName?' · '+esc(d.allianceName):'')+'</div>'+
-        '<div class="rstats">sec '+(d.sec!=null?d.sec.toFixed(1):'?')+' · '+(d.ageYears!=null?d.ageYears+'j':'?')+' · '+(d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒')+' · '+(d.sp!=null?fmtSP(d.sp)+' SP':'?')+'</div></div></div>'; }).join('')+'</div>';
-      list.querySelectorAll('.rcard').forEach(el=>el.onclick=()=>{ const r=parsed.find(x=>String(x.character_id)===el.dataset.id); renderDash(r.d, r.character_id, {admin:true, adminToken:t.accessToken, status:r.status, back:()=>renderAdmin(t)}); });
+      const enemy=await fetchEnemySet(t.accessToken);
+      parsed.forEach(r=>{ r.verdict=quickVerdict(r.d, enemy); });
+      const counts={all:parsed.length, new:0, accepted:0, rejected:0};
+      parsed.forEach(r=>{ counts[r.status]=(counts[r.status]||0)+1; });
+      const state={status:'all', q:'', sort:'recent'};
+
+      const chip=(k,l)=>'<div class="stat'+(state.status===k?' on':'')+'" data-st="'+k+'"><div class="n">'+(counts[k]||0)+'</div><div class="l">'+l+'</div></div>';
+      list.innerHTML=
+        '<div class="astats">'+chip('all','Totaal')+chip('new','Nieuw')+chip('accepted','Aangenomen')+chip('rejected','Afgewezen')+'</div>'+
+        (enemy.size?'':'<div class="vflag v-info" style="margin-bottom:.7rem">ℹ DL/Insidious-vijandenlijst niet geladen (geen leesrechten?) — verdict toont alleen skill/mail-signalen.</div>')+
+        '<div class="atools"><input id="q" placeholder="🔎 Zoek op naam, corp of alliance…">'+
+          '<select id="sort"><option value="recent">Nieuwste eerst</option><option value="old">Oudste eerst</option>'+
+          '<option value="risk">Risico (verdacht eerst)</option><option value="name">Naam A-Z</option>'+
+          '<option value="sp">SP (hoog→laag)</option><option value="wallet">Wallet (hoog→laag)</option>'+
+          '<option value="sec">Sec (laag→hoog)</option><option value="age">Leeftijd (oud→jong)</option></select></div>'+
+        '<div id="grid"></div>';
+
+      const grid=document.getElementById('grid'); const vRank={bad:0,warn:1,ok:2}; const num=v=>v==null?-Infinity:v;
+      const refreshStats=()=>document.querySelectorAll('.stat').forEach(s=>{ const k=s.dataset.st; s.querySelector('.n').textContent=counts[k]||0; s.classList.toggle('on',state.status===k); });
+      function draw(){
+        let arr=parsed.slice();
+        if(state.status!=='all') arr=arr.filter(r=>r.status===state.status);
+        if(state.q){ const q=state.q.toLowerCase(); arr=arr.filter(r=>((r.d.name||r.name||'')+' '+(r.d.corpName||'')+' '+(r.d.allianceName||'')).toLowerCase().includes(q)); }
+        arr.sort((a,b)=>{ const A=a.d,B=b.d; switch(state.sort){
+          case 'old': return new Date(a.created_at||a.updated_at)-new Date(b.created_at||b.updated_at);
+          case 'name': return (A.name||a.name||'').localeCompare(B.name||b.name||'');
+          case 'sp': return num(B.sp)-num(A.sp);
+          case 'wallet': return num(B.wallet)-num(A.wallet);
+          case 'sec': return num(A.sec)-num(B.sec);
+          case 'age': return num(B.ageYears)-num(A.ageYears);
+          case 'risk': return (vRank[a.verdict.c]-vRank[b.verdict.c]) || (new Date(b.updated_at||0)-new Date(a.updated_at||0));
+          default: return new Date(b.updated_at||b.created_at||0)-new Date(a.updated_at||a.created_at||0); } });
+        if(!arr.length){ grid.innerHTML='<div class="empty">Geen aanmeldingen die aan het filter voldoen.</div>'; return; }
+        grid.innerHTML='<div class="rgrid">'+arr.map(r=>{ const d=r.d, v=r.verdict; return ''+
+          '<div class="rcard" data-id="'+r.character_id+'"><span class="vdot v-'+v.c+'" title="'+v.t+'"></span>'+
+          '<img class="p" src="https://images.evetech.net/characters/'+r.character_id+'/portrait?size=64" alt="" />'+
+          '<div style="flex:1;min-width:0"><div class="rname">'+esc(d.name||r.name||('#'+r.character_id))+' '+statusBadge(r.status)+(d.cynoSkills?.length?' <span class="badge" style="background:rgba(240,192,64,.18);color:var(--gold)">⚠ CYNO</span>':'')+'</div>'+
+          '<div class="rmeta">'+(d.corpId?'<img src="https://images.evetech.net/corporations/'+d.corpId+'/logo?size=32">':'')+esc(d.corpName||'')+(d.allianceName?' · '+esc(d.allianceName):'')+'</div>'+
+          '<div class="rstats">sec '+(d.sec!=null?d.sec.toFixed(1):'?')+' · '+(d.ageYears!=null?d.ageYears+'j':'?')+' · '+(d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒')+' · '+(d.sp!=null?fmtSP(d.sp)+' SP':'?')+' · '+dt(r.updated_at||r.created_at)+'</div>'+
+          '<div class="racts"><button class="a-acc" data-act="accepted" data-id="'+r.character_id+'">✓ Aannemen</button><button class="a-rej" data-act="rejected" data-id="'+r.character_id+'">✕ Afwijzen</button><button class="a-del" data-act="delete" data-id="'+r.character_id+'">🗑</button></div>'+
+          '</div></div>'; }).join('')+'</div>';
+        grid.querySelectorAll('.rcard').forEach(el=>el.onclick=e=>{ if(e.target.closest('.racts'))return; const r=parsed.find(x=>String(x.character_id)===el.dataset.id); renderDash(r.d, r.character_id, {admin:true, adminToken:t.accessToken, status:r.status, back:()=>renderAdmin(t)}); });
+        grid.querySelectorAll('.racts button').forEach(b=>b.onclick=async e=>{ e.stopPropagation(); const act=b.dataset.act, cid=b.dataset.id;
+          if(act==='delete'){ if(!confirm('Aanmelding definitief verwijderen?'))return; await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)+'&delete='+cid).catch(()=>{}); const i=parsed.findIndex(x=>String(x.character_id)===cid); if(i>=0){ counts.all--; counts[parsed[i].status]=(counts[parsed[i].status]||1)-1; parsed.splice(i,1); } refreshStats(); draw(); return; }
+          await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)+'&status='+act+'&id='+cid).catch(()=>{}); const r=parsed.find(x=>String(x.character_id)===cid); if(r){ counts[r.status]=(counts[r.status]||1)-1; r.status=act; counts[act]=(counts[act]||0)+1; } refreshStats(); draw(); });
+      }
+      document.querySelectorAll('.stat').forEach(s=>s.onclick=()=>{ state.status=s.dataset.st; refreshStats(); draw(); });
+      document.getElementById('q').oninput=e=>{ state.q=e.target.value; draw(); };
+      document.getElementById('sort').onchange=e=>{ state.sort=e.target.value; draw(); };
+      draw();
     }
 
     function afterLogin(t){ if(t.characterId===ADMIN_CHAR_ID) renderAdmin(t); else renderRecruit(t); }
