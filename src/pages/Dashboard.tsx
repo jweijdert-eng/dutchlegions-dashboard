@@ -581,6 +581,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const tick    = useAutoRefresh()
   const fetchId = useRef(0)
+  const loadedOnce = useRef(false)   // na de eerste load niet meer blanken bij verversen
 
   const { editMode, setEditMode, previewMode } = useLayoutMode()
   const member = useMemberSettings()
@@ -644,8 +645,9 @@ export default function Dashboard() {
   useEffect(() => {
     if (allTokens.length === 0) return
     const myId = ++fetchId.current
-    setPhase1Loading(true); setPhase2Loading(true)
-    setTokenData([]); setKillEntries([])
+    // Alleen de eerste keer een laad-staat tonen; bij verversen (tick/token-refresh)
+    // blijft de bestaande data staan zodat de dashboard niet flasht/leegt.
+    if (!loadedOnce.current) { setPhase1Loading(true); setPhase2Loading(true) }
 
     async function load() {
       // Phase 1: fast data
@@ -670,6 +672,7 @@ export default function Dashboard() {
       if (myId !== fetchId.current) return
       setTokenData(td)
       setPhase1Loading(false)
+      loadedOnce.current = true
 
       // Resolve skill + job names
       const allSkillIds = [...new Set(td.flatMap(d => d.queue.map(s => s.skill_id)))]
