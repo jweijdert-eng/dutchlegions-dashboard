@@ -194,7 +194,7 @@
     // Render het dashboard (sidebar + content) voor een character-data-object.
     function renderDash(d, charId, opts){
       opts = opts || {};
-      const navItems = SECTION_ORDER.map(k=>{ const s=SECTIONS[k]; const c=s.count(d); return
+      const navItems = SECTION_ORDER.map(k=>{ const s=SECTIONS[k]; const c=s.count(d); return ''+
         '<div class="ni" data-k="'+k+'"><span class="ic">'+s.ic+'</span><span class="lbl">'+s.lbl+'</span>'+(c!=null?'<span class="ct">'+c+'</span>':'')+'</div>'; }).join('');
       const footer = opts.admin
         ? '<button class="abtn" style="background:rgba(62,207,110,.15);color:var(--green)" id="acc">✓ Aannemen</button>'+
@@ -243,7 +243,7 @@
       catch(e){ list.innerHTML='<div class="err">Kon aanmeldingen niet laden: '+esc(e.message||'')+'</div>'; return; }
       if(!rows.length){ list.innerHTML='<div class="empty">Nog geen aanmeldingen.</div>'; return; }
       const parsed=rows.map(r=>{ let d={}; try{d=JSON.parse(r.data)||{};}catch{} return {...r,d}; });
-      list.innerHTML='<div class="rgrid">'+parsed.map(r=>{ const d=r.d; return
+      list.innerHTML='<div class="rgrid">'+parsed.map(r=>{ const d=r.d; return ''+
         '<div class="rcard" data-id="'+r.character_id+'"><img class="p" src="https://images.evetech.net/characters/'+r.character_id+'/portrait?size=64" alt="" />'+
         '<div style="flex:1;min-width:0"><div class="rname">'+esc(d.name||r.name||('#'+r.character_id))+' '+statusBadge(r.status)+'</div>'+
         '<div class="rmeta">'+(d.corpId?'<img src="https://images.evetech.net/corporations/'+d.corpId+'/logo?size=32">':'')+esc(d.corpName||'')+(d.allianceName?' · '+esc(d.allianceName):'')+'</div>'+
