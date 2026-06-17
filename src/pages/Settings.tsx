@@ -3,6 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import { DEFAULT_NAV } from '../components/Sidebar'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { applyAccent, useSiteConfig } from '../hooks/useSiteConfig'
+import AccountsPanel from '../components/AccountsPanel'
 
 const ACCENTS = [
   '#00b4d8', '#22d3ee', '#14b8a6', '#3ecf6e', '#84cc16', '#f0c040',
@@ -106,6 +107,13 @@ export default function Settings() {
   return (
     <Layout header={<PageHeader title="Instellingen" sub="Jouw persoonlijke voorkeuren (per browser)" />}>
       <div style={{ maxWidth: 620 }}>
+
+        {/* Accounts */}
+        <div style={card}>
+          <div style={cardTitle}>👤 Accounts</div>
+          <div style={cardSub}>Je ingelogde characters. Klik om te kiezen wiens data je ziet (of "Alle accounts"). ★ = hoofdaccount, ⏏ = uitloggen.</div>
+          <AccountsPanel />
+        </div>
 
         {/* Chatlogs-map */}
         <div style={card}>

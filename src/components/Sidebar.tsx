@@ -696,31 +696,24 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
       </div>
 
 
-      {/* Account dropdown — bij ingeklapt: portret klikken klapt eerst uit */}
-      {collapsed ? (
-        <div
-          onClick={toggleCollapsed}
-          title="Account — klik om uit te klappen"
-          style={{ borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center', padding: '0.55rem 0', cursor: 'pointer' }}
-        >
-          {selectedCharId ? (
-            <EveImage category="characters" id={selectedCharId} variation="portrait" size={32} px={28} round style={{ border: '1px solid var(--blue)', display: 'block' }} />
-          ) : (
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,180,216,0.15)', border: '1px solid rgba(0,180,216,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', color: 'var(--blue)' }}>⊞</div>
-          )}
-        </div>
-      ) : (
-        <AccountDropdown
-          tokens={tokens}
-          charData={charData}
-          selectedCharId={selectedCharId}
-          setSelectedCharId={setSelectedCharId}
-          mainCharId={mainCharId}
-          setMainCharId={setMainCharId}
-          removeToken={removeToken}
-          alerts={alerts}
-        />
-      )}
+      {/* Accountbeheer + character-switcher staan nu op de Instellingen-pagina. */}
+      <NavLink
+        to="/settings"
+        title={collapsed ? 'Accounts & instellingen' : undefined}
+        style={({ isActive }) => ({
+          display: 'flex', alignItems: 'center', gap: '0.6rem', borderTop: '1px solid var(--border)',
+          padding: collapsed ? '0.6rem 0' : '0.6rem 0.85rem', justifyContent: collapsed ? 'center' : 'flex-start',
+          textDecoration: 'none', color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+          background: isActive ? 'rgba(0,180,216,0.05)' : 'transparent',
+        })}
+      >
+        {selectedCharId
+          ? <EveImage category="characters" id={selectedCharId} variation="portrait" size={32} px={26} round style={{ border: '1px solid var(--blue)', display: 'block', flexShrink: 0 }} />
+          : <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(0,180,216,0.15)', border: '1px solid rgba(0,180,216,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--blue)', flexShrink: 0 }}>⊞</div>}
+        {!collapsed && <span style={{ fontSize: '0.72rem', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selectedCharId ? (tokens.find(t => t.characterId === selectedCharId)?.characterName ?? 'Account') : `Accounts (${tokens.length})`}
+        </span>}
+      </NavLink>
     </nav>
   )
 }
