@@ -32,6 +32,7 @@ interface SiteMember {
   name: string
   last_seen: string
   blocked: number
+  allowed?: number
 }
 
 interface MemberOrg {
@@ -411,6 +412,19 @@ export default function Admin() {
     await refreshMembers()
   }
 
+  // Allowlist: laat een character (alt/vriend) de corp/alliance-eis omzeilen
+  async function toggleAllow(member: SiteMember) {
+    if (!adminToken || member.character_id === ADMIN_CHAR_ID) return
+    const action = member.allowed === 1 ? 'disallow' : 'allow'
+    setMembers(prev => prev.map(m => m.character_id === member.character_id ? { ...m, allowed: member.allowed === 1 ? 0 : 1 } : m))
+    await fetch('/api/members.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: member.character_id, action }),
+    }).catch(() => {})
+    await refreshMembers()
+  }
+
   async function fetchSettings() {
     setLoading(true)
     try {
@@ -608,13 +622,28 @@ export default function Admin() {
                       {blocked && (
                         <span style={{ fontSize: '0.6rem', color: 'var(--red)', fontWeight: 700, letterSpacing: '0.06em' }}>GEBLOKKEERD</span>
                       )}
-                      {!blocked && (
+                      {!blocked && m.allowed === 1 && (
+                        <span title="Op de allowlist — mag inloggen ongeacht corp/alliance" style={{ fontSize: '0.6rem', color: 'var(--gold)', fontWeight: 700, letterSpacing: '0.06em' }}>✓ ALLOWLIST</span>
+                      )}
+                      {!blocked && m.allowed !== 1 && (
                         <span style={{ fontSize: '0.65rem', fontWeight: 600, color: online ? 'var(--green)' : 'var(--text-dim)' }}>
                           {online ? 'Online' : 'Offline'}
                         </span>
                       )}
                       {m.character_id !== ADMIN_CHAR_ID && (
                         <>
+                          <button
+                            onClick={e => { e.stopPropagation(); toggleAllow(m) }}
+                            title={m.allowed === 1 ? 'Van allowlist halen' : 'Op allowlist zetten (mag inloggen ongeacht corp/alliance)'}
+                            style={{
+                              padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 600,
+                              border: `1px solid ${m.allowed === 1 ? 'rgba(240,192,64,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                              borderRadius: 3, cursor: 'pointer', background: 'transparent',
+                              color: m.allowed === 1 ? 'var(--gold)' : 'var(--text-dim)',
+                            }}
+                          >
+                            {m.allowed === 1 ? 'Allowlist ✓' : 'Toegang'}
+                          </button>
                           <button
                             onClick={e => { e.stopPropagation(); toggleBlock(m) }}
                             title={blocked ? 'Deblokkeren' : 'Blokkeren'}

@@ -28,7 +28,8 @@ export default function Callback() {
           if (memberInfo?.blocked) throw new Error('Je bent geblokkeerd van dit dashboard.')
 
           const settings = await fetch('/api/settings.php').then(r => r.json()).catch(() => ({}))
-          if (settings.require_corp || settings.require_alliance) {
+          // Allowlist (alts/vrienden) omzeilt de corp/alliance-eis
+          if ((settings.require_corp || settings.require_alliance) && !memberInfo?.allowed) {
             const info = await fetch(`https://esi.evetech.net/latest/characters/${token.characterId}/`)
               .then(r => r.json()).catch(() => null)
             const inCorp     = settings.require_corp     && info?.corporation_id === 98652891
@@ -38,7 +39,7 @@ export default function Callback() {
                 settings.require_corp     ? 'Dutch Legions corp' : null,
                 settings.require_alliance ? 'Insidious alliance' : null,
               ].filter(Boolean).join(' of ')
-              throw new Error(`Toegang geweigerd. Alleen ${who} leden mogen inloggen.`)
+              throw new Error(`Toegang geweigerd. Alleen ${who} leden (of characters op de allowlist) mogen inloggen.`)
             }
           }
         }

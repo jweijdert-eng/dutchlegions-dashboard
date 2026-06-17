@@ -3,20 +3,21 @@ require_once 'config.php';
 cors();
 
 $pdo = getDB();
+ensureMembersSchema($pdo);
 $method = $_SERVER['REQUEST_METHOD'];
 
-// GET: alle members OF één character check (blocked?)
+// GET: alle members OF één character check (blocked? / allowed?)
 if ($method === 'GET') {
     if (isset($_GET['characterId'])) {
-        $stmt = $pdo->prepare('SELECT character_id, name, blocked FROM members WHERE character_id = ?');
+        $stmt = $pdo->prepare('SELECT character_id, name, blocked, allowed FROM members WHERE character_id = ?');
         $stmt->execute([(int)$_GET['characterId']]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row) $row['blocked'] = (int)$row['blocked'];
+        if ($row) { $row['blocked'] = (int)$row['blocked']; $row['allowed'] = (int)$row['allowed']; }
         echo json_encode($row ?: null);
     } else {
-        $stmt = $pdo->query('SELECT character_id, name, last_seen, blocked FROM members ORDER BY last_seen DESC');
+        $stmt = $pdo->query('SELECT character_id, name, last_seen, blocked, allowed FROM members ORDER BY last_seen DESC');
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($rows as &$r) $r['blocked'] = (int)$r['blocked'];
+        foreach ($rows as &$r) { $r['blocked'] = (int)$r['blocked']; $r['allowed'] = (int)$r['allowed']; }
         echo json_encode($rows);
     }
     exit;
@@ -44,6 +45,12 @@ if ($method === 'POST') {
         echo json_encode(['ok' => true]);
     } elseif ($action === 'unblock') {
         $pdo->prepare('UPDATE members SET blocked = 0 WHERE character_id = ?')->execute([$charId]);
+        echo json_encode(['ok' => true]);
+    } elseif ($action === 'allow') {
+        $pdo->prepare('UPDATE members SET allowed = 1 WHERE character_id = ?')->execute([$charId]);
+        echo json_encode(['ok' => true]);
+    } elseif ($action === 'disallow') {
+        $pdo->prepare('UPDATE members SET allowed = 0 WHERE character_id = ?')->execute([$charId]);
         echo json_encode(['ok' => true]);
     } else {
         http_response_code(400); echo json_encode(['error' => 'Onbekende actie']);

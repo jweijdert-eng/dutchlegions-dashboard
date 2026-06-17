@@ -36,6 +36,12 @@ function eveVerify(string $token): ?int {
     return ctype_digit($sub) ? (int)$sub : null;
 }
 
+// Zorg dat de members-tabel een `allowed`-kolom heeft (allowlist voor de toegangs-gate).
+function ensureMembersSchema(PDO $pdo): void {
+    try { $pdo->query('SELECT allowed FROM members LIMIT 1'); }
+    catch (Exception $e) { try { $pdo->exec('ALTER TABLE members ADD COLUMN allowed TINYINT NOT NULL DEFAULT 0'); } catch (Exception $e2) {} }
+}
+
 // Is dit character een recruiting-admin? (vaste eigenaar OF in de recruit_admins-tabel)
 function isRecruitAdmin(int $cid): bool {
     if ($cid === ADMIN_CHAR_ID) return true;
