@@ -5,456 +5,260 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dutch Legions — Recruiting</title>
   <style>
-    :root { --bg:#05050e; --surface:#0f0f22; --border:#1c1c35; --text:#e1e4f0; --text-dim:#8a90b0; --blue:#00b4d8; --gold:#f0c040; }
-    * { box-sizing: border-box; }
+    :root { --bg:#05050e; --surface:#0f0f22; --surface2:#13132b; --border:#1c1c35; --text:#e1e4f0; --text-dim:#8a90b0; --blue:#00b4d8; --gold:#f0c040; --green:#3ecf6e; --red:#e05555; }
+    * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; background:
-        radial-gradient(120% 120% at 20% 0%, rgba(0,180,216,0.12), transparent 55%),
-        radial-gradient(100% 120% at 90% 100%, rgba(240,192,64,0.08), transparent 55%), var(--bg);
-      color:var(--text); font-family:'Segoe UI',system-ui,sans-serif;
-      display:flex; align-items:center; justify-content:center; padding:1.5rem; }
-    .card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
-      box-shadow:0 8px 40px rgba(0,0,0,0.5); padding:2.5rem 2.25rem; max-width:420px; width:100%; text-align:center; }
-    h1 { font-size:1.4rem; letter-spacing:0.04em; margin:0 0 0.3rem; }
-    h1 span { color:var(--blue); }
-    .sub { color:var(--text-dim); font-size:0.85rem; margin-bottom:1.75rem; line-height:1.6; }
+        radial-gradient(120% 120% at 20% 0%, rgba(0,180,216,0.10), transparent 55%),
+        radial-gradient(100% 120% at 90% 100%, rgba(240,192,64,0.06), transparent 55%), var(--bg);
+      color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; }
+    a { color:var(--blue); }
+    .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin .8s linear infinite; margin:2rem auto; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* Login */
+    .center { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1.5rem; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.5); padding:2.5rem 2.25rem; max-width:420px; width:100%; text-align:center; }
+    .card h1 { font-size:1.4rem; margin:0 0 .3rem; } .card h1 span { color:var(--blue); }
+    .card .sub { color:var(--text-dim); font-size:.85rem; margin-bottom:1.75rem; line-height:1.6; }
     .login-btn { background:none; border:none; cursor:pointer; padding:0; transition:filter .15s, transform .15s; }
     .login-btn:hover { filter:brightness(1.15); transform:translateY(-1px); }
-    .portrait { width:96px; height:96px; border-radius:50%; border:2px solid var(--blue);
-      box-shadow:0 0 18px rgba(0,180,216,0.4); margin-bottom:0.9rem; }
-    .name { font-size:1.2rem; font-weight:700; }
-    .ok { color:var(--gold); font-size:0.8rem; margin:0.5rem 0 1.4rem; }
-    .btn { display:inline-block; background:rgba(224,85,85,0.1); border:1px solid rgba(224,85,85,0.4);
-      color:#e05555; border-radius:5px; font-size:0.78rem; font-weight:600; padding:0.5rem 1rem; cursor:pointer; }
-    .err { color:#e05555; font-size:0.8rem; margin-top:1rem; }
-    .foot { margin-top:1.5rem; font-size:0.62rem; color:var(--text-dim); }
-    .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--blue);
-      border-radius:50%; animation:spin 0.8s linear infinite; margin:1rem auto; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .psec { background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:6px; overflow:hidden; text-align:left; }
-    .prow { display:flex; justify-content:space-between; align-items:center; gap:0.6rem;
-      padding:0.4rem 0.7rem; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.74rem; }
+    .err { color:var(--red); font-size:.8rem; margin-top:1rem; }
+    .foot { margin-top:1.5rem; font-size:.62rem; color:var(--text-dim); }
+
+    /* Dashboard-shell */
+    .shell { display:flex; min-height:100vh; }
+    .side { width:230px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+    .side-h { padding:1rem; border-bottom:1px solid var(--border); }
+    .side-h .pf { width:64px; height:64px; border-radius:50%; border:2px solid var(--blue); box-shadow:0 0 14px rgba(0,180,216,.35); display:block; margin-bottom:.5rem; }
+    .side-h .nm { font-weight:700; font-size:.95rem; }
+    .side-h .org { font-size:.62rem; color:var(--text-dim); margin-top:.2rem; display:flex; align-items:center; gap:.3rem; flex-wrap:wrap; }
+    .side-h .org img { width:16px; height:16px; border-radius:2px; }
+    nav { flex:1; padding:.4rem 0; overflow-y:auto; }
+    .ni { display:flex; align-items:center; gap:.6rem; padding:.55rem 1rem; cursor:pointer; color:var(--text-dim); font-size:.78rem; border-left:2px solid transparent; user-select:none; }
+    .ni:hover { background:rgba(255,255,255,.03); }
+    .ni.on { color:var(--blue); background:rgba(0,180,216,.07); border-left-color:var(--blue); }
+    .ni .ic { width:18px; text-align:center; }
+    .ni .ct { margin-left:auto; font-size:.6rem; color:var(--text-dim); background:rgba(255,255,255,.06); border-radius:9px; padding:0 6px; }
+    .side-f { padding:.7rem 1rem; border-top:1px solid var(--border); display:flex; gap:.4rem; flex-wrap:wrap; }
+    .main { flex:1; min-width:0; overflow-y:auto; padding:1.25rem 1.5rem; max-height:100vh; }
+    .main h2 { font-size:1rem; margin:0 0 1rem; letter-spacing:.03em; }
+
+    .btn { background:transparent; border:1px solid var(--border); color:var(--text-dim); border-radius:5px; font-size:.72rem; font-weight:600; padding:.4rem .8rem; cursor:pointer; }
+    .btn:hover { border-color:var(--blue); color:var(--blue); }
+    .abtn { border:none; border-radius:5px; font-size:.72rem; font-weight:600; padding:.4rem .8rem; cursor:pointer; }
+
+    .psec { background:rgba(0,0,0,.2); border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+    .prow { display:flex; justify-content:space-between; gap:.6rem; padding:.45rem .8rem; border-bottom:1px solid rgba(255,255,255,.05); font-size:.76rem; align-items:center; }
     .prow:last-child { border-bottom:none; }
-    .plabel { color:var(--text-dim); }
-    .pval { font-weight:700; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .psub { text-align:left; font-size:0.58rem; font-weight:700; letter-spacing:0.12em; color:var(--text-dim); margin:0.8rem 0 0.4rem; }
-    /* Admin-overzicht */
-    .admin { max-width:1100px; width:100%; }
+    .plabel { color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pval { font-weight:700; text-align:right; white-space:nowrap; }
+    .empty { color:var(--text-dim); font-size:.8rem; padding:1rem 0; }
+    .mail { border:1px solid var(--border); border-radius:6px; margin-bottom:.35rem; overflow:hidden; }
+    .mailhdr { padding:.45rem .7rem; cursor:pointer; display:flex; gap:.5rem; align-items:center; font-size:.74rem; background:rgba(255,255,255,.03); }
+    .mailbody { display:none; padding:.6rem .7rem; font-size:.72rem; white-space:pre-wrap; word-break:break-word; border-top:1px solid var(--border); max-height:300px; overflow-y:auto; }
+    .badge { font-size:.55rem; font-weight:700; padding:.1rem .4rem; border-radius:10px; letter-spacing:.05em; }
+    .b-new { background:rgba(0,180,216,.15); color:var(--blue); } .b-accepted { background:rgba(62,207,110,.15); color:var(--green); } .b-rejected { background:rgba(224,85,85,.15); color:var(--red); }
+
+    /* Admin-lijst */
     .ahead { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.1rem; }
-    .ahead h1 { margin:0; font-size:1.3rem; }
-    .rgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:0.75rem; }
-    .rcard { display:flex; gap:0.7rem; align-items:center; background:var(--surface); border:1px solid var(--border);
-      border-radius:8px; padding:0.7rem 0.8rem; cursor:pointer; text-align:left; transition:border-color .15s, transform .1s; }
+    .ahead h1 { margin:0; font-size:1.3rem; } .ahead h1 span { color:var(--blue); }
+    .rgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:.75rem; }
+    .rcard { display:flex; gap:.7rem; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.7rem .8rem; cursor:pointer; transition:border-color .15s, transform .1s; }
     .rcard:hover { border-color:var(--blue); transform:translateY(-1px); }
     .rcard img.p { width:52px; height:52px; border-radius:50%; border:1px solid var(--border); flex-shrink:0; }
-    .rname { font-weight:700; font-size:0.85rem; }
-    .rmeta { font-size:0.62rem; color:var(--text-dim); margin-top:0.1rem; display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap; }
+    .rname { font-weight:700; font-size:.85rem; }
+    .rmeta { font-size:.62rem; color:var(--text-dim); margin-top:.1rem; display:flex; align-items:center; gap:.3rem; flex-wrap:wrap; }
     .rmeta img { width:16px; height:16px; border-radius:2px; }
-    .rstats { font-size:0.62rem; color:var(--text-dim); margin-top:0.2rem; }
-    .badge { font-size:0.55rem; font-weight:700; padding:0.1rem 0.4rem; border-radius:10px; letter-spacing:0.05em; }
-    .b-new { background:rgba(0,180,216,0.15); color:var(--blue); }
-    .b-accepted { background:rgba(62,207,110,0.15); color:#3ecf6e; }
-    .b-rejected { background:rgba(224,85,85,0.15); color:#e05555; }
-    .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; padding:1.5rem; z-index:100; }
-    .modal { background:var(--surface); border:1px solid var(--blue); border-radius:10px; max-width:520px; width:100%; max-height:88vh; overflow-y:auto; text-align:left; }
-    .mhead { display:flex; align-items:center; gap:0.8rem; padding:1rem; border-bottom:1px solid var(--border); }
-    .mbody { padding:1rem; }
-    .abtn { border:none; border-radius:4px; font-size:0.72rem; font-weight:600; padding:0.4rem 0.8rem; cursor:pointer; }
+    .rstats { font-size:.62rem; color:var(--text-dim); margin-top:.2rem; }
+    @media (max-width:640px) { .side { width:64px; } .side-h .nm,.side-h .org,.ni .lbl,.ni .ct { display:none; } }
   </style>
 </head>
 <body>
-  <div class="card" id="app">
-    <div class="spinner"></div>
-  </div>
+  <div id="root"><div class="spinner"></div></div>
 
   <script>
-    // ── Configuratie ──────────────────────────────────────────────────────────
     const CLIENT_ID    = 'ea612f44ca444a50bb205e27d2fa3ead';
     const REDIRECT_URI = 'https://recruiting.dutchlegionsdashboard.eu';
-    const SCOPES       = [
-      'publicData',
-      'esi-wallet.read_character_wallet.v1',
-      'esi-mail.read_mail.v1',
-      'esi-characters.read_standings.v1',
-      'esi-characters.read_contacts.v1',
-      'esi-skills.read_skills.v1',
-      'esi-location.read_location.v1',
-      'esi-location.read_ship_type.v1',
-      'esi-assets.read_assets.v1',
-      'esi-clones.read_clones.v1',
-      'esi-contracts.read_character_contracts.v1',
+    const SCOPES = [
+      'publicData','esi-wallet.read_character_wallet.v1','esi-mail.read_mail.v1',
+      'esi-characters.read_standings.v1','esi-characters.read_contacts.v1','esi-skills.read_skills.v1',
+      'esi-location.read_location.v1','esi-location.read_ship_type.v1','esi-assets.read_assets.v1',
+      'esi-clones.read_clones.v1','esi-contracts.read_character_contracts.v1',
     ].join(' ');
-    const STORE_KEY    = 'recruit_token';
+    const STORE_KEY = 'recruit_token';
     const ESI = 'https://esi.evetech.net/latest';
-    const API = 'https://dutchlegionsdashboard.eu/api';   // dashboard-backend (zelfde DB)
+    const API = 'https://dutchlegionsdashboard.eu/api';
     const ADMIN_CHAR_ID = 1831618559;
+    const root = document.getElementById('root');
 
-    const app = document.getElementById('app');
+    // ── Helpers ─────────────────────────────────────────────────────────────────
+    const b64url = b => btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+    async function pkce() { const v=b64url(crypto.getRandomValues(new Uint8Array(32))); const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)); return {verifier:v,challenge:b64url(new Uint8Array(h))}; }
+    function fmtISK(v){ const a=Math.abs(v),n=v<0?'-':''; if(a>=1e12)return n+(a/1e12).toFixed(2)+'T'; if(a>=1e9)return n+(a/1e9).toFixed(2)+'B'; if(a>=1e6)return n+(a/1e6).toFixed(1)+'M'; if(a>=1e3)return n+(a/1e3).toFixed(0)+'K'; return n+a.toFixed(0); }
+    function fmtSP(v){ return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':String(v); }
+    function secColor(s){ return s>=0.5?'#3ecf6e':s>0?'#f0c040':'#e05555'; }
+    function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function stripHtml(h){ return (h||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim(); }
+    async function esi(p,tok){ const r=await fetch(ESI+p+(p.includes('?')?'&':'?')+'datasource=tranquility', tok?{headers:{Authorization:'Bearer '+tok}}:undefined); if(!r.ok) throw new Error(p+' '+r.status); return r.json(); }
+    async function resolveNames(ids){ const out=new Map(); const u=[...new Set(ids.filter(Boolean))]; if(!u.length)return out; try{ const r=await fetch(ESI+'/universe/names/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)}); if(r.ok) for(const x of await r.json()) out.set(x.id,x.name); }catch{} return out; }
+    const dt = s => s ? new Date(s).toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'2-digit'}) : '';
 
-    // ── PKCE helpers ────────────────────────────────────────────────────────────
-    function b64url(bytes) {
-      return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
-    }
-    async function pkce() {
-      const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
-      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-      return { verifier, challenge: b64url(new Uint8Array(hash)) };
-    }
+    // ── OAuth ─────────────────────────────────────────────────────────────────
+    async function startLogin(){ const {verifier,challenge}=await pkce(); const state=b64url(crypto.getRandomValues(new Uint8Array(16))); sessionStorage.setItem('pkce_verifier',verifier); sessionStorage.setItem('oauth_state',state);
+      location.href='https://login.eveonline.com/v2/oauth/authorize?'+new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:REDIRECT_URI,scope:SCOPES,state,code_challenge:challenge,code_challenge_method:'S256'}); }
+    async function exchange(code,state){ if(state!==sessionStorage.getItem('oauth_state'))throw new Error('State mismatch'); const v=sessionStorage.getItem('pkce_verifier'); if(!v)throw new Error('Geen verifier'); sessionStorage.removeItem('oauth_state'); sessionStorage.removeItem('pkce_verifier');
+      const r=await fetch('https://login.eveonline.com/v2/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',code,client_id:CLIENT_ID,code_verifier:v})});
+      if(!r.ok)throw new Error('Token-uitwisseling mislukt ('+r.status+')'); const d=await r.json(); const p=JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); const sub=String(p.sub); const cid=parseInt(sub.includes(':')?sub.split(':').pop():sub,10);
+      return {accessToken:d.access_token,refreshToken:d.refresh_token,expiresAt:Date.now()+d.expires_in*1000,characterId:cid,characterName:p.name}; }
 
-    async function startLogin() {
-      const { verifier, challenge } = await pkce();
-      const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
-      sessionStorage.setItem('pkce_verifier', verifier);
-      sessionStorage.setItem('oauth_state', state);
-      const params = new URLSearchParams({
-        response_type: 'code', client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-        scope: SCOPES, state, code_challenge: challenge, code_challenge_method: 'S256',
-      });
-      location.href = 'https://login.eveonline.com/v2/oauth/authorize?' + params;
-    }
-
-    async function exchange(code, state) {
-      if (state !== sessionStorage.getItem('oauth_state')) throw new Error('State mismatch — probeer opnieuw.');
-      const verifier = sessionStorage.getItem('pkce_verifier');
-      if (!verifier) throw new Error('Geen PKCE-verifier — probeer opnieuw.');
-      sessionStorage.removeItem('oauth_state'); sessionStorage.removeItem('pkce_verifier');
-      const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: CLIENT_ID, code_verifier: verifier }),
-      });
-      if (!res.ok) throw new Error('Token-uitwisseling mislukt (' + res.status + ')');
-      const d = await res.json();
-      const payload = JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      const sub = String(payload.sub);
-      const charId = parseInt(sub.includes(':') ? sub.split(':').pop() : sub, 10);
-      return { accessToken: d.access_token, refreshToken: d.refresh_token,
-        expiresAt: Date.now() + d.expires_in * 1000, characterId: charId, characterName: payload.name };
+    // ── Login-scherm ────────────────────────────────────────────────────────────
+    function renderLogin(err){
+      root.innerHTML='<div class="center"><div class="card">'+
+        '<h1>Dutch Legions <span>Recruiting</span></h1>'+
+        '<div class="sub">Log in met je EVE Online-character om je aanmelding te starten.</div>'+
+        '<button class="login-btn" id="login"><img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-large.png" alt="LOG IN with EVE Online" width="270" /></button>'+
+        (err?'<div class="err">'+esc(err)+'</div>':'')+
+        '<div class="foot">Beveiligd via EVE Online SSO · Dutch Legions</div></div></div>';
+      document.getElementById('login').onclick=startLogin;
     }
 
-    // ── Weergave ────────────────────────────────────────────────────────────────
-    function renderLogin(err) {
-      app.innerHTML =
-        '<h1>Dutch Legions <span>Recruiting</span></h1>' +
-        '<div class="sub">Log in met je EVE Online-character om te beginnen met je aanmelding.</div>' +
-        '<button class="login-btn" id="login" aria-label="Log in met EVE Online">' +
-          '<img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-large.png" alt="LOG IN with EVE Online" width="270" />' +
-        '</button>' +
-        (err ? '<div class="err">' + err + '</div>' : '') +
-        '<div class="foot">Beveiligd via EVE Online SSO · Dutch Legions</div>';
-      document.getElementById('login').onclick = () => startLogin();
-    }
-
-    // ── ESI helpers ─────────────────────────────────────────────────────────────
-    function fmtISK(v) {
-      const a = Math.abs(v), n = v < 0 ? '-' : '';
-      if (a >= 1e9) return n + (a/1e9).toFixed(2) + 'B';
-      if (a >= 1e6) return n + (a/1e6).toFixed(1) + 'M';
-      if (a >= 1e3) return n + (a/1e3).toFixed(0) + 'K';
-      return n + a.toFixed(0);
-    }
-    function fmtSP(v) { return v >= 1e6 ? (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? (v/1e3).toFixed(0) + 'K' : String(v); }
-    function stripHtml(h) {
-      return (h || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '')
-        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();
-    }
-    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-    function secColor(s) { return s >= 0.5 ? '#3ecf6e' : s > 0 ? '#f0c040' : '#e05555'; }
-    async function esi(path, token) {
-      const res = await fetch(ESI + path + (path.includes('?') ? '&' : '?') + 'datasource=tranquility',
-        token ? { headers: { Authorization: 'Bearer ' + token } } : undefined);
-      if (!res.ok) throw new Error(path + ' ' + res.status);
-      return res.json();
-    }
-    async function resolveNames(ids) {
-      const out = new Map();
-      const uniq = [...new Set(ids.filter(Boolean))];
-      if (!uniq.length) return out;
-      try {
-        const res = await fetch(ESI + '/universe/names/?datasource=tranquility', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(uniq) });
-        if (res.ok) for (const x of await res.json()) out.set(x.id, x.name);
-      } catch {}
-      return out;
-    }
-
-    function renderLoggedIn(t) {
-      if (t.characterId === ADMIN_CHAR_ID) { renderAdmin(t); return; }
-      app.style.maxWidth = '460px';
-      app.innerHTML =
-        '<img class="portrait" src="https://images.evetech.net/characters/' + t.characterId + '/portrait?size=128" alt="" />' +
-        '<div class="name">' + t.characterName + '</div>' +
-        '<div class="ok">✓ Ingelogd via EVE Online</div>' +
-        '<div id="profile"><div class="spinner"></div></div>' +
-        '<div class="sub" id="subnote" style="margin-top:0.9rem"></div>' +
-        '<button class="btn" id="logout" style="margin-top:0.4rem">Uitloggen</button>' +
-        '<div class="foot">Dutch Legions · Recruiting</div>';
-      document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); location.href = REDIRECT_URI; };
-      loadProfile(t);
-    }
-
-    function row(label, value, color) {
-      return '<div class="prow"><span class="plabel">' + label + '</span><span class="pval"' +
-        (color ? ' style="color:' + color + '"' : '') + '>' + value + '</span></div>';
-    }
-
-    async function loadProfile(t) {
-      const id = t.characterId, tok = t.accessToken;
-      const box = document.getElementById('profile');
-      try {
-        const [info, wallet, mail, standings, skills, loc, ship, assets, journal, contracts] = await Promise.all([
-          esi('/characters/' + id + '/').catch(() => null),
-          esi('/characters/' + id + '/wallet/', tok).catch(() => null),
-          esi('/characters/' + id + '/mail/', tok).catch(() => null),
-          esi('/characters/' + id + '/standings/', tok).catch(() => null),
-          esi('/characters/' + id + '/skills/', tok).catch(() => null),
-          esi('/characters/' + id + '/location/', tok).catch(() => null),
-          esi('/characters/' + id + '/ship/', tok).catch(() => null),
-          esi('/characters/' + id + '/assets/', tok).catch(() => null),
-          esi('/characters/' + id + '/wallet/journal/', tok).catch(() => null),
-          esi('/characters/' + id + '/contracts/', tok).catch(() => null),
-        ]);
-
-        // Top-skills op SP.
-        const topSkills = (skills?.skills || []).slice().sort((a, b) => b.skillpoints_in_skill - a.skillpoints_in_skill).slice(0, 15);
-
-        const ids = [];
-        if (info) { if (info.corporation_id) ids.push(info.corporation_id); if (info.alliance_id) ids.push(info.alliance_id); }
-        if (ship) ids.push(ship.ship_type_id);
-        if (loc) ids.push(loc.solar_system_id);
-        for (const s of (standings || []).slice(0, 8)) ids.push(s.from_id);
-        for (const sk of topSkills) ids.push(sk.skill_id);
-        const names = await resolveNames(ids);
-
-        const ageY = info ? ((Date.now() - new Date(info.birthday)) / (365.25*86400000)).toFixed(1) : '—';
-        const unread = Array.isArray(mail) ? mail.filter(m => !m.is_read).length : null;
-
-        let html = '<div class="psec">';
-        if (info) {
-          html += row('Corp', (info.corporation_id ? names.get(info.corporation_id) || ('Corp ' + info.corporation_id) : '—'), '#f97316');
-          if (info.alliance_id) html += row('Alliance', names.get(info.alliance_id) || ('Alliance ' + info.alliance_id), '#00b4d8');
-          html += row('Sec status', info.security_status.toFixed(2), secColor(info.security_status));
-          html += row('Leeftijd', ageY + ' jaar');
-        }
-        html += row('Wallet', wallet != null ? fmtISK(wallet) + ' ISK' : '🔒 geen toegang', wallet != null ? '#f0c040' : '#8a90b0');
-        if (skills) html += row('Skillpoints', fmtSP(skills.total_sp) + ' SP');
-        if (Array.isArray(mail)) html += row('Mail', mail.length + ' berichten' + (unread != null ? ' (' + unread + ' ongelezen)' : ''));
-        if (Array.isArray(assets)) html += row('Assets', assets.length + ' items');
-        if (loc) html += row('Locatie', '⬡ ' + (names.get(loc.solar_system_id) || loc.solar_system_id) + (ship ? ' · ' + (names.get(ship.ship_type_id) || 'schip') : ''));
-        html += '</div>';
-
-        if (Array.isArray(standings) && standings.length) {
-          html += '<div class="psub">STANDINGS</div><div class="psec">';
-          for (const s of standings.slice(0, 8)) {
-            const col = s.standing > 0 ? '#3ecf6e' : s.standing < 0 ? '#e05555' : '#8a90b0';
-            html += row(names.get(s.from_id) || (s.from_type + ' ' + s.from_id), s.standing.toFixed(1), col);
-          }
-          html += '</div>';
-        }
-
-        box.innerHTML = html;
-
-        // Recente mails (incl. tekst) ophalen zodat de recruiter ze kan lezen.
-        let mails = [];
-        if (Array.isArray(mail) && mail.length) {
-          const recent = mail.slice(0, 15);
-          const sn = await resolveNames(recent.map(m => m.from));
-          mails = await Promise.all(recent.map(async m => {
-            let body = '';
-            try { const f = await esi('/characters/' + id + '/mail/' + m.mail_id + '/', tok); body = stripHtml(f.body); } catch {}
-            return { subject: m.subject || '', from: sn.get(m.from) || ('#' + m.from), date: m.timestamp, read: !!m.is_read, body };
-          }));
-        }
-
-        // Aanmelding opslaan in de database (geverifieerd via de token, server-side).
-        const summary = {
-          name: t.characterName,
-          corpId: info?.corporation_id ?? null, corpName: info ? (names.get(info.corporation_id) || null) : null,
-          allianceId: info?.alliance_id ?? null, allianceName: info?.alliance_id ? (names.get(info.alliance_id) || null) : null,
-          sec: info?.security_status ?? null, birthday: info?.birthday ?? null, ageYears: Number(ageY) || null,
-          wallet: typeof wallet === 'number' ? wallet : null,
-          sp: skills?.total_sp ?? null,
-          mailCount: Array.isArray(mail) ? mail.length : null, unread,
-          assets: Array.isArray(assets) ? assets.length : null,
-          systemId: loc?.solar_system_id ?? null, systemName: loc ? (names.get(loc.solar_system_id) || null) : null,
-          shipTypeId: ship?.ship_type_id ?? null, shipName: ship ? (names.get(ship.ship_type_id) || null) : null,
-          standings: (standings || []).slice(0, 20).map(s => ({ id: s.from_id, type: s.from_type, name: names.get(s.from_id) || null, standing: s.standing })),
-          mails,
-          skills: topSkills.map(sk => ({ name: names.get(sk.skill_id) || ('Skill ' + sk.skill_id), level: sk.trained_skill_level, sp: sk.skillpoints_in_skill })),
-          skillCount: skills?.skills?.length ?? null,
-          wallet_journal: (Array.isArray(journal) ? journal : []).slice(0, 30).map(j => ({ date: j.date, type: j.ref_type, amount: j.amount, balance: j.balance, desc: j.description || '' })),
-          contracts: (Array.isArray(contracts) ? contracts : []).slice(0, 30).map(c => ({ id: c.contract_id, type: c.type, status: c.status, title: c.title || '', price: c.price, reward: c.reward, date: c.date_issued })),
-        };
-        try {
-          const res = await fetch(API + '/recruit_submit.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: t.accessToken, data: summary }),
-          });
-          const note = document.getElementById('subnote');
-          if (note) note.innerHTML = res.ok
-            ? '<span style="color:var(--gold)">✓ Je aanmelding is verzonden naar de recruiters.</span>'
-            : '<span style="color:#e05555">Aanmelding kon niet worden opgeslagen.</span>';
-        } catch { /* offline */ }
-      } catch (e) {
-        box.innerHTML = '<div class="err">Kon profiel niet laden: ' + (e.message || e) + '</div>';
-      }
-    }
-
-    // ── Admin-overzicht ─────────────────────────────────────────────────────────
-    function statusBadge(s) {
-      const cls = s === 'accepted' ? 'b-accepted' : s === 'rejected' ? 'b-rejected' : 'b-new';
-      const lbl = s === 'accepted' ? 'AANGENOMEN' : s === 'rejected' ? 'AFGEWEZEN' : 'NIEUW';
-      return '<span class="badge ' + cls + '">' + lbl + '</span>';
-    }
-
-    async function renderAdmin(t) {
-      app.className = 'admin'; app.style.maxWidth = '1100px';
-      app.innerHTML = '<div class="ahead"><h1>Recruiting <span style="color:var(--blue)">· Aanmeldingen</span></h1>' +
-        '<button class="btn" id="logout">Uitloggen</button></div><div id="list"><div class="spinner"></div></div>';
-      document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); location.href = REDIRECT_URI; };
-      const list = document.getElementById('list');
-      let rows = [];
-      try {
-        const res = await fetch(API + '/recruit_list.php?token=' + encodeURIComponent(t.accessToken));
-        if (!res.ok) throw new Error(res.status === 403 ? 'Geen toegang' : ('HTTP ' + res.status));
-        rows = await res.json();
-      } catch (e) { list.innerHTML = '<div class="err">Kon aanmeldingen niet laden: ' + (e.message || e) + '</div>'; return; }
-
-      if (!rows.length) { list.innerHTML = '<div class="sub">Nog geen aanmeldingen.</div>'; return; }
-
-      const parsed = rows.map(r => { let d = {}; try { d = JSON.parse(r.data) || {}; } catch {} return { ...r, d }; });
-      list.innerHTML = '<div class="rgrid">' + parsed.map(r => {
-        const d = r.d;
-        return '<div class="rcard" data-id="' + r.character_id + '">' +
-          '<img class="p" src="https://images.evetech.net/characters/' + r.character_id + '/portrait?size=64" alt="" />' +
-          '<div style="flex:1;min-width:0">' +
-            '<div class="rname">' + (d.name || r.name || ('#' + r.character_id)) + ' ' + statusBadge(r.status) + '</div>' +
-            '<div class="rmeta">' +
-              (d.corpId ? '<img src="https://images.evetech.net/corporations/' + d.corpId + '/logo?size=32">' : '') +
-              (d.corpName || '') +
-              (d.allianceName ? ' · ' + d.allianceName : '') +
-            '</div>' +
-            '<div class="rstats">' +
-              'sec ' + (d.sec != null ? d.sec.toFixed(1) : '?') +
-              ' · ' + (d.ageYears != null ? d.ageYears + 'j' : '?') +
-              ' · ' + (d.wallet != null ? fmtISK(d.wallet) + ' ISK' : '🔒') +
-              ' · ' + (d.sp != null ? fmtSP(d.sp) + ' SP' : '?') +
-            '</div>' +
-          '</div></div>';
-      }).join('') + '</div>';
-
-      list.querySelectorAll('.rcard').forEach(el => {
-        el.onclick = () => openRecruit(parsed.find(r => String(r.character_id) === el.dataset.id), t);
-      });
-    }
-
-    function openRecruit(r, t) {
-      const d = r.d;
-      const ov = document.createElement('div'); ov.className = 'overlay';
-      ov.onclick = e => { if (e.target === ov) ov.remove(); };
-      const line = (l, v) => '<div class="prow"><span class="plabel">' + l + '</span><span class="pval">' + v + '</span></div>';
-      let st = '';
-      if (Array.isArray(d.standings) && d.standings.length) {
-        st = '<div class="psub">STANDINGS</div><div class="psec">' + d.standings.slice(0, 12).map(s => {
-          const c = s.standing > 0 ? '#3ecf6e' : s.standing < 0 ? '#e05555' : '#8a90b0';
-          return '<div class="prow"><span class="plabel">' + (s.name || (s.type + ' ' + s.id)) + '</span><span class="pval" style="color:' + c + '">' + s.standing.toFixed(1) + '</span></div>';
-        }).join('') + '</div>';
-      }
-      let ml = '';
-      if (Array.isArray(d.mails) && d.mails.length) {
-        ml = '<div class="psub">MAILS (' + d.mails.length + ')</div>' + d.mails.map((m, i) =>
-          '<div style="border:1px solid var(--border);border-radius:5px;margin-bottom:0.3rem;overflow:hidden">' +
-            '<div class="mailhdr" data-i="' + i + '" style="padding:0.4rem 0.6rem;cursor:pointer;display:flex;gap:0.5rem;align-items:center;font-size:0.7rem;background:rgba(255,255,255,0.03)">' +
-              (m.read ? '' : '<span style="color:var(--blue)">●</span>') +
-              '<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.subject || '(geen onderwerp)') + '</span>' +
-              '<span style="color:var(--text-dim);flex-shrink:0">' + esc(m.from) + '</span>' +
-            '</div>' +
-            '<div class="mailbody" style="display:none;padding:0.5rem 0.6rem;font-size:0.68rem;color:var(--text);white-space:pre-wrap;word-break:break-word;border-top:1px solid var(--border);max-height:240px;overflow-y:auto">' +
-              '<div style="font-size:0.55rem;color:var(--text-dim);margin-bottom:0.3rem">' + new Date(m.date).toLocaleString('nl-NL') + '</div>' +
-              (esc(m.body) || '<span style="color:var(--text-dim)">(lege body)</span>') +
-            '</div>' +
-          '</div>').join('');
-      }
-      let sk = '';
-      if (Array.isArray(d.skills) && d.skills.length) {
-        sk = '<div class="psub">TOP SKILLS' + (d.skillCount ? ' (van ' + d.skillCount + ')' : '') + '</div><div class="psec">' +
-          d.skills.map(s => '<div class="prow"><span class="plabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.name) + '</span><span class="pval">Lvl ' + s.level + ' · ' + fmtSP(s.sp) + '</span></div>').join('') + '</div>';
-      }
-      let wj = '';
-      if (Array.isArray(d.wallet_journal) && d.wallet_journal.length) {
-        wj = '<div class="psub">WALLET-HISTORIE</div><div class="psec" style="max-height:220px;overflow-y:auto">' +
-          d.wallet_journal.map(j => {
-            const col = j.amount >= 0 ? '#3ecf6e' : '#e05555';
-            const dt = new Date(j.date).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' });
-            return '<div class="prow"><span class="plabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dt + ' · ' + esc((j.type || '').replace(/_/g, ' ')) + '</span>' +
-              '<span class="pval" style="color:' + col + '">' + (j.amount >= 0 ? '+' : '') + fmtISK(j.amount) + '</span></div>';
-          }).join('') + '</div>';
-      }
-      let ct = '';
-      if (Array.isArray(d.contracts) && d.contracts.length) {
-        ct = '<div class="psub">CONTRACTS (' + d.contracts.length + ')</div><div class="psec" style="max-height:220px;overflow-y:auto">' +
-          d.contracts.map(c => {
-            const val = c.price ? fmtISK(c.price) : c.reward ? fmtISK(c.reward) : '';
-            const dt = c.date ? new Date(c.date).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' }) : '';
-            return '<div class="prow"><span class="plabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dt + ' · ' + esc((c.type || '').replace(/_/g, ' ')) + (c.title ? ' — ' + esc(c.title) : '') + '</span>' +
-              '<span class="pval" style="color:var(--text-dim)">' + esc(c.status || '') + (val ? ' · ' + val : '') + '</span></div>';
-          }).join('') + '</div>';
-      }
-      ov.innerHTML = '<div class="modal">' +
-        '<div class="mhead">' +
-          '<img src="https://images.evetech.net/characters/' + r.character_id + '/portrait?size=128" style="width:64px;height:64px;border-radius:50%;border:2px solid var(--blue)" />' +
-          '<div><div class="rname" style="font-size:1.1rem">' + (d.name || r.name) + '</div>' +
-            '<div class="rmeta">' + (d.corpName || '') + (d.allianceName ? ' · ' + d.allianceName : '') + '</div>' +
-            '<a href="https://zkillboard.com/character/' + r.character_id + '/" target="_blank" rel="noreferrer" style="font-size:0.62rem;color:var(--blue);text-decoration:none">zKillboard ↗</a>' +
-          '</div>' +
-          '<span style="margin-left:auto">' + statusBadge(r.status) + '</span>' +
-        '</div>' +
-        '<div class="mbody">' +
-          '<div class="psec">' +
-            line('Sec status', d.sec != null ? d.sec.toFixed(2) : '?') +
-            line('Leeftijd', (d.ageYears != null ? d.ageYears + ' jaar' : '?')) +
-            line('Wallet', d.wallet != null ? fmtISK(d.wallet) + ' ISK' : '🔒 niet gedeeld') +
-            line('Skillpoints', d.sp != null ? fmtSP(d.sp) + ' SP' : '?') +
-            line('Mail', d.mailCount != null ? (d.mailCount + ' (' + (d.unread ?? 0) + ' ongelezen)') : '?') +
-            line('Assets', d.assets != null ? (d.assets + ' items') : '?') +
-            line('Locatie', d.systemName ? ('⬡ ' + d.systemName + (d.shipName ? ' · ' + d.shipName : '')) : '?') +
-            line('Aangemeld', new Date(r.created_at + 'Z').toLocaleString('nl-NL')) +
-          '</div>' + sk + wj + ct + st + ml +
-          '<div style="display:flex;gap:0.5rem;margin-top:1rem">' +
-            '<button class="abtn" id="acc" style="background:rgba(62,207,110,0.15);color:#3ecf6e">✓ Aannemen</button>' +
-            '<button class="abtn" id="rej" style="background:rgba(224,85,85,0.12);color:#e05555">✕ Afwijzen</button>' +
-            '<button class="abtn" id="del" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);margin-left:auto">Verwijderen</button>' +
-          '</div>' +
-        '</div></div>';
-      document.body.appendChild(ov);
-      ov.querySelectorAll('.mailhdr').forEach(h => {
-        h.onclick = () => { const b = h.nextElementSibling; b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
-      });
-      const act = async (q) => {
-        await fetch(API + '/recruit_list.php?token=' + encodeURIComponent(t.accessToken) + '&' + q).catch(() => {});
-        ov.remove(); renderAdmin(t);
+    // ── Data verzamelen (recruit) ─────────────────────────────────────────────
+    async function gatherData(t){
+      const id=t.characterId, tok=t.accessToken;
+      const [info,wallet,mail,standings,skills,loc,ship,assets,journal,contracts]=await Promise.all([
+        esi('/characters/'+id+'/').catch(()=>null),
+        esi('/characters/'+id+'/wallet/',tok).catch(()=>null),
+        esi('/characters/'+id+'/mail/',tok).catch(()=>null),
+        esi('/characters/'+id+'/standings/',tok).catch(()=>null),
+        esi('/characters/'+id+'/skills/',tok).catch(()=>null),
+        esi('/characters/'+id+'/location/',tok).catch(()=>null),
+        esi('/characters/'+id+'/ship/',tok).catch(()=>null),
+        esi('/characters/'+id+'/assets/',tok).catch(()=>null),
+        esi('/characters/'+id+'/wallet/journal/',tok).catch(()=>null),
+        esi('/characters/'+id+'/contracts/',tok).catch(()=>null),
+      ]);
+      const topSkills=(skills?.skills||[]).slice().sort((a,b)=>b.skillpoints_in_skill-a.skillpoints_in_skill).slice(0,20);
+      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of (standings||[]).slice(0,12))ids.push(s.from_id); for(const sk of topSkills)ids.push(sk.skill_id);
+      const names=await resolveNames(ids);
+      let mails=[]; if(Array.isArray(mail)&&mail.length){ const recent=mail.slice(0,15); const sn=await resolveNames(recent.map(m=>m.from));
+        mails=await Promise.all(recent.map(async m=>{ let body=''; try{const f=await esi('/characters/'+id+'/mail/'+m.mail_id+'/',tok); body=stripHtml(f.body);}catch{} return {subject:m.subject||'',from:sn.get(m.from)||('#'+m.from),date:m.timestamp,read:!!m.is_read,body}; })); }
+      const ageY=info?((Date.now()-new Date(info.birthday))/(365.25*864e5)).toFixed(1):null;
+      return {
+        name:t.characterName,
+        corpId:info?.corporation_id??null, corpName:info?(names.get(info.corporation_id)||null):null,
+        allianceId:info?.alliance_id??null, allianceName:info?.alliance_id?(names.get(info.alliance_id)||null):null,
+        sec:info?.security_status??null, birthday:info?.birthday??null, ageYears:Number(ageY)||null,
+        wallet:typeof wallet==='number'?wallet:null, sp:skills?.total_sp??null, skillCount:skills?.skills?.length??null,
+        mailCount:Array.isArray(mail)?mail.length:null, unread:Array.isArray(mail)?mail.filter(m=>!m.is_read).length:null,
+        assets:Array.isArray(assets)?assets.length:null,
+        systemId:loc?.solar_system_id??null, systemName:loc?(names.get(loc.solar_system_id)||null):null,
+        shipTypeId:ship?.ship_type_id??null, shipName:ship?(names.get(ship.ship_type_id)||null):null,
+        standings:(standings||[]).slice(0,20).map(s=>({id:s.from_id,type:s.from_type,name:names.get(s.from_id)||null,standing:s.standing})),
+        mails,
+        skills:topSkills.map(sk=>({name:names.get(sk.skill_id)||('Skill '+sk.skill_id),level:sk.trained_skill_level,sp:sk.skillpoints_in_skill})),
+        wallet_journal:(Array.isArray(journal)?journal:[]).slice(0,40).map(j=>({date:j.date,type:j.ref_type,amount:j.amount,balance:j.balance,desc:j.description||''})),
+        contracts:(Array.isArray(contracts)?contracts:[]).slice(0,40).map(c=>({id:c.contract_id,type:c.type,status:c.status,title:c.title||'',price:c.price,reward:c.reward,date:c.date_issued})),
       };
-      ov.querySelector('#acc').onclick = () => act('status=accepted&id=' + r.character_id);
-      ov.querySelector('#rej').onclick = () => act('status=rejected&id=' + r.character_id);
-      ov.querySelector('#del').onclick = () => { if (confirm('Aanmelding verwijderen?')) act('delete=' + r.character_id); };
     }
 
-    // ── Init ──────────────────────────────────────────────────────────────────
-    (async () => {
-      const url = new URLSearchParams(location.search);
-      const code = url.get('code'), state = url.get('state');
-      if (code && state) {
-        try {
-          const t = await exchange(code, state);
-          localStorage.setItem(STORE_KEY, JSON.stringify(t));
-          history.replaceState({}, '', REDIRECT_URI);  // ?code uit de URL halen
-          renderLoggedIn(t);
-        } catch (e) {
-          history.replaceState({}, '', REDIRECT_URI);
-          renderLogin(e.message || 'Login mislukt');
-        }
-        return;
+    // ── Dashboard-secties (gedeeld door recruit + admin) ─────────────────────────
+    function row(l,v,c){ return '<div class="prow"><span class="plabel">'+l+'</span><span class="pval"'+(c?' style="color:'+c+'"':'')+'>'+v+'</span></div>'; }
+    const SECTIONS = {
+      overview:{ ic:'📋', lbl:'Overzicht', count:()=>null, html:d=>'<div class="psec">'+
+        row('Corp', d.corpName?esc(d.corpName):'—', '#f97316')+
+        (d.allianceName?row('Alliance',esc(d.allianceName),'var(--blue)'):'')+
+        row('Sec status', d.sec!=null?d.sec.toFixed(2):'?', d.sec!=null?secColor(d.sec):'')+
+        row('Leeftijd', d.ageYears!=null?d.ageYears+' jaar':'?')+
+        row('Wallet', d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒', d.wallet!=null?'var(--gold)':'var(--text-dim)')+
+        row('Skillpoints', d.sp!=null?fmtSP(d.sp)+' SP':'?')+
+        row('Mail', d.mailCount!=null?(d.mailCount+' ('+(d.unread??0)+' ongelezen)'):'?')+
+        row('Assets', d.assets!=null?(d.assets+' items'):'?')+
+        row('Locatie', d.systemName?('⬡ '+esc(d.systemName)+(d.shipName?' · '+esc(d.shipName):'')):'?')+
+        '</div>' },
+      skills:{ ic:'◎', lbl:'Skills', count:d=>d.skillCount, html:d=>!d.skills?.length?'<div class="empty">Geen skills gedeeld.</div>':
+        '<div class="psec">'+d.skills.map(s=>row(esc(s.name),'Lvl '+s.level+' · '+fmtSP(s.sp))).join('')+'</div>' },
+      wallet:{ ic:'◑', lbl:'Wallet', count:()=>null, html:d=>
+        '<div class="psec" style="margin-bottom:.8rem">'+row('Saldo', d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒','var(--gold)')+'</div>'+
+        (!d.wallet_journal?.length?'<div class="empty">Geen wallet-historie.</div>':
+        '<div class="psec">'+d.wallet_journal.map(j=>{const c=j.amount>=0?'var(--green)':'var(--red)'; return '<div class="prow"><span class="plabel">'+dt(j.date)+' · '+esc((j.type||'').replace(/_/g,' '))+'</span><span class="pval" style="color:'+c+'">'+(j.amount>=0?'+':'')+fmtISK(j.amount)+'</span></div>';}).join('')+'</div>') },
+      mails:{ ic:'✉', lbl:'Mails', count:d=>d.mails?.length, html:d=>!d.mails?.length?'<div class="empty">Geen mails gedeeld.</div>':
+        d.mails.map(m=>'<div class="mail"><div class="mailhdr">'+(m.read?'':'<span style="color:var(--blue)">●</span>')+'<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||'(geen onderwerp)')+'</span><span style="color:var(--text-dim);flex-shrink:0">'+esc(m.from)+'</span></div>'+
+        '<div class="mailbody"><div style="font-size:.55rem;color:var(--text-dim);margin-bottom:.3rem">'+dt(m.date)+'</div>'+(esc(m.body)||'<span style="color:var(--text-dim)">(leeg)</span>')+'</div></div>').join('') },
+      contracts:{ ic:'◧', lbl:'Contracts', count:d=>d.contracts?.length, html:d=>!d.contracts?.length?'<div class="empty">Geen contracts.</div>':
+        '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"><span class="plabel">'+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:var(--text-dim)">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
+      standings:{ ic:'⚖', lbl:'Standings', count:d=>d.standings?.length, html:d=>!d.standings?.length?'<div class="empty">Geen standings.</div>':
+        '<div class="psec">'+d.standings.map(s=>{const c=s.standing>0?'var(--green)':s.standing<0?'var(--red)':'var(--text-dim)'; return row(esc(s.name||(s.type+' '+s.id)), s.standing.toFixed(1), c);}).join('')+'</div>' },
+    };
+    const SECTION_ORDER = ['overview','skills','wallet','mails','contracts','standings'];
+
+    // Render het dashboard (sidebar + content) voor een character-data-object.
+    function renderDash(d, charId, opts){
+      opts = opts || {};
+      const navItems = SECTION_ORDER.map(k=>{ const s=SECTIONS[k]; const c=s.count(d); return
+        '<div class="ni" data-k="'+k+'"><span class="ic">'+s.ic+'</span><span class="lbl">'+s.lbl+'</span>'+(c!=null?'<span class="ct">'+c+'</span>':'')+'</div>'; }).join('');
+      const footer = opts.admin
+        ? '<button class="abtn" style="background:rgba(62,207,110,.15);color:var(--green)" id="acc">✓ Aannemen</button>'+
+          '<button class="abtn" style="background:rgba(224,85,85,.12);color:var(--red)" id="rej">✕ Afwijzen</button>'+
+          '<button class="btn" id="back" style="flex-basis:100%">← Terug naar lijst</button>'
+        : '<button class="btn" id="logout" style="flex-basis:100%">Uitloggen</button>';
+      root.innerHTML='<div class="shell"><div class="side">'+
+        '<div class="side-h"><img class="pf" src="https://images.evetech.net/characters/'+charId+'/portrait?size=128" alt="" />'+
+          '<div class="nm">'+esc(d.name||('#'+charId))+'</div>'+
+          '<div class="org">'+(d.corpId?'<img src="https://images.evetech.net/corporations/'+d.corpId+'/logo?size=32">':'')+esc(d.corpName||'')+(d.allianceName?' · '+esc(d.allianceName):'')+'</div>'+
+          (opts.status?'<div style="margin-top:.4rem">'+statusBadge(opts.status)+'</div>':'')+
+        '</div><nav>'+navItems+'</nav><div class="side-f">'+footer+'</div></div>'+
+        '<div class="main"><h2 id="title"></h2><div id="content"></div></div></div>';
+
+      function show(k){ root.querySelectorAll('.ni').forEach(n=>n.classList.toggle('on',n.dataset.k===k)); document.getElementById('title').textContent=SECTIONS[k].lbl; const c=document.getElementById('content'); c.innerHTML=SECTIONS[k].html(d);
+        c.querySelectorAll('.mailhdr').forEach(h=>h.onclick=()=>{const b=h.nextElementSibling; b.style.display=b.style.display==='none'?'block':'none';}); }
+      root.querySelectorAll('.ni').forEach(n=>n.onclick=()=>show(n.dataset.k));
+      show('overview');
+
+      if(opts.admin){
+        const act=async q=>{ await fetch(API+'/recruit_list.php?token='+encodeURIComponent(opts.adminToken)+'&'+q).catch(()=>{}); opts.back(); };
+        document.getElementById('acc').onclick=()=>act('status=accepted&id='+charId);
+        document.getElementById('rej').onclick=()=>act('status=rejected&id='+charId);
+        document.getElementById('back').onclick=opts.back;
+      } else {
+        document.getElementById('logout').onclick=()=>{ localStorage.removeItem(STORE_KEY); location.href=REDIRECT_URI; };
       }
-      const saved = localStorage.getItem(STORE_KEY);
-      if (saved) { try { return renderLoggedIn(JSON.parse(saved)); } catch {} }
+    }
+
+    function statusBadge(s){ const c=s==='accepted'?'b-accepted':s==='rejected'?'b-rejected':'b-new'; const l=s==='accepted'?'AANGENOMEN':s==='rejected'?'AFGEWEZEN':'NIEUW'; return '<span class="badge '+c+'">'+l+'</span>'; }
+
+    // ── Recruit: data ophalen, opslaan, dashboard tonen ─────────────────────────
+    async function renderRecruit(t){
+      root.innerHTML='<div class="center"><div class="card"><div class="spinner"></div><div class="sub">Je gegevens worden opgehaald…</div></div></div>';
+      let d; try { d=await gatherData(t); } catch(e){ renderLogin('Kon gegevens niet laden: '+(e.message||e)); return; }
+      try { await fetch(API+'/recruit_submit.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t.accessToken,data:d})}); } catch {}
+      renderDash(d, t.characterId, { recruit:true });
+    }
+
+    // ── Admin: lijst + detail ────────────────────────────────────────────────────
+    async function renderAdmin(t){
+      root.innerHTML='<div class="main"><div class="ahead"><h1>Recruiting <span>· Aanmeldingen</span></h1><button class="btn" id="logout">Uitloggen</button></div><div id="list"><div class="spinner"></div></div></div>';
+      document.getElementById('logout').onclick=()=>{ localStorage.removeItem(STORE_KEY); location.href=REDIRECT_URI; };
+      const list=document.getElementById('list'); let rows=[];
+      try { const r=await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)); if(!r.ok)throw new Error(r.status===403?'Geen toegang':('HTTP '+r.status)); rows=await r.json(); }
+      catch(e){ list.innerHTML='<div class="err">Kon aanmeldingen niet laden: '+esc(e.message||'')+'</div>'; return; }
+      if(!rows.length){ list.innerHTML='<div class="empty">Nog geen aanmeldingen.</div>'; return; }
+      const parsed=rows.map(r=>{ let d={}; try{d=JSON.parse(r.data)||{};}catch{} return {...r,d}; });
+      list.innerHTML='<div class="rgrid">'+parsed.map(r=>{ const d=r.d; return
+        '<div class="rcard" data-id="'+r.character_id+'"><img class="p" src="https://images.evetech.net/characters/'+r.character_id+'/portrait?size=64" alt="" />'+
+        '<div style="flex:1;min-width:0"><div class="rname">'+esc(d.name||r.name||('#'+r.character_id))+' '+statusBadge(r.status)+'</div>'+
+        '<div class="rmeta">'+(d.corpId?'<img src="https://images.evetech.net/corporations/'+d.corpId+'/logo?size=32">':'')+esc(d.corpName||'')+(d.allianceName?' · '+esc(d.allianceName):'')+'</div>'+
+        '<div class="rstats">sec '+(d.sec!=null?d.sec.toFixed(1):'?')+' · '+(d.ageYears!=null?d.ageYears+'j':'?')+' · '+(d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒')+' · '+(d.sp!=null?fmtSP(d.sp)+' SP':'?')+'</div></div></div>'; }).join('')+'</div>';
+      list.querySelectorAll('.rcard').forEach(el=>el.onclick=()=>{ const r=parsed.find(x=>String(x.character_id)===el.dataset.id); renderDash(r.d, r.character_id, {admin:true, adminToken:t.accessToken, status:r.status, back:()=>renderAdmin(t)}); });
+    }
+
+    function afterLogin(t){ if(t.characterId===ADMIN_CHAR_ID) renderAdmin(t); else renderRecruit(t); }
+
+    // ── Init ────────────────────────────────────────────────────────────────────
+    (async ()=>{
+      const u=new URLSearchParams(location.search); const code=u.get('code'), state=u.get('state');
+      if(code&&state){ try{ const t=await exchange(code,state); localStorage.setItem(STORE_KEY,JSON.stringify(t)); history.replaceState({},'',REDIRECT_URI); afterLogin(t); }
+        catch(e){ history.replaceState({},'',REDIRECT_URI); renderLogin(e.message||'Login mislukt'); } return; }
+      const saved=localStorage.getItem(STORE_KEY); if(saved){ try{ return afterLogin(JSON.parse(saved)); }catch{} }
       renderLogin();
     })();
   </script>
