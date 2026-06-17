@@ -41,7 +41,6 @@ const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e0
 
 export const DEFAULT_NAV: NavItem[] = [
   { label: 'Dashboard',   path: '/',           icon: '▣', badge: null },
-  { label: 'Overzicht',   path: '/overview',   icon: '⊞', badge: null },
   { label: 'Character',   path: '/character',  icon: '◈', badge: null },
   { label: 'Wallet',      path: '/wallet',     icon: '◑', badge: null },
   { label: 'Market',      path: '/market',     icon: '◊', badge: null },
@@ -73,10 +72,14 @@ function loadNav(): NavItem[] {
   } catch { return DEFAULT_NAV }
 }
 
-type SubItem = { label: string; to: string; corp: boolean }
+type SubItem = { label: string; to: string; corp?: boolean; icon?: string }
 const KILLS_SUBITEMS: SubItem[] = [
   { label: 'Mijn killboard', to: '/kills',            corp: false },
   { label: 'Corp killboard', to: '/kills?board=corp', corp: true },
+]
+const CHARACTER_SUBITEMS: SubItem[] = [
+  { label: 'Detail',    to: '/character', icon: '◈' },
+  { label: 'Overzicht', to: '/overview',  icon: '⊞' },
 ]
 
 function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean; subItems?: SubItem[] }) {
@@ -86,7 +89,7 @@ function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavI
   const [searchParams] = useSearchParams()
   const count = badgeCount(item.badge)
   const hasSub = !!subItems && subItems.length > 0 && !collapsed
-  const onThisRoute = location.pathname === item.path
+  const onThisRoute = location.pathname === item.path || (subItems?.some(s => s.to.split('?')[0] === location.pathname) ?? false)
   const [open, setOpen] = useState(onThisRoute)
   useEffect(() => { if (onThisRoute) setOpen(true) }, [onThisRoute])
 
@@ -130,7 +133,9 @@ function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavI
       </NavLink>
 
       {hasSub && open && subItems!.map(s => {
-        const active = onThisRoute && ((searchParams.get('board') === 'corp') === s.corp)
+        // Kills onderscheidt op ?board=corp; andere dropdowns op het pad.
+        const active = location.pathname === s.to.split('?')[0]
+          && (item.path !== '/kills' || (searchParams.get('board') === 'corp') === !!s.corp)
         return (
           <NavLink key={s.to} to={s.to} style={{
             display: 'flex', alignItems: 'center', gap: '0.5rem',
@@ -139,7 +144,7 @@ function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavI
             borderLeft: `2px solid ${active ? 'var(--blue)' : 'transparent'}`,
             color: active ? 'var(--blue)' : 'var(--text-dim)',
           }}>
-            <span style={{ fontSize: '0.5rem', opacity: 0.7 }}>{s.corp ? '👥' : '◈'}</span>
+            <span style={{ fontSize: '0.5rem', opacity: 0.7 }}>{s.icon ?? (s.corp ? '👥' : '◈')}</span>
             {s.label}
           </NavLink>
         )
@@ -584,7 +589,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           <SortableContext items={visibleNav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {visibleNav.map(item => (
               <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
-                subItems={item.path === '/kills' ? KILLS_SUBITEMS : undefined} />
+                subItems={item.path === '/kills' ? KILLS_SUBITEMS : item.path === '/character' ? CHARACTER_SUBITEMS : undefined} />
             ))}
           </SortableContext>
         </DndContext>
