@@ -17,20 +17,21 @@ function hashColor(name: string): string {
 
 function effectiveStanding(name: string, ownNames: string[], esi: EsiStanding, manual: Record<string, Standing>): EsiStanding | 'own' {
   if (ownNames.some(n => n.toLowerCase() === name.toLowerCase())) return 'own'
-  return manual[name] ?? esi
+  // Alleen eigen + expliciet blauw = vriend; al het andere (neutraal/onbekend/rood) = vijand.
+  const s = manual[name] ?? esi
+  return s === 'friend' ? 'friend' : 'enemy'
 }
 
 function standingColor(s: EsiStanding | 'own', fallback: string): string {
-  if (s === 'own')    return 'var(--gold)'
-  if (s === 'friend') return 'var(--green)'
-  if (s === 'enemy')  return 'var(--red)'
+  if (s === 'own' || s === 'friend') return 'var(--green)'   // eigen + vriend = groen
+  if (s === 'enemy')  return 'var(--red)'                    // neutraal/vijand = rood
   return fallback
 }
 
 function rowBg(s: EsiStanding | 'own', isMention: boolean, alt: boolean): string {
-  if (s === 'enemy')  return 'rgba(224,85,85,0.09)'
-  if (s === 'friend') return 'rgba(62,207,110,0.07)'
-  if (isMention)      return 'rgba(240,192,64,0.06)'
+  if (s === 'enemy')                 return 'rgba(224,85,85,0.09)'
+  if (s === 'friend' || s === 'own') return 'rgba(62,207,110,0.07)'
+  if (isMention)                     return 'rgba(240,192,64,0.06)'
   return alt ? 'rgba(15,15,34,0.3)' : 'transparent'
 }
 
@@ -106,7 +107,7 @@ export default function LocalChatWidget() {
                 const isMention = standing !== 'own' && ownNames.some(n => m.message.toLowerCase().includes(n.toLowerCase()))
                 const bg       = rowBg(standing, isMention, i % 2 === 0)
                 const color    = standingColor(standing, hashColor(m.sender))
-                const border   = standing === 'enemy' ? '2px solid var(--red)' : standing === 'friend' ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : 'none'
+                const border   = standing === 'enemy' ? '2px solid var(--red)' : (standing === 'friend' || standing === 'own') ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : 'none'
 
                 return (
                   <div key={i} style={{ background: bg, padding: '0.25rem 0.4rem', borderRadius: 2, borderLeft: border, paddingLeft: border !== 'none' ? '0.3rem' : '0.4rem' }}>
