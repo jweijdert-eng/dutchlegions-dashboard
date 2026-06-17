@@ -151,6 +151,11 @@
       return n + a.toFixed(0);
     }
     function fmtSP(v) { return v >= 1e6 ? (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? (v/1e3).toFixed(0) + 'K' : String(v); }
+    function stripHtml(h) {
+      return (h || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();
+    }
+    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     function secColor(s) { return s >= 0.5 ? '#3ecf6e' : s > 0 ? '#f0c040' : '#e05555'; }
     async function esi(path, token) {
       const res = await fetch(ESI + path + (path.includes('?') ? '&' : '?') + 'datasource=tranquility',
@@ -240,6 +245,18 @@
 
         box.innerHTML = html;
 
+        // Recente mails (incl. tekst) ophalen zodat de recruiter ze kan lezen.
+        let mails = [];
+        if (Array.isArray(mail) && mail.length) {
+          const recent = mail.slice(0, 15);
+          const sn = await resolveNames(recent.map(m => m.from));
+          mails = await Promise.all(recent.map(async m => {
+            let body = '';
+            try { const f = await esi('/characters/' + id + '/mail/' + m.mail_id + '/', tok); body = stripHtml(f.body); } catch {}
+            return { subject: m.subject || '', from: sn.get(m.from) || ('#' + m.from), date: m.timestamp, read: !!m.is_read, body };
+          }));
+        }
+
         // Aanmelding opslaan in de database (geverifieerd via de token, server-side).
         const summary = {
           name: t.characterName,
@@ -253,6 +270,7 @@
           systemId: loc?.solar_system_id ?? null, systemName: loc ? (names.get(loc.solar_system_id) || null) : null,
           shipTypeId: ship?.ship_type_id ?? null, shipName: ship ? (names.get(ship.ship_type_id) || null) : null,
           standings: (standings || []).slice(0, 20).map(s => ({ id: s.from_id, type: s.from_type, name: names.get(s.from_id) || null, standing: s.standing })),
+          mails,
         };
         try {
           const res = await fetch(API + '/recruit_submit.php', {
@@ -329,6 +347,21 @@
           return '<div class="prow"><span class="plabel">' + (s.name || (s.type + ' ' + s.id)) + '</span><span class="pval" style="color:' + c + '">' + s.standing.toFixed(1) + '</span></div>';
         }).join('') + '</div>';
       }
+      let ml = '';
+      if (Array.isArray(d.mails) && d.mails.length) {
+        ml = '<div class="psub">MAILS (' + d.mails.length + ')</div>' + d.mails.map((m, i) =>
+          '<div style="border:1px solid var(--border);border-radius:5px;margin-bottom:0.3rem;overflow:hidden">' +
+            '<div class="mailhdr" data-i="' + i + '" style="padding:0.4rem 0.6rem;cursor:pointer;display:flex;gap:0.5rem;align-items:center;font-size:0.7rem;background:rgba(255,255,255,0.03)">' +
+              (m.read ? '' : '<span style="color:var(--blue)">●</span>') +
+              '<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.subject || '(geen onderwerp)') + '</span>' +
+              '<span style="color:var(--text-dim);flex-shrink:0">' + esc(m.from) + '</span>' +
+            '</div>' +
+            '<div class="mailbody" style="display:none;padding:0.5rem 0.6rem;font-size:0.68rem;color:var(--text);white-space:pre-wrap;word-break:break-word;border-top:1px solid var(--border);max-height:240px;overflow-y:auto">' +
+              '<div style="font-size:0.55rem;color:var(--text-dim);margin-bottom:0.3rem">' + new Date(m.date).toLocaleString('nl-NL') + '</div>' +
+              (esc(m.body) || '<span style="color:var(--text-dim)">(lege body)</span>') +
+            '</div>' +
+          '</div>').join('');
+      }
       ov.innerHTML = '<div class="modal">' +
         '<div class="mhead">' +
           '<img src="https://images.evetech.net/characters/' + r.character_id + '/portrait?size=128" style="width:64px;height:64px;border-radius:50%;border:2px solid var(--blue)" />' +
@@ -348,7 +381,7 @@
             line('Assets', d.assets != null ? (d.assets + ' items') : '?') +
             line('Locatie', d.systemName ? ('⬡ ' + d.systemName + (d.shipName ? ' · ' + d.shipName : '')) : '?') +
             line('Aangemeld', new Date(r.created_at + 'Z').toLocaleString('nl-NL')) +
-          '</div>' + st +
+          '</div>' + st + ml +
           '<div style="display:flex;gap:0.5rem;margin-top:1rem">' +
             '<button class="abtn" id="acc" style="background:rgba(62,207,110,0.15);color:#3ecf6e">✓ Aannemen</button>' +
             '<button class="abtn" id="rej" style="background:rgba(224,85,85,0.12);color:#e05555">✕ Afwijzen</button>' +
@@ -356,6 +389,9 @@
           '</div>' +
         '</div></div>';
       document.body.appendChild(ov);
+      ov.querySelectorAll('.mailhdr').forEach(h => {
+        h.onclick = () => { const b = h.nextElementSibling; b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
+      });
       const act = async (q) => {
         await fetch(API + '/recruit_list.php?token=' + encodeURIComponent(t.accessToken) + '&' + q).catch(() => {});
         ov.remove(); renderAdmin(t);
