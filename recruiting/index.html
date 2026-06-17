@@ -62,6 +62,11 @@
     .sgname { font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sgmeta { color:var(--text-dim); white-space:nowrap; font-size:.72rem; }
     .sgrp .psec { background:transparent; border:none; border-top:1px solid var(--border); border-radius:0; }
+    .vflag { border:1px solid var(--border); border-left-width:3px; border-radius:6px; padding:.6rem .8rem; margin-bottom:.45rem; font-size:.8rem; line-height:1.4; }
+    .vflag.v-bad { border-left-color:var(--red); background:rgba(224,85,85,.08); color:#ffb4b4; }
+    .vflag.v-warn { border-left-color:var(--gold); background:rgba(240,192,64,.08); color:#ffe08a; }
+    .vflag.v-ok { border-left-color:var(--green); background:rgba(62,207,110,.08); color:#9be8b8; }
+    .vflag.v-info { border-left-color:var(--text-dim); background:rgba(255,255,255,.03); color:var(--text-dim); }
     .mail { border:1px solid var(--border); border-radius:6px; margin-bottom:.35rem; overflow:hidden; }
     .mailhdr { padding:.45rem .7rem; cursor:pointer; display:flex; gap:.5rem; align-items:center; font-size:.74rem; background:rgba(255,255,255,.03); }
     .mailbody { display:none; padding:.6rem .7rem; font-size:.72rem; white-space:pre-wrap; word-break:break-word; border-top:1px solid var(--border); max-height:300px; overflow-y:auto; }
@@ -91,6 +96,7 @@
     const SCOPES = [
       'publicData','esi-wallet.read_character_wallet.v1','esi-mail.read_mail.v1',
       'esi-characters.read_standings.v1','esi-characters.read_contacts.v1','esi-skills.read_skills.v1',
+      'esi-corporations.read_contacts.v1','esi-alliances.read_contacts.v1',
       'esi-location.read_location.v1','esi-location.read_ship_type.v1','esi-assets.read_assets.v1',
       'esi-clones.read_clones.v1','esi-contracts.read_character_contracts.v1',
     ].join(' ');
@@ -165,9 +171,15 @@
       // Persoonlijke contacts (eigen contactlijst met standings)
       const pcontacts=await esi('/characters/'+id+'/contacts/',tok).catch(()=>null);
       const topContacts=(Array.isArray(pcontacts)?pcontacts:[]).slice().sort((a,b)=>b.standing-a.standing).slice(0,100);
-      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of topContacts)ids.push(s.contact_id); for(const sk of allSkills)ids.push(sk.skill_id);
+      // Werkgevershistorie (publiek) + de alliance van elke corp (voor vetting)
+      const hist=await esi('/characters/'+id+'/corporationhistory/').catch(()=>null);
+      const histArr=Array.isArray(hist)?hist:[];
+      const histCorps=[...new Set(histArr.map(h=>h.corporation_id))];
+      const corpInfo={}; await mapLimit(histCorps,8,async cid=>{ try{const c=await esi('/corporations/'+cid+'/'); corpInfo[cid]={alliance:c.alliance_id||null,name:c.name};}catch{corpInfo[cid]={alliance:null,name:null};} });
+      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of topContacts)ids.push(s.contact_id); for(const sk of allSkills)ids.push(sk.skill_id); for(const c of histCorps){ ids.push(c); const a=corpInfo[c]?.alliance; if(a)ids.push(a); }
       const names=await resolveNames(ids);
       const skillGroups=await groupSkills(allSkills,names);
+      const cynoSkills=allSkills.map(s=>({name:names.get(s.skill_id)||'',level:s.trained_skill_level})).filter(s=>/cyno/i.test(s.name));
       let mails=[]; if(Array.isArray(mail)&&mail.length){ const recent=mail.slice(0,15); const sn=await resolveNames(recent.map(m=>m.from));
         mails=await Promise.all(recent.map(async m=>{ let body=''; try{const f=await esi('/characters/'+id+'/mail/'+m.mail_id+'/',tok); body=stripHtml(f.body);}catch{} return {subject:m.subject||'',from:sn.get(m.from)||('#'+m.from),date:m.timestamp,read:!!m.is_read,body}; })); }
       const ageY=info?((Date.now()-new Date(info.birthday))/(365.25*864e5)).toFixed(1):null;
@@ -182,6 +194,8 @@
         systemId:loc?.solar_system_id??null, systemName:loc?(names.get(loc.solar_system_id)||null):null,
         shipTypeId:ship?.ship_type_id??null, shipName:ship?(names.get(ship.ship_type_id)||null):null,
         standings:topContacts.map(s=>({id:s.contact_id,type:s.contact_type,name:names.get(s.contact_id)||null,standing:s.standing})),
+        corpHistory:histArr.map(h=>({corpId:h.corporation_id, corpName:names.get(h.corporation_id)||corpInfo[h.corporation_id]?.name||('Corp '+h.corporation_id), allianceId:corpInfo[h.corporation_id]?.alliance||null, allianceName:corpInfo[h.corporation_id]?.alliance?(names.get(corpInfo[h.corporation_id].alliance)||null):null, start:h.start_date})),
+        cynoSkills,
         mails,
         skillGroups,
         wallet_journal:(Array.isArray(journal)?journal:[]).slice(0,40).map(j=>({date:j.date,type:j.ref_type,amount:j.amount,balance:j.balance,desc:j.description||''})),
@@ -220,13 +234,45 @@
         '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"><span class="plabel">'+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:var(--text-dim)">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
       standings:{ ic:'⚖', lbl:'Standings', count:d=>d.standings?.length, html:d=>!d.standings?.length?'<div class="empty">Geen contacts gedeeld.</div>':
         '<div class="psec">'+d.standings.map(s=>{const c=s.standing>0?'var(--green)':s.standing<0?'var(--red)':'var(--text-dim)'; return row(esc(s.name||(s.type+' '+s.id)), s.standing.toFixed(1), c);}).join('')+'</div>' },
+      history:{ ic:'🏛', lbl:'Historie', count:d=>d.corpHistory?.length, html:d=>!d.corpHistory?.length?'<div class="empty">Geen werkgevershistorie.</div>':
+        '<div class="psec">'+d.corpHistory.map(h=>'<div class="prow"><span class="plabel">'+dt(h.start)+'</span><span class="pval" style="font-weight:500">'+esc(h.corpName)+(h.allianceName?' <span style="color:var(--text-dim)">· '+esc(h.allianceName)+'</span>':'')+'</span></div>').join('')+'</div>' },
+      vetting:{ ic:'🛡', lbl:'Vetting', count:()=>null, html:d=>{
+        if(!d.vetting) return '<div class="center" style="padding:2rem 0"><div class="spinner"></div><div class="sub">Standings van DL/Insidious controleren…</div></div>';
+        const ic={bad:'⛔',warn:'⚠',ok:'✓',info:'ℹ'};
+        return d.vetting.map(f=>'<div class="vflag v-'+f.lvl+'"><b>'+(ic[f.lvl]||'')+'</b> '+f.txt+'</div>').join(''); } },
     };
-    const SECTION_ORDER = ['overview','skills','wallet','mails','contracts','standings'];
+    const SECTION_ORDER = ['overview','skills','wallet','mails','contracts','standings','history'];
+
+    // Vetting-check (admin): vergelijk recruit met DL + Insidious standings + cyno-skills.
+    async function runVetting(d, adminToken){
+      const flags=[];
+      if(d.cynoSkills?.length) flags.push({lvl:'warn', txt:'Cyno-skill aanwezig: '+d.cynoSkills.map(s=>esc(s.name)+' L'+s.level).join(', ')});
+      else flags.push({lvl:'ok', txt:'Geen cyno-skills.'});
+      const enemy=new Map();
+      try{
+        const me=await esi('/characters/'+ADMIN_CHAR_ID+'/');
+        const srcs=[];
+        if(me.corporation_id) srcs.push(['Dutch Legions', await esi('/corporations/'+me.corporation_id+'/contacts/',adminToken).catch(()=>null)]);
+        if(me.alliance_id) srcs.push(['Insidious', await esi('/alliances/'+me.alliance_id+'/contacts/',adminToken).catch(()=>null)]);
+        for(const [src,arr] of srcs){ if(Array.isArray(arr)) for(const c of arr){ if(c.standing<0 && !enemy.has(c.contact_id)) enemy.set(c.contact_id,{standing:c.standing,src}); } }
+      }catch{}
+      if(!enemy.size){ flags.push({lvl:'info', txt:'Kon DL/Insidious-standings niet laden (geen leesrechten op corp/alliance-contacts?). Standing- en historie-check overgeslagen.'}); return flags; }
+      // Werkgevershistorie: zat hij in een vijandige corp/alliance?
+      const hh=[]; for(const h of (d.corpHistory||[])){ if(enemy.has(h.corpId))hh.push(esc(h.corpName)+' (corp)'); if(h.allianceId&&enemy.has(h.allianceId))hh.push(esc(h.allianceName||h.corpName)+' (alliance)'); }
+      if(hh.length) flags.push({lvl:'bad', txt:'Werkgevershistorie bevat vijand(en) van DL/Insidious: '+[...new Set(hh)].join(', ')});
+      else flags.push({lvl:'ok', txt:'Geen vijanden in werkgevershistorie.'});
+      // Persoonlijke contacts: heeft hij een DL/Insidious-vijand blauw staan?
+      const blue=(d.standings||[]).filter(s=>s.standing>0&&enemy.has(s.id)).map(s=>esc(s.name||('#'+s.id)));
+      if(blue.length) flags.push({lvl:'bad', txt:'Heeft vijand(en) van DL/Insidious blauw in z\'n contacts: '+blue.join(', ')});
+      else flags.push({lvl:'ok', txt:'Geen DL/Insidious-vijanden blauw in contacts.'});
+      return flags;
+    }
 
     // Render het dashboard (sidebar + content) voor een character-data-object.
     function renderDash(d, charId, opts){
       opts = opts || {};
-      const navItems = SECTION_ORDER.map(k=>{ const s=SECTIONS[k]; const c=s.count(d); return ''+
+      const order = opts.admin ? ['vetting',...SECTION_ORDER] : SECTION_ORDER;
+      const navItems = order.map(k=>{ const s=SECTIONS[k]; const c=s.count(d); return ''+
         '<div class="ni" data-k="'+k+'"><span class="ic">'+s.ic+'</span><span class="lbl">'+s.lbl+'</span>'+(c!=null?'<span class="ct">'+c+'</span>':'')+'</div>'; }).join('');
       const footer = opts.admin
         ? '<button class="abtn" style="background:rgba(62,207,110,.15);color:var(--green)" id="acc">✓ Aannemen</button>'+
@@ -241,10 +287,12 @@
         '</div><nav>'+navItems+'</nav><div class="side-f">'+footer+'</div></div>'+
         '<div class="main"><h2 id="title"></h2><div id="content"></div></div></div>';
 
-      function show(k){ root.querySelectorAll('.ni').forEach(n=>n.classList.toggle('on',n.dataset.k===k)); document.getElementById('title').textContent=SECTIONS[k].lbl; const c=document.getElementById('content'); c.innerHTML=SECTIONS[k].html(d);
-        c.querySelectorAll('.mailhdr').forEach(h=>h.onclick=()=>{const b=h.nextElementSibling; b.style.display=b.style.display==='none'?'block':'none';}); }
+      let curK;
+      function show(k){ curK=k; root.querySelectorAll('.ni').forEach(n=>n.classList.toggle('on',n.dataset.k===k)); document.getElementById('title').textContent=SECTIONS[k].lbl; const c=document.getElementById('content'); c.innerHTML=SECTIONS[k].html(d);
+        c.querySelectorAll('.mailhdr').forEach(h=>h.onclick=()=>{const b=h.nextElementSibling; b.style.display=b.style.display==='none'?'block':'none';});
+        if(k==='vetting' && !d.vetting && opts.admin){ runVetting(d, opts.adminToken).then(f=>{ d.vetting=f; if(curK==='vetting'){ const cc=document.getElementById('content'); if(cc)cc.innerHTML=SECTIONS.vetting.html(d); } }); } }
       root.querySelectorAll('.ni').forEach(n=>n.onclick=()=>show(n.dataset.k));
-      show('overview');
+      show(opts.admin?'vetting':'overview');
 
       if(opts.admin){
         const act=async q=>{ await fetch(API+'/recruit_list.php?token='+encodeURIComponent(opts.adminToken)+'&'+q).catch(()=>{}); opts.back(); };
@@ -277,7 +325,7 @@
       const parsed=rows.map(r=>{ let d={}; try{d=JSON.parse(r.data)||{};}catch{} return {...r,d}; });
       list.innerHTML='<div class="rgrid">'+parsed.map(r=>{ const d=r.d; return ''+
         '<div class="rcard" data-id="'+r.character_id+'"><img class="p" src="https://images.evetech.net/characters/'+r.character_id+'/portrait?size=64" alt="" />'+
-        '<div style="flex:1;min-width:0"><div class="rname">'+esc(d.name||r.name||('#'+r.character_id))+' '+statusBadge(r.status)+'</div>'+
+        '<div style="flex:1;min-width:0"><div class="rname">'+esc(d.name||r.name||('#'+r.character_id))+' '+statusBadge(r.status)+(d.cynoSkills?.length?' <span class="badge" style="background:rgba(240,192,64,.18);color:var(--gold)">⚠ CYNO</span>':'')+'</div>'+
         '<div class="rmeta">'+(d.corpId?'<img src="https://images.evetech.net/corporations/'+d.corpId+'/logo?size=32">':'')+esc(d.corpName||'')+(d.allianceName?' · '+esc(d.allianceName):'')+'</div>'+
         '<div class="rstats">sec '+(d.sec!=null?d.sec.toFixed(1):'?')+' · '+(d.ageYears!=null?d.ageYears+'j':'?')+' · '+(d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒')+' · '+(d.sp!=null?fmtSP(d.sp)+' SP':'?')+'</div></div></div>'; }).join('')+'</div>';
       list.querySelectorAll('.rcard').forEach(el=>el.onclick=()=>{ const r=parsed.find(x=>String(x.character_id)===el.dataset.id); renderDash(r.d, r.character_id, {admin:true, adminToken:t.accessToken, status:r.status, back:()=>renderAdmin(t)}); });
