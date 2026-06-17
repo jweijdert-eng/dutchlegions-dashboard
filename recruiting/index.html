@@ -81,6 +81,7 @@
       'esi-location.read_ship_type.v1',
       'esi-assets.read_assets.v1',
       'esi-clones.read_clones.v1',
+      'esi-contracts.read_character_contracts.v1',
     ].join(' ');
     const STORE_KEY    = 'recruit_token';
     const ESI = 'https://esi.evetech.net/latest';
@@ -199,7 +200,7 @@
       const id = t.characterId, tok = t.accessToken;
       const box = document.getElementById('profile');
       try {
-        const [info, wallet, mail, standings, skills, loc, ship, assets] = await Promise.all([
+        const [info, wallet, mail, standings, skills, loc, ship, assets, journal, contracts] = await Promise.all([
           esi('/characters/' + id + '/').catch(() => null),
           esi('/characters/' + id + '/wallet/', tok).catch(() => null),
           esi('/characters/' + id + '/mail/', tok).catch(() => null),
@@ -208,13 +209,19 @@
           esi('/characters/' + id + '/location/', tok).catch(() => null),
           esi('/characters/' + id + '/ship/', tok).catch(() => null),
           esi('/characters/' + id + '/assets/', tok).catch(() => null),
+          esi('/characters/' + id + '/wallet/journal/', tok).catch(() => null),
+          esi('/characters/' + id + '/contracts/', tok).catch(() => null),
         ]);
+
+        // Top-skills op SP.
+        const topSkills = (skills?.skills || []).slice().sort((a, b) => b.skillpoints_in_skill - a.skillpoints_in_skill).slice(0, 15);
 
         const ids = [];
         if (info) { if (info.corporation_id) ids.push(info.corporation_id); if (info.alliance_id) ids.push(info.alliance_id); }
         if (ship) ids.push(ship.ship_type_id);
         if (loc) ids.push(loc.solar_system_id);
         for (const s of (standings || []).slice(0, 8)) ids.push(s.from_id);
+        for (const sk of topSkills) ids.push(sk.skill_id);
         const names = await resolveNames(ids);
 
         const ageY = info ? ((Date.now() - new Date(info.birthday)) / (365.25*86400000)).toFixed(1) : '—';
@@ -271,6 +278,10 @@
           shipTypeId: ship?.ship_type_id ?? null, shipName: ship ? (names.get(ship.ship_type_id) || null) : null,
           standings: (standings || []).slice(0, 20).map(s => ({ id: s.from_id, type: s.from_type, name: names.get(s.from_id) || null, standing: s.standing })),
           mails,
+          skills: topSkills.map(sk => ({ name: names.get(sk.skill_id) || ('Skill ' + sk.skill_id), level: sk.trained_skill_level, sp: sk.skillpoints_in_skill })),
+          skillCount: skills?.skills?.length ?? null,
+          wallet_journal: (Array.isArray(journal) ? journal : []).slice(0, 30).map(j => ({ date: j.date, type: j.ref_type, amount: j.amount, balance: j.balance, desc: j.description || '' })),
+          contracts: (Array.isArray(contracts) ? contracts : []).slice(0, 30).map(c => ({ id: c.contract_id, type: c.type, status: c.status, title: c.title || '', price: c.price, reward: c.reward, date: c.date_issued })),
         };
         try {
           const res = await fetch(API + '/recruit_submit.php', {
@@ -362,6 +373,31 @@
             '</div>' +
           '</div>').join('');
       }
+      let sk = '';
+      if (Array.isArray(d.skills) && d.skills.length) {
+        sk = '<div class="psub">TOP SKILLS' + (d.skillCount ? ' (van ' + d.skillCount + ')' : '') + '</div><div class="psec">' +
+          d.skills.map(s => '<div class="prow"><span class="plabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.name) + '</span><span class="pval">Lvl ' + s.level + ' · ' + fmtSP(s.sp) + '</span></div>').join('') + '</div>';
+      }
+      let wj = '';
+      if (Array.isArray(d.wallet_journal) && d.wallet_journal.length) {
+        wj = '<div class="psub">WALLET-HISTORIE</div><div class="psec" style="max-height:220px;overflow-y:auto">' +
+          d.wallet_journal.map(j => {
+            const col = j.amount >= 0 ? '#3ecf6e' : '#e05555';
+            const dt = new Date(j.date).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' });
+            return '<div class="prow"><span class="plabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dt + ' · ' + esc((j.type || '').replace(/_/g, ' ')) + '</span>' +
+              '<span class="pval" style="color:' + col + '">' + (j.amount >= 0 ? '+' : '') + fmtISK(j.amount) + '</span></div>';
+          }).join('') + '</div>';
+      }
+      let ct = '';
+      if (Array.isArray(d.contracts) && d.contracts.length) {
+        ct = '<div class="psub">CONTRACTS (' + d.contracts.length + ')</div><div class="psec" style="max-height:220px;overflow-y:auto">' +
+          d.contracts.map(c => {
+            const val = c.price ? fmtISK(c.price) : c.reward ? fmtISK(c.reward) : '';
+            const dt = c.date ? new Date(c.date).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' }) : '';
+            return '<div class="prow"><span class="plabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + dt + ' · ' + esc((c.type || '').replace(/_/g, ' ')) + (c.title ? ' — ' + esc(c.title) : '') + '</span>' +
+              '<span class="pval" style="color:var(--text-dim)">' + esc(c.status || '') + (val ? ' · ' + val : '') + '</span></div>';
+          }).join('') + '</div>';
+      }
       ov.innerHTML = '<div class="modal">' +
         '<div class="mhead">' +
           '<img src="https://images.evetech.net/characters/' + r.character_id + '/portrait?size=128" style="width:64px;height:64px;border-radius:50%;border:2px solid var(--blue)" />' +
@@ -381,7 +417,7 @@
             line('Assets', d.assets != null ? (d.assets + ' items') : '?') +
             line('Locatie', d.systemName ? ('⬡ ' + d.systemName + (d.shipName ? ' · ' + d.shipName : '')) : '?') +
             line('Aangemeld', new Date(r.created_at + 'Z').toLocaleString('nl-NL')) +
-          '</div>' + st + ml +
+          '</div>' + sk + wj + ct + st + ml +
           '<div style="display:flex;gap:0.5rem;margin-top:1rem">' +
             '<button class="abtn" id="acc" style="background:rgba(62,207,110,0.15);color:#3ecf6e">✓ Aannemen</button>' +
             '<button class="abtn" id="rej" style="background:rgba(224,85,85,0.12);color:#e05555">✕ Afwijzen</button>' +
