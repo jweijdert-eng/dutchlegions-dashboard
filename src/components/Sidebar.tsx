@@ -118,7 +118,7 @@ function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavI
         end={item.path === '/'}
         title={collapsed ? item.label : undefined}
         onClick={() => { if (hasSub) setOpen(true) }}
-        style={({ isActive }) => rowStyle(isActive)}
+        style={({ isActive }) => rowStyle(isActive || (hasSub && onThisRoute))}
       >
         {dragHandle}
         <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
@@ -133,23 +133,28 @@ function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavI
         )}
       </NavLink>
 
-      {hasSub && open && subItems!.map(s => {
-        // Kills onderscheidt op ?board=corp; andere dropdowns op het pad.
-        const active = location.pathname === s.to.split('?')[0]
-          && (item.path !== '/kills' || (searchParams.get('board') === 'corp') === !!s.corp)
-        return (
-          <NavLink key={s.to} to={s.to} style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.4rem 1rem 0.4rem 2.5rem', textDecoration: 'none', fontSize: '0.72rem',
-            background: active ? 'rgba(0,180,216,0.07)' : 'transparent',
-            borderLeft: `2px solid ${active ? 'var(--blue)' : 'transparent'}`,
-            color: active ? 'var(--blue)' : 'var(--text-dim)',
-          }}>
-            <span style={{ fontSize: '0.5rem', opacity: 0.7 }}>{s.icon ?? (s.corp ? '👥' : '◈')}</span>
-            {s.label}
-          </NavLink>
-        )
-      })}
+      {hasSub && open && (
+        <div style={{ marginLeft: '1.4rem', borderLeft: '1px solid var(--border)', paddingTop: 1, paddingBottom: 1 }}>
+          {subItems!.map(s => {
+            // Kills onderscheidt op ?board=corp; andere dropdowns op het pad.
+            const active = location.pathname === s.to.split('?')[0]
+              && (item.path !== '/kills' || (searchParams.get('board') === 'corp') === !!s.corp)
+            return (
+              <NavLink key={s.to} to={s.to} style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                padding: '0.38rem 1rem 0.38rem 0.85rem', textDecoration: 'none', fontSize: '0.72rem',
+                background: active ? 'rgba(0,180,216,0.07)' : 'transparent',
+                borderLeft: `2px solid ${active ? 'var(--blue)' : 'transparent'}`, marginLeft: -1,
+                color: active ? 'var(--blue)' : 'var(--text-dim)',
+                fontWeight: active ? 600 : 400,
+              }}>
+                <span style={{ fontSize: '0.62rem', width: 14, textAlign: 'center', opacity: 0.8 }}>{s.icon ?? (s.corp ? '👥' : '◈')}</span>
+                {s.label}
+              </NavLink>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
