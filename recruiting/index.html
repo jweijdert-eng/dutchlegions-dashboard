@@ -168,6 +168,21 @@
     ];
     const riskLabel = name => (RISK_SKILL_PATTERNS.find(p=>p.re.test(name))||{}).label || null;
 
+    // Verdachte termen / externe comms in mailinhoud — voor vetting
+    const SUSPECT_TERMS = [
+      {re:/\bspy(ing|s)?\b/i, label:'spy'},
+      {re:/\bawox/i, label:'awox'},
+      {re:/\bintel\b/i, label:'intel'},
+      {re:/\bmole\b/i, label:'mole'},
+      {re:/infiltrat/i, label:'infiltrate'},
+      {re:/hot[- ]?drop/i, label:'hotdrop'},
+      {re:/discord(\.gg|app\.com)?/i, label:'Discord'},
+      {re:/teamspeak|ts3(\.|server)?/i, label:'TeamSpeak'},
+      {re:/mumble/i, label:'Mumble'},
+    ];
+    const URL_RE = /https?:\/\/[^\s"'<>]+/ig;
+    function scanText(txt){ const out=new Set(); for(const p of SUSPECT_TERMS){ if(p.re.test(txt)) out.add(p.label); } if((txt||'').match(URL_RE)) out.add('externe link'); return [...out]; }
+
     // ── Data verzamelen (recruit) ─────────────────────────────────────────────
     async function gatherData(t){
       const id=t.characterId, tok=t.accessToken;
@@ -245,7 +260,7 @@
         (!d.wallet_journal?.length?'<div class="empty">Geen wallet-historie.</div>':
         '<div class="psec">'+d.wallet_journal.map(j=>{const c=j.amount>=0?'var(--green)':'var(--red)'; return '<div class="prow"><span class="plabel">'+dt(j.date)+' · '+esc((j.type||'').replace(/_/g,' '))+'</span><span class="pval" style="color:'+c+'">'+(j.amount>=0?'+':'')+fmtISK(j.amount)+'</span></div>';}).join('')+'</div>') },
       mails:{ ic:'✉', lbl:'Mails', count:d=>d.mails?.length, html:d=>!d.mails?.length?'<div class="empty">Geen mails gedeeld.</div>':
-        d.mails.map(m=>'<div class="mail"'+(m._enemy?' style="border-color:var(--red)"':'')+'><div class="mailhdr">'+(m._enemy?'<span title="vijand" style="color:var(--red)">⚠</span>':(m.read?'':'<span style="color:var(--blue)">●</span>'))+'<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||'(geen onderwerp)')+'</span><span style="color:'+(m._enemy?'var(--red)':'var(--text-dim)')+';flex-shrink:0">'+esc(m.from)+'</span></div>'+
+        d.mails.map(m=>'<div class="mail"'+(m._enemy?' style="border-color:var(--red)"':'')+'><div class="mailhdr">'+(m._enemy?'<span title="vijand" style="color:var(--red)">⚠</span>':(m.read?'':'<span style="color:var(--blue)">●</span>'))+'<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||'(geen onderwerp)')+'</span>'+(m._suspect?'<span style="color:var(--gold);font-size:.62rem;flex-shrink:0" title="verdachte termen">⚑ '+esc(m._suspect.join(', '))+'</span>':'')+'<span style="color:'+(m._enemy?'var(--red)':'var(--text-dim)')+';flex-shrink:0">'+esc(m.from)+'</span></div>'+
         '<div class="mailbody"><div style="font-size:.55rem;color:var(--text-dim);margin-bottom:.3rem">'+dt(m.date)+'</div>'+(esc(m.body)||'<span style="color:var(--text-dim)">(leeg)</span>')+'</div></div>').join('') },
       contracts:{ ic:'◧', lbl:'Contracts', count:d=>d.contracts?.length, html:d=>!d.contracts?.length?'<div class="empty">Geen contracts.</div>':
         '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"'+(c._enemy?' style="background:rgba(224,85,85,.1)"':'')+'><span class="plabel">'+(c._enemy?'<span title="vijand" style="color:var(--red)">⚠ </span>':'')+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:'+(c._enemy?'var(--red)':'var(--text-dim)')+'">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
@@ -298,6 +313,11 @@
         }
         if(hits.length) flags.push({lvl:'bad', txt:'Verdachte mails met DL/Insidious-vijanden:<br>'+hits.join('<br>')});
         else flags.push({lvl:'ok', txt:'Geen mailcontact met bekende vijanden (laatste '+d.mails.length+' mails).'});
+        // Inhoud-scan: verdachte termen / externe links
+        const sus=[]; const allTerms=new Set();
+        for(const m of d.mails){ const terms=scanText((m.subject||'')+' '+(m.body||'')); if(terms.length){ m._suspect=terms; terms.forEach(t=>allTerms.add(t)); sus.push('"'+esc(m.subject||'(geen onderwerp)')+'" → '+terms.join(', ')); } }
+        if(sus.length) flags.push({lvl:'warn', txt:'Verdachte termen/links in mails ('+[...allTerms].join(', ')+'):<br>'+sus.join('<br>')});
+        else flags.push({lvl:'ok', txt:'Geen verdachte termen of externe links in mails.'});
       }
       // Contracten met vijanden (uitgever/ontvanger/acceptor = vijand van DL/Insidious)
       if(d.contracts?.length){
