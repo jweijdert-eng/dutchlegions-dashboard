@@ -426,22 +426,28 @@ function CharCard({ token }: { token: TokenData }) {
   )
 }
 
-export default function MultiChar() {
+// Inhoud zonder Layout — herbruikbaar (o.a. als 'Overzicht'-view in Character).
+export function MultiCharBody() {
   const { tokens } = useAuth()
+  return (
+    <div style={{ padding: '1.25rem 0', overflowY: 'auto' }}>
+      {tokens.length === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60%', color: 'var(--text-dim)', fontSize: '0.85rem' }}>
+          Geen accounts ingelogd
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+          {tokens.map(t => <CharCard key={t.characterId} token={t} />)}
+        </div>
+      )}
+    </div>
+  )
+}
 
+export default function MultiChar() {
   return (
     <Layout header={<PageHeader title="OVERZICHT" sub="Alle karakters in één oogopslag" />}>
-      <div style={{ padding: '1.25rem', overflowY: 'auto', height: '100%' }}>
-        {tokens.length === 0 ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60%', color: 'var(--text-dim)', fontSize: '0.85rem' }}>
-            Geen accounts ingelogd
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-            {tokens.map(t => <CharCard key={t.characterId} token={t} />)}
-          </div>
-        )}
-      </div>
+      <MultiCharBody />
     </Layout>
   )
 }

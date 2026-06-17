@@ -6,6 +6,7 @@ import {
   type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes, type SkillsInfo, type Medal,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
+import { MultiCharBody } from './MultiChar'
 import EveImage from '../components/EveImage'
 import Location from '../components/Location'
 import { secColor } from '../utils/secColor'
@@ -542,11 +543,27 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
 
 export default function Character() {
   const { activeTokens: tokens, tokens: allTokens } = useAuth()
+  const [view, setView] = useState<'detail' | 'overzicht'>('detail')
   return (
-    <Layout header={<PageHeader title="Character" sub={`${tokens.length} account${tokens.length !== 1 ? 's' : ''}`} />}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(460px, 1fr))', gap: '0.875rem' }}>
-        {tokens.map(t => <CharCard key={t.characterId} token={t} allTokens={allTokens} />)}
-      </div>
+    <Layout header={<PageHeader title="Character" sub={`${tokens.length} account${tokens.length !== 1 ? 's' : ''}`}
+      right={
+        <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+          {(['detail', 'overzicht'] as const).map(v => (
+            <button key={v} onClick={() => setView(v)} style={{
+              padding: '0.3rem 0.7rem', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', border: 'none',
+              background: view === v ? 'rgba(0,180,216,0.15)' : 'transparent',
+              color: view === v ? 'var(--blue)' : 'var(--text-dim)',
+            }}>{v === 'detail' ? 'Detail' : 'Overzicht'}</button>
+          ))}
+        </div>
+      } />}>
+      {view === 'overzicht' ? (
+        <MultiCharBody />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(460px, 1fr))', gap: '0.875rem' }}>
+          {tokens.map(t => <CharCard key={t.characterId} token={t} allTokens={allTokens} />)}
+        </div>
+      )}
     </Layout>
   )
 }

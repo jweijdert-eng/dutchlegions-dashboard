@@ -77,10 +77,6 @@ const KILLS_SUBITEMS: SubItem[] = [
   { label: 'Mijn killboard', to: '/kills',            corp: false },
   { label: 'Corp killboard', to: '/kills?board=corp', corp: true },
 ]
-const CHARACTER_SUBITEMS: SubItem[] = [
-  { label: 'Detail',    to: '/character', icon: '◈' },
-  { label: 'Overzicht', to: '/overview',  icon: '⊞' },
-]
 
 function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean; subItems?: SubItem[] }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.path })
@@ -589,7 +585,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           <SortableContext items={visibleNav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {visibleNav.map(item => (
               <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
-                subItems={item.path === '/kills' ? KILLS_SUBITEMS : item.path === '/character' ? CHARACTER_SUBITEMS : undefined} />
+                subItems={item.path === '/kills' ? KILLS_SUBITEMS : undefined} />
             ))}
           </SortableContext>
         </DndContext>
