@@ -216,7 +216,7 @@
         mails,
         skillGroups,
         wallet_journal:(Array.isArray(journal)?journal:[]).slice(0,40).map(j=>({date:j.date,type:j.ref_type,amount:j.amount,balance:j.balance,desc:j.description||''})),
-        contracts:(Array.isArray(contracts)?contracts:[]).slice(0,40).map(c=>({id:c.contract_id,type:c.type,status:c.status,title:c.title||'',price:c.price,reward:c.reward,date:c.date_issued})),
+        contracts:(Array.isArray(contracts)?contracts:[]).slice(0,40).map(c=>({id:c.contract_id,type:c.type,status:c.status,title:c.title||'',price:c.price,reward:c.reward,date:c.date_issued,issuerId:c.issuer_id,assigneeId:c.assignee_id,acceptorId:c.acceptor_id})),
       };
     }
 
@@ -248,7 +248,7 @@
         d.mails.map(m=>'<div class="mail"'+(m._enemy?' style="border-color:var(--red)"':'')+'><div class="mailhdr">'+(m._enemy?'<span title="vijand" style="color:var(--red)">⚠</span>':(m.read?'':'<span style="color:var(--blue)">●</span>'))+'<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||'(geen onderwerp)')+'</span><span style="color:'+(m._enemy?'var(--red)':'var(--text-dim)')+';flex-shrink:0">'+esc(m.from)+'</span></div>'+
         '<div class="mailbody"><div style="font-size:.55rem;color:var(--text-dim);margin-bottom:.3rem">'+dt(m.date)+'</div>'+(esc(m.body)||'<span style="color:var(--text-dim)">(leeg)</span>')+'</div></div>').join('') },
       contracts:{ ic:'◧', lbl:'Contracts', count:d=>d.contracts?.length, html:d=>!d.contracts?.length?'<div class="empty">Geen contracts.</div>':
-        '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"><span class="plabel">'+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:var(--text-dim)">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
+        '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"'+(c._enemy?' style="background:rgba(224,85,85,.1)"':'')+'><span class="plabel">'+(c._enemy?'<span title="vijand" style="color:var(--red)">⚠ </span>':'')+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:'+(c._enemy?'var(--red)':'var(--text-dim)')+'">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
       standings:{ ic:'⚖', lbl:'Standings', count:d=>d.standings?.length, html:d=>!d.standings?.length?'<div class="empty">Geen contacts gedeeld.</div>':
         '<div class="psec">'+d.standings.map(s=>{const c=s.standing>0?'var(--green)':s.standing<0?'var(--red)':'var(--text-dim)'; return row(esc(s.name||(s.type+' '+s.id)), s.standing.toFixed(1), c);}).join('')+'</div>' },
       history:{ ic:'🏛', lbl:'Historie', count:d=>d.corpHistory?.length, html:d=>!d.corpHistory?.length?'<div class="empty">Geen werkgevershistorie.</div>':
@@ -264,7 +264,7 @@
     const SECTION_ORDER = ['overview','skills','wallet','mails','contracts','standings','history'];
 
     // Vetting-check (admin): vergelijk recruit met DL + Insidious standings + cyno-skills.
-    async function runVetting(d, adminToken){
+    async function runVetting(d, adminToken, selfId){
       const flags=[];
       const rs=d.riskSkills||(d.cynoSkills||[]);
       if(rs.length){ const grp={}; for(const s of rs){ const l=s.label||riskLabel(s.name)||'Overig'; (grp[l]=grp[l]||[]).push(esc(s.name)+' L'+s.level); }
@@ -299,6 +299,18 @@
         if(hits.length) flags.push({lvl:'bad', txt:'Verdachte mails met DL/Insidious-vijanden:<br>'+hits.join('<br>')});
         else flags.push({lvl:'ok', txt:'Geen mailcontact met bekende vijanden (laatste '+d.mails.length+' mails).'});
       }
+      // Contracten met vijanden (uitgever/ontvanger/acceptor = vijand van DL/Insidious)
+      if(d.contracts?.length){
+        const parties=c=>[c.issuerId,c.assigneeId,c.acceptorId].filter(p=>p && p!==selfId);
+        const allParties=[...new Set(d.contracts.flatMap(parties))];
+        const aff=await resolveAffiliations(allParties);
+        const pNames=await resolveNames(allParties);
+        const isEnemyParty=p=>{ const a=aff.get(p)||{}; return enemy.has(p)||enemy.has(a.corp)||enemy.has(a.alliance); };
+        const hits=[];
+        for(const c of d.contracts){ const bad=parties(c).find(isEnemyParty); if(bad){ c._enemy=true; hits.push(esc((c.type||'').replace(/_/g,' '))+' ↔ <b>'+esc(pNames.get(bad)||('#'+bad))+'</b>'+(c.title?' ("'+esc(c.title)+'")':'')); } }
+        if(hits.length) flags.push({lvl:'bad', txt:'Contracten met DL/Insidious-vijanden:<br>'+hits.join('<br>')});
+        else flags.push({lvl:'ok', txt:'Geen contracten met bekende vijanden (laatste '+d.contracts.length+').'});
+      }
       return flags;
     }
 
@@ -324,7 +336,7 @@
       let curK;
       function show(k){ curK=k; root.querySelectorAll('.ni').forEach(n=>n.classList.toggle('on',n.dataset.k===k)); document.getElementById('title').textContent=SECTIONS[k].lbl; const c=document.getElementById('content'); c.innerHTML=SECTIONS[k].html(d);
         c.querySelectorAll('.mailhdr').forEach(h=>h.onclick=()=>{const b=h.nextElementSibling; b.style.display=b.style.display==='none'?'block':'none';});
-        if(k==='vetting' && !d.vetting && opts.admin){ runVetting(d, opts.adminToken).then(f=>{ d.vetting=f; if(curK==='vetting'){ const cc=document.getElementById('content'); if(cc)cc.innerHTML=SECTIONS.vetting.html(d); } }); } }
+        if(k==='vetting' && !d.vetting && opts.admin){ runVetting(d, opts.adminToken, charId).then(f=>{ d.vetting=f; if(curK==='vetting'){ const cc=document.getElementById('content'); if(cc)cc.innerHTML=SECTIONS.vetting.html(d); } }); } }
       root.querySelectorAll('.ni').forEach(n=>n.onclick=()=>show(n.dataset.k));
       show(opts.admin?'vetting':'overview');
 
