@@ -126,7 +126,8 @@ export default function Admin() {
   const { tokens } = useAuth()
   const { previewMode, setPreviewMode } = useLayoutMode()
   const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
-  const [tab, setTab] = useState<'stats' | 'members' | 'settings' | 'sde'>('stats')
+  const [tab, setTab] = useState<'stats' | 'members' | 'settings' | 'sde' | 'chat'>('stats')
+  const [guestMsgs, setGuestMsgs] = useState<{ id: number; name: string; message: string; created_at: string }[]>([])
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [pageStats, setPageStats] = useState<{ page: string; views: number; users: number }[]>([])
   const [members, setMembers] = useState<SiteMember[]>([])
@@ -168,7 +169,31 @@ export default function Admin() {
     if (tab === 'members') fetchMembers()
     if (tab === 'settings') { fetchSettings(); fetchMotd(); loadSiteConfig() }
     if (tab === 'sde') fetchBpInfo()
+    if (tab === 'chat') fetchGuestChat()
   }, [tab])
+
+  async function fetchGuestChat() {
+    try { const r = await fetch('/api/guestchat.php', { cache: 'no-cache' }); const j = await r.json(); setGuestMsgs(Array.isArray(j) ? j.slice().reverse() : []) }
+    catch { /* ignore */ }
+  }
+
+  async function deleteGuestMsg(id: number) {
+    if (!adminToken) return
+    setGuestMsgs(prev => prev.filter(m => m.id !== id))
+    await fetch('/api/guestchat.php', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId, id }),
+    }).catch(() => {})
+  }
+
+  async function clearGuestChat() {
+    if (!adminToken || !confirm('De hele login-chat wissen?')) return
+    setGuestMsgs([])
+    await fetch('/api/guestchat.php', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId }),
+    }).catch(() => {})
+  }
 
   async function fetchMotd() {
     try {
@@ -558,6 +583,7 @@ export default function Admin() {
           <button style={TAB_STYLE(tab === 'stats')}    onClick={() => setTab('stats')}>Statistieken</button>
           <button style={TAB_STYLE(tab === 'members')}  onClick={() => setTab('members')}>Member Beheer</button>
           <button style={TAB_STYLE(tab === 'settings')} onClick={() => setTab('settings')}>Site Instellingen</button>
+          <button style={TAB_STYLE(tab === 'chat')}     onClick={() => setTab('chat')}>Login Chat</button>
           <button style={TAB_STYLE(tab === 'sde')}      onClick={() => setTab('sde')}>SDE</button>
         </div>
 
@@ -1143,6 +1169,42 @@ export default function Admin() {
           </div>
           )
         })()}
+
+        {/* Login Chat — moderatie van de publieke gast-shoutbox */}
+        {tab === 'chat' && (
+          <div style={{ maxWidth: 580 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.08em' }}>
+                {guestMsgs.length} BERICHTEN — publieke chat op de login-pagina
+              </div>
+              <button onClick={fetchGuestChat} style={{ padding: '0.25rem 0.6rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--text-dim)' }}>↻ Ververs</button>
+              {guestMsgs.length > 0 && (
+                <button onClick={clearGuestChat} style={{ marginLeft: 'auto', padding: '0.25rem 0.6rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--red)' }}>Alles wissen</button>
+              )}
+            </div>
+            {guestMsgs.length === 0 ? (
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>Nog geen berichten in de login-chat.</div>
+            ) : (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                {guestMsgs.map((m, i) => (
+                  <div key={m.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.8rem',
+                    background: i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'transparent',
+                    borderBottom: i < guestMsgs.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                    fontSize: '0.78rem',
+                  }}>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '0.6rem', flexShrink: 0, width: 92 }}>
+                      {new Date(m.created_at.replace(' ', 'T')).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span style={{ fontWeight: 700, color: 'var(--blue)', flexShrink: 0, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+                    <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', wordBreak: 'break-word' }}>{m.message}</span>
+                    <button onClick={() => deleteGuestMsg(m.id)} title="Verwijder" style={{ flexShrink: 0, padding: '0.15rem 0.45rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--red)' }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* SDE — blueprint-data wordt nu met de site meegeleverd (geen lokale server) */}
         {tab === 'sde' && (
