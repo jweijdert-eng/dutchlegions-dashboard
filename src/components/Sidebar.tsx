@@ -51,14 +51,10 @@ export const DEFAULT_NAV: NavItem[] = [
   { label: 'Industry',    path: '/industry',   icon: '◫', badge: 'jobs' },
   { label: 'Mining',      path: '/mining',     icon: '⬟', badge: null },
   { label: 'Planets',     path: '/planets',    icon: '○', badge: null },
-  { label: 'Mail',        path: '/mail',       icon: '✉', badge: 'mail' },
   { label: 'Fittings',    path: '/fittings',   icon: '⌬', badge: null },
-  { label: 'Skills',      path: '/skills',     icon: '◎', badge: null },
   { label: 'Blueprints',  path: '/blueprints', icon: '⬡', badge: null },
   { label: 'Contracts',   path: '/contracts',  icon: '◧', badge: null },
   { label: 'Build vs Buy',path: '/buildvsbuy', icon: '⚙', badge: null },
-  { label: 'Assets',      path: '/assets',     icon: '◫', badge: null },
-  { label: 'Notities',    path: '/notes',      icon: '✎', badge: null },
 ]
 
 function loadNav(): NavItem[] {
@@ -76,6 +72,12 @@ type SubItem = { label: string; to: string; corp?: boolean; icon?: string }
 const KILLS_SUBITEMS: SubItem[] = [
   { label: 'Mijn killboard', to: '/kills',            corp: false },
   { label: 'Corp killboard', to: '/kills?board=corp', corp: true },
+]
+const CHARACTER_SUBITEMS: SubItem[] = [
+  { label: 'Skills',    to: '/skills', icon: '◎' },
+  { label: 'Mail',      to: '/mail',   icon: '✉' },
+  { label: 'Assets',    to: '/assets', icon: '◫' },
+  { label: 'Notities',  to: '/notes',  icon: '✎' },
 ]
 
 function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean; subItems?: SubItem[] }) {
@@ -585,7 +587,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           <SortableContext items={visibleNav.map(n => n.path)} strategy={verticalListSortingStrategy}>
             {visibleNav.map(item => (
               <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
-                subItems={item.path === '/kills' ? KILLS_SUBITEMS : undefined} />
+                subItems={item.path === '/kills' ? KILLS_SUBITEMS : item.path === '/character' ? CHARACTER_SUBITEMS : undefined} />
             ))}
           </SortableContext>
         </DndContext>
