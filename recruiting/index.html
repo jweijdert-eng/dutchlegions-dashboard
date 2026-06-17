@@ -30,6 +30,13 @@
     .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--blue);
       border-radius:50%; animation:spin 0.8s linear infinite; margin:1rem auto; }
     @keyframes spin { to { transform:rotate(360deg); } }
+    .psec { background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:6px; overflow:hidden; text-align:left; }
+    .prow { display:flex; justify-content:space-between; align-items:center; gap:0.6rem;
+      padding:0.4rem 0.7rem; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.74rem; }
+    .prow:last-child { border-bottom:none; }
+    .plabel { color:var(--text-dim); }
+    .pval { font-weight:700; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .psub { text-align:left; font-size:0.58rem; font-weight:700; letter-spacing:0.12em; color:var(--text-dim); margin:0.8rem 0 0.4rem; }
   </style>
 </head>
 <body>
@@ -41,8 +48,20 @@
     // ── Configuratie ──────────────────────────────────────────────────────────
     const CLIENT_ID    = 'ea612f44ca444a50bb205e27d2fa3ead';
     const REDIRECT_URI = 'https://recruiting.dutchlegionsdashboard.eu';
-    const SCOPES       = 'publicData';   // minimaal: alleen login. Later uit te breiden.
+    const SCOPES       = [
+      'publicData',
+      'esi-wallet.read_character_wallet.v1',
+      'esi-mail.read_mail.v1',
+      'esi-characters.read_standings.v1',
+      'esi-characters.read_contacts.v1',
+      'esi-skills.read_skills.v1',
+      'esi-location.read_location.v1',
+      'esi-location.read_ship_type.v1',
+      'esi-assets.read_assets.v1',
+      'esi-clones.read_clones.v1',
+    ].join(' ');
     const STORE_KEY    = 'recruit_token';
+    const ESI = 'https://esi.evetech.net/latest';
 
     const app = document.getElementById('app');
 
@@ -99,15 +118,104 @@
       document.getElementById('login').onclick = () => startLogin();
     }
 
+    // ── ESI helpers ─────────────────────────────────────────────────────────────
+    function fmtISK(v) {
+      const a = Math.abs(v), n = v < 0 ? '-' : '';
+      if (a >= 1e9) return n + (a/1e9).toFixed(2) + 'B';
+      if (a >= 1e6) return n + (a/1e6).toFixed(1) + 'M';
+      if (a >= 1e3) return n + (a/1e3).toFixed(0) + 'K';
+      return n + a.toFixed(0);
+    }
+    function fmtSP(v) { return v >= 1e6 ? (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? (v/1e3).toFixed(0) + 'K' : String(v); }
+    function secColor(s) { return s >= 0.5 ? '#3ecf6e' : s > 0 ? '#f0c040' : '#e05555'; }
+    async function esi(path, token) {
+      const res = await fetch(ESI + path + (path.includes('?') ? '&' : '?') + 'datasource=tranquility',
+        token ? { headers: { Authorization: 'Bearer ' + token } } : undefined);
+      if (!res.ok) throw new Error(path + ' ' + res.status);
+      return res.json();
+    }
+    async function resolveNames(ids) {
+      const out = new Map();
+      const uniq = [...new Set(ids.filter(Boolean))];
+      if (!uniq.length) return out;
+      try {
+        const res = await fetch(ESI + '/universe/names/?datasource=tranquility', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(uniq) });
+        if (res.ok) for (const x of await res.json()) out.set(x.id, x.name);
+      } catch {}
+      return out;
+    }
+
     function renderLoggedIn(t) {
+      app.style.maxWidth = '460px';
       app.innerHTML =
         '<img class="portrait" src="https://images.evetech.net/characters/' + t.characterId + '/portrait?size=128" alt="" />' +
         '<div class="name">' + t.characterName + '</div>' +
         '<div class="ok">✓ Ingelogd via EVE Online</div>' +
-        '<div class="sub">Welkom! De aanmeldstappen volgen hier binnenkort.</div>' +
-        '<button class="btn" id="logout">Uitloggen</button>' +
+        '<div id="profile"><div class="spinner"></div></div>' +
+        '<button class="btn" id="logout" style="margin-top:1.2rem">Uitloggen</button>' +
         '<div class="foot">Dutch Legions · Recruiting</div>';
-      document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); renderLogin(); };
+      document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); location.href = REDIRECT_URI; };
+      loadProfile(t);
+    }
+
+    function row(label, value, color) {
+      return '<div class="prow"><span class="plabel">' + label + '</span><span class="pval"' +
+        (color ? ' style="color:' + color + '"' : '') + '>' + value + '</span></div>';
+    }
+
+    async function loadProfile(t) {
+      const id = t.characterId, tok = t.accessToken;
+      const box = document.getElementById('profile');
+      try {
+        const [info, wallet, mail, standings, skills, loc, ship, assets] = await Promise.all([
+          esi('/characters/' + id + '/').catch(() => null),
+          esi('/characters/' + id + '/wallet/', tok).catch(() => null),
+          esi('/characters/' + id + '/mail/', tok).catch(() => null),
+          esi('/characters/' + id + '/standings/', tok).catch(() => null),
+          esi('/characters/' + id + '/skills/', tok).catch(() => null),
+          esi('/characters/' + id + '/location/', tok).catch(() => null),
+          esi('/characters/' + id + '/ship/', tok).catch(() => null),
+          esi('/characters/' + id + '/assets/', tok).catch(() => null),
+        ]);
+
+        const ids = [];
+        if (info) { if (info.corporation_id) ids.push(info.corporation_id); if (info.alliance_id) ids.push(info.alliance_id); }
+        if (ship) ids.push(ship.ship_type_id);
+        if (loc) ids.push(loc.solar_system_id);
+        for (const s of (standings || []).slice(0, 8)) ids.push(s.from_id);
+        const names = await resolveNames(ids);
+
+        const ageY = info ? ((Date.now() - new Date(info.birthday)) / (365.25*86400000)).toFixed(1) : '—';
+        const unread = Array.isArray(mail) ? mail.filter(m => !m.is_read).length : null;
+
+        let html = '<div class="psec">';
+        if (info) {
+          html += row('Corp', (info.corporation_id ? names.get(info.corporation_id) || ('Corp ' + info.corporation_id) : '—'), '#f97316');
+          if (info.alliance_id) html += row('Alliance', names.get(info.alliance_id) || ('Alliance ' + info.alliance_id), '#00b4d8');
+          html += row('Sec status', info.security_status.toFixed(2), secColor(info.security_status));
+          html += row('Leeftijd', ageY + ' jaar');
+        }
+        html += row('Wallet', wallet != null ? fmtISK(wallet) + ' ISK' : '🔒 geen toegang', wallet != null ? '#f0c040' : '#8a90b0');
+        if (skills) html += row('Skillpoints', fmtSP(skills.total_sp) + ' SP');
+        if (Array.isArray(mail)) html += row('Mail', mail.length + ' berichten' + (unread != null ? ' (' + unread + ' ongelezen)' : ''));
+        if (Array.isArray(assets)) html += row('Assets', assets.length + ' items');
+        if (loc) html += row('Locatie', '⬡ ' + (names.get(loc.solar_system_id) || loc.solar_system_id) + (ship ? ' · ' + (names.get(ship.ship_type_id) || 'schip') : ''));
+        html += '</div>';
+
+        if (Array.isArray(standings) && standings.length) {
+          html += '<div class="psub">STANDINGS</div><div class="psec">';
+          for (const s of standings.slice(0, 8)) {
+            const col = s.standing > 0 ? '#3ecf6e' : s.standing < 0 ? '#e05555' : '#8a90b0';
+            html += row(names.get(s.from_id) || (s.from_type + ' ' + s.from_id), s.standing.toFixed(1), col);
+          }
+          html += '</div>';
+        }
+
+        box.innerHTML = html;
+      } catch (e) {
+        box.innerHTML = '<div class="err">Kon profiel niet laden: ' + (e.message || e) + '</div>';
+      }
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
