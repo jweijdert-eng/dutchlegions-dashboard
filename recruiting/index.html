@@ -106,6 +106,11 @@
     .racts button { border:1px solid var(--border); background:transparent; border-radius:5px; font-size:.62rem; font-weight:600; padding:.2rem .5rem; cursor:pointer; color:var(--text-dim); }
     .racts button:hover { border-color:currentColor; }
     .racts .a-acc:hover { color:var(--green); } .racts .a-rej:hover { color:var(--red); } .racts .a-del:hover { color:var(--red); }
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:100; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.2rem; width:min(460px,92vw); max-height:84vh; overflow:auto; }
+    .modal h3 { margin:0 0 .9rem; font-size:1.05rem; }
+    .arow { display:flex; gap:.5rem; align-items:center; justify-content:space-between; padding:.45rem .1rem; border-bottom:1px solid rgba(255,255,255,.05); font-size:.8rem; }
+    .arow:last-child { border-bottom:none; } .arow img { width:24px; height:24px; border-radius:50%; vertical-align:middle; margin-right:.45rem; }
     @media (max-width:640px) { .side { width:64px; } .side-h .nm,.side-h .org,.ni .lbl,.ni .ct { display:none; } }
   </style>
 </head>
@@ -138,6 +143,8 @@
     function stripHtml(h){ return (h||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim(); }
     async function esi(p,tok){ const r=await fetch(ESI+p+(p.includes('?')?'&':'?')+'datasource=tranquility', tok?{headers:{Authorization:'Bearer '+tok}}:undefined); if(!r.ok) throw new Error(p+' '+r.status); return r.json(); }
     async function resolveNames(ids){ const out=new Map(); const u=[...new Set(ids.filter(Boolean))]; if(!u.length)return out; try{ const r=await fetch(ESI+'/universe/names/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)}); if(r.ok) for(const x of await r.json()) out.set(x.id,x.name); }catch{} return out; }
+    // character-naam → {id,name} (voor recruiter toevoegen)
+    async function charIdByName(name){ try{ const r=await fetch(ESI+'/universe/ids/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([name])}); if(r.ok){ const j=await r.json(); const c=(j.characters||[])[0]; return c?{id:c.id,name:c.name}:null; } }catch{} return null; }
     // character-id → huidige corp/alliance (voor mail-vetting)
     async function resolveAffiliations(ids){ const out=new Map(); const u=[...new Set(ids.filter(Boolean))]; if(!u.length)return out; try{ const r=await fetch(ESI+'/characters/affiliation/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)}); if(r.ok) for(const x of await r.json()) out.set(x.character_id,{corp:x.corporation_id,alliance:x.alliance_id||null}); }catch{} return out; }
     const dt = s => s ? new Date(s).toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'2-digit'}) : '';
@@ -431,9 +438,11 @@
 
     // ── Admin: lijst + detail ────────────────────────────────────────────────────
     async function renderAdmin(t){
-      root.innerHTML='<div class="main"><div class="ahead"><h1>Recruiting <span>· Aanmeldingen</span></h1><div style="display:flex;gap:.5rem"><button class="btn" id="refresh">↻ Vernieuwen</button><button class="btn" id="logout">Uitloggen</button></div></div><div id="list"><div class="center" style="padding:2rem 0"><div class="spinner"></div><div class="sub">Aanmeldingen + DL/Insidious-standings laden…</div></div></div></div>';
+      const isOwner=(t.characterId===ADMIN_CHAR_ID);
+      root.innerHTML='<div class="main"><div class="ahead"><h1>Recruiting <span>· Aanmeldingen</span></h1><div style="display:flex;gap:.5rem">'+(isOwner?'<button class="btn" id="manage">👥 Recruiters</button>':'')+'<button class="btn" id="refresh">↻ Vernieuwen</button><button class="btn" id="logout">Uitloggen</button></div></div><div id="list"><div class="center" style="padding:2rem 0"><div class="spinner"></div><div class="sub">Aanmeldingen + DL/Insidious-standings laden…</div></div></div></div>';
       document.getElementById('logout').onclick=()=>{ localStorage.removeItem(STORE_KEY); location.href=REDIRECT_URI; };
       document.getElementById('refresh').onclick=()=>{ _enemyCache=null; renderAdmin(t); };
+      if(isOwner) document.getElementById('manage').onclick=()=>manageRecruiters(t);
       const list=document.getElementById('list'); let rows=[];
       try { const r=await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)); if(!r.ok)throw new Error(r.status===403?'Geen toegang':('HTTP '+r.status)); rows=await r.json(); }
       catch(e){ list.innerHTML='<div class="err">Kon aanmeldingen niet laden: '+esc(e.message||'')+'</div>'; return; }
@@ -491,7 +500,39 @@
       draw();
     }
 
-    function afterLogin(t){ if(t.characterId===ADMIN_CHAR_ID) renderAdmin(t); else renderRecruit(t); }
+    // Recruiters beheren (alleen eigenaar): toevoegen op naam + verwijderen.
+    function manageRecruiters(t){
+      const bg=document.createElement('div'); bg.className='modal-bg';
+      bg.innerHTML='<div class="modal"><h3>👥 Recruiters beheren</h3>'+
+        '<div class="atools" style="margin-bottom:.5rem"><input id="rname" placeholder="Character-naam…"><button class="btn" id="radd">Toevoegen</button></div>'+
+        '<div id="amsg" style="font-size:.72rem;color:var(--text-dim);min-height:1rem;margin-bottom:.5rem"></div>'+
+        '<div id="alist"><div class="spinner"></div></div>'+
+        '<div style="text-align:right;margin-top:1rem"><button class="btn" id="aclose">Sluiten</button></div></div>';
+      document.body.appendChild(bg);
+      const close=()=>bg.remove(); bg.onclick=e=>{ if(e.target===bg)close(); }; bg.querySelector('#aclose').onclick=close;
+      const msg=bg.querySelector('#amsg'), nameInp=bg.querySelector('#rname');
+      async function load(){ const lst=bg.querySelector('#alist'); lst.innerHTML='<div class="spinner"></div>';
+        let data; try{ const r=await fetch(API+'/recruit_admins.php?token='+encodeURIComponent(t.accessToken)); if(!r.ok)throw 0; data=await r.json(); }catch{ lst.innerHTML='<div class="err">Kon recruiters niet laden.</div>'; return; }
+        const admins=data.admins||[];
+        let h='<div class="arow"><span><img src="https://images.evetech.net/characters/'+data.owner_id+'/portrait?size=32">Eigenaar (jij)</span><span style="color:var(--text-dim);font-size:.7rem">vast</span></div>';
+        h+=admins.map(a=>'<div class="arow"><span><img src="https://images.evetech.net/characters/'+a.character_id+'/portrait?size=32">'+esc(a.name||('#'+a.character_id))+'</span><button class="btn" data-rm="'+a.character_id+'">Verwijderen</button></div>').join('');
+        if(!admins.length) h+='<div class="empty">Nog geen extra recruiters.</div>';
+        lst.innerHTML=h;
+        lst.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{ await fetch(API+'/recruit_admins.php?token='+encodeURIComponent(t.accessToken)+'&remove='+b.dataset.rm).catch(()=>{}); load(); });
+      }
+      bg.querySelector('#radd').onclick=async()=>{ const name=nameInp.value.trim(); if(!name)return; msg.textContent='Zoeken…';
+        const c=await charIdByName(name); if(!c){ msg.textContent='Character "'+name+'" niet gevonden.'; return; }
+        const r=await fetch(API+'/recruit_admins.php?token='+encodeURIComponent(t.accessToken)+'&add='+c.id+'&name='+encodeURIComponent(c.name)).catch(()=>null);
+        if(r&&r.ok){ msg.textContent=c.name+' toegevoegd als recruiter.'; nameInp.value=''; load(); } else { msg.textContent='Toevoegen mislukt (alleen de eigenaar mag dit).'; } };
+      load();
+    }
+
+    async function afterLogin(t){
+      if(t.characterId===ADMIN_CHAR_ID) return renderAdmin(t);
+      // Server bepaalt of dit character recruiter-admin is (403 = geen admin)
+      try{ const r=await fetch(API+'/recruit_admins.php?token='+encodeURIComponent(t.accessToken)); if(r.ok) return renderAdmin(t); }catch{}
+      renderRecruit(t);
+    }
 
     // ── Init ────────────────────────────────────────────────────────────────────
     (async ()=>{

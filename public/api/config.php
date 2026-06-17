@@ -35,3 +35,15 @@ function eveVerify(string $token): ?int {
     if (strpos($sub, ':') !== false) $sub = substr(strrchr($sub, ':'), 1);          // CHARACTER:EVE:<id>
     return ctype_digit($sub) ? (int)$sub : null;
 }
+
+// Is dit character een recruiting-admin? (vaste eigenaar OF in de recruit_admins-tabel)
+function isRecruitAdmin(int $cid): bool {
+    if ($cid === ADMIN_CHAR_ID) return true;
+    try {
+        $pdo = getDB();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS recruit_admins (character_id BIGINT PRIMARY KEY, name VARCHAR(128), added_by BIGINT, created_at DATETIME)");
+        $st = $pdo->prepare("SELECT 1 FROM recruit_admins WHERE character_id = ?");
+        $st->execute([$cid]);
+        return (bool)$st->fetchColumn();
+    } catch (Exception $e) { return false; }
+}

@@ -4,7 +4,7 @@ cors();
 
 // Lijst van aanmeldingen — alleen voor de admin (token bij EVE geverifieerd).
 $cid = eveVerify($_GET['token'] ?? '');
-if ($cid !== ADMIN_CHAR_ID) { http_response_code(403); echo json_encode(['error' => 'forbidden']); exit; }
+if (!$cid || !isRecruitAdmin($cid)) { http_response_code(403); echo json_encode(['error' => 'forbidden']); exit; }
 
 try {
     $pdo = getDB();
