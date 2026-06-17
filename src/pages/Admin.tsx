@@ -132,6 +132,9 @@ export default function Admin() {
   const [members, setMembers] = useState<SiteMember[]>([])
   const [allowName, setAllowName] = useState('')
   const [allowMsg, setAllowMsg] = useState('')
+  const [allowedOrgs, setAllowedOrgs] = useState<{ org_id: number; type: string; name: string }[]>([])
+  const [orgName, setOrgName] = useState('')
+  const [orgMsg, setOrgMsg] = useState('')
   const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
   const [detailMember, setDetailMember] = useState<SiteMember | null>(null)
   const [detail, setDetail] = useState<MemberDetail | null>(null)
@@ -341,6 +344,7 @@ export default function Admin() {
       const list = await r.json() as SiteMember[]
       setMembers(list)
       fetchMemberOrgs(list)
+      fetchAllowedOrgs()
     } catch { /* ignore */ }
     setLoading(false)
   }
@@ -352,6 +356,46 @@ export default function Admin() {
       setMembers(list)
       fetchMemberOrgs(list)
     } catch { /* ignore */ }
+  }
+
+  async function fetchAllowedOrgs() {
+    try { const r = await fetch('/api/access_orgs.php'); setAllowedOrgs(await r.json()) } catch { /* ignore */ }
+  }
+
+  // Hele corp/alliance op de allowlist zetten (op naam)
+  async function addOrgByName() {
+    if (!adminToken) return
+    const name = orgName.trim()
+    if (!name) return
+    setOrgMsg('Zoeken…')
+    try {
+      const r = await fetch('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([name]),
+      })
+      const j = await r.json().catch(() => null)
+      const corp = j?.corporations?.[0]
+      const ally = j?.alliances?.[0]
+      const pick = corp ? { id: corp.id, name: corp.name, type: 'corp' }
+                 : ally ? { id: ally.id, name: ally.name, type: 'alliance' } : null
+      if (!pick) { setOrgMsg(`Geen corp of alliance gevonden voor "${name}".`); return }
+      await fetch('/api/access_orgs.php', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminCharId: adminToken.characterId, action: 'add', orgId: pick.id, orgType: pick.type, name: pick.name }),
+      })
+      setOrgMsg(`${pick.name} (${pick.type}) toegevoegd aan de allowlist.`)
+      setOrgName('')
+      fetchAllowedOrgs()
+    } catch { setOrgMsg('Er ging iets mis bij het toevoegen.') }
+  }
+
+  async function removeOrg(orgId: number) {
+    if (!adminToken) return
+    setAllowedOrgs(prev => prev.filter(o => o.org_id !== orgId))
+    await fetch('/api/access_orgs.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId, action: 'remove', orgId }),
+    }).catch(() => {})
+    fetchAllowedOrgs()
   }
 
   // Corp/alliance per member ophalen via publieke ESI (geen token nodig)
@@ -612,6 +656,40 @@ export default function Admin() {
               </button>
             </div>
             {allowMsg && <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.6rem' }}>{allowMsg}</div>}
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '0.7rem 0.8rem', marginBottom: '1rem', background: 'rgba(255,255,255,0.02)' }}>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
+                TOEGESTANE CORPS / ALLIANCES — iedereen hieruit mag inloggen
+              </div>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  value={orgName}
+                  onChange={e => { setOrgName(e.target.value); setOrgMsg('') }}
+                  onKeyDown={e => { if (e.key === 'Enter') addOrgByName() }}
+                  placeholder="Corp- of alliance-naam…"
+                  style={{ flex: '1 1 220px', minWidth: 0, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 4, padding: '0.4rem 0.6rem', fontSize: '0.75rem' }}
+                />
+                <button
+                  onClick={addOrgByName}
+                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.72rem', fontWeight: 600, border: '1px solid rgba(0,180,216,0.4)', borderRadius: 4, cursor: 'pointer', background: 'transparent', color: 'var(--blue)' }}
+                >
+                  + Toevoegen
+                </button>
+              </div>
+              {orgMsg && <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '0.5rem' }}>{orgMsg}</div>}
+              {allowedOrgs.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.6rem' }}>
+                  {allowedOrgs.map(o => (
+                    <span key={o.org_id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 12, padding: '0.2rem 0.55rem', fontSize: '0.7rem' }}>
+                      <img src={`https://images.evetech.net/${o.type === 'alliance' ? 'alliances' : 'corporations'}/${o.org_id}/logo?size=32`} width={16} height={16} style={{ borderRadius: 2 }} />
+                      {o.name || `#${o.org_id}`}
+                      <span style={{ color: 'var(--text-dim)', fontSize: '0.58rem' }}>{o.type === 'alliance' ? 'alliance' : 'corp'}</span>
+                      <button onClick={() => removeOrg(o.org_id)} title="Verwijderen" style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '0.75rem', padding: 0, lineHeight: 1 }}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
             {members.length === 0 ? (
               <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>
                 Nog niemand ingelogd op de dashboard.

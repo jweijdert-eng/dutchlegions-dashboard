@@ -34,12 +34,20 @@ export default function Callback() {
               .then(r => r.json()).catch(() => null)
             const inCorp     = settings.require_corp     && info?.corporation_id === 98652891
             const inAlliance = settings.require_alliance && info?.alliance_id    === 99013537
+            // Allowlist van hele corps/alliances
+            let inOrgAllow = false
             if (!inCorp && !inAlliance) {
+              const orgs = await fetch('/api/access_orgs.php').then(r => r.json()).catch(() => [])
+              inOrgAllow = Array.isArray(orgs) && orgs.some((o: { org_id: number; type: string }) =>
+                (o.type === 'corp' && o.org_id === info?.corporation_id) ||
+                (o.type === 'alliance' && o.org_id === info?.alliance_id))
+            }
+            if (!inCorp && !inAlliance && !inOrgAllow) {
               const who = [
                 settings.require_corp     ? 'Dutch Legions corp' : null,
                 settings.require_alliance ? 'Insidious alliance' : null,
               ].filter(Boolean).join(' of ')
-              throw new Error(`Toegang geweigerd. Alleen ${who} leden (of characters op de allowlist) mogen inloggen.`)
+              throw new Error(`Toegang geweigerd. Alleen ${who} leden (of characters/corps op de allowlist) mogen inloggen.`)
             }
           }
         }
