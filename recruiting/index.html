@@ -91,6 +91,7 @@
     const SCOPES = [
       'publicData','esi-wallet.read_character_wallet.v1','esi-mail.read_mail.v1',
       'esi-characters.read_standings.v1','esi-characters.read_contacts.v1','esi-skills.read_skills.v1',
+      'esi-corporations.read_contacts.v1','esi-alliances.read_contacts.v1',
       'esi-location.read_location.v1','esi-location.read_ship_type.v1','esi-assets.read_assets.v1',
       'esi-clones.read_clones.v1','esi-contracts.read_character_contracts.v1',
     ].join(' ');
@@ -162,7 +163,13 @@
         esi('/characters/'+id+'/contracts/',tok).catch(()=>null),
       ]);
       const allSkills=(skills?.skills||[]).slice().sort((a,b)=>b.skillpoints_in_skill-a.skillpoints_in_skill);
-      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of (standings||[]).slice(0,12))ids.push(s.from_id); for(const sk of allSkills)ids.push(sk.skill_id);
+      // Standings van de corp + alliance (i.p.v. persoonlijke contacts)
+      let corpC=[], alliC=[];
+      if(info?.corporation_id){ const cc=await esi('/corporations/'+info.corporation_id+'/contacts/',tok).catch(()=>null); if(Array.isArray(cc))corpC=cc; }
+      if(info?.alliance_id){ const ac=await esi('/alliances/'+info.alliance_id+'/contacts/',tok).catch(()=>null); if(Array.isArray(ac))alliC=ac; }
+      const topCorp=corpC.slice().sort((a,b)=>b.standing-a.standing).slice(0,100);
+      const topAlli=alliC.slice().sort((a,b)=>b.standing-a.standing).slice(0,100);
+      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of topCorp)ids.push(s.contact_id); for(const s of topAlli)ids.push(s.contact_id); for(const sk of allSkills)ids.push(sk.skill_id);
       const names=await resolveNames(ids);
       const skillGroups=await groupSkills(allSkills,names);
       let mails=[]; if(Array.isArray(mail)&&mail.length){ const recent=mail.slice(0,15); const sn=await resolveNames(recent.map(m=>m.from));
@@ -178,7 +185,8 @@
         assets:Array.isArray(assets)?assets.length:null,
         systemId:loc?.solar_system_id??null, systemName:loc?(names.get(loc.solar_system_id)||null):null,
         shipTypeId:ship?.ship_type_id??null, shipName:ship?(names.get(ship.ship_type_id)||null):null,
-        standings:(standings||[]).slice(0,20).map(s=>({id:s.from_id,type:s.from_type,name:names.get(s.from_id)||null,standing:s.standing})),
+        corpStandings:topCorp.map(s=>({id:s.contact_id,type:s.contact_type,name:names.get(s.contact_id)||null,standing:s.standing})),
+        allianceStandings:topAlli.map(s=>({id:s.contact_id,type:s.contact_type,name:names.get(s.contact_id)||null,standing:s.standing})),
         mails,
         skillGroups,
         wallet_journal:(Array.isArray(journal)?journal:[]).slice(0,40).map(j=>({date:j.date,type:j.ref_type,amount:j.amount,balance:j.balance,desc:j.description||''})),
@@ -215,8 +223,12 @@
         '<div class="mailbody"><div style="font-size:.55rem;color:var(--text-dim);margin-bottom:.3rem">'+dt(m.date)+'</div>'+(esc(m.body)||'<span style="color:var(--text-dim)">(leeg)</span>')+'</div></div>').join('') },
       contracts:{ ic:'◧', lbl:'Contracts', count:d=>d.contracts?.length, html:d=>!d.contracts?.length?'<div class="empty">Geen contracts.</div>':
         '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"><span class="plabel">'+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:var(--text-dim)">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
-      standings:{ ic:'⚖', lbl:'Standings', count:d=>d.standings?.length, html:d=>!d.standings?.length?'<div class="empty">Geen standings.</div>':
-        '<div class="psec">'+d.standings.map(s=>{const c=s.standing>0?'var(--green)':s.standing<0?'var(--red)':'var(--text-dim)'; return row(esc(s.name||(s.type+' '+s.id)), s.standing.toFixed(1), c);}).join('')+'</div>' },
+      standings:{ ic:'⚖', lbl:'Standings', count:d=>((d.corpStandings?.length||0)+(d.allianceStandings?.length||0)+(d.standings?.length||0))||null, html:d=>{
+        const rows=arr=>arr.map(s=>{const c=s.standing>0?'var(--green)':s.standing<0?'var(--red)':'var(--text-dim)'; return row(esc(s.name||(s.type+' '+s.id)), s.standing.toFixed(1), c);}).join('');
+        const block=(title,arr)=>!arr?.length?'':'<details class="sgrp" open><summary><span class="sgname">'+title+'</span><span class="sgmeta">'+arr.length+'</span></summary><div class="psec">'+rows(arr)+'</div></details>';
+        let out=block('Corp'+(d.corpName?' · '+esc(d.corpName):''), d.corpStandings)+block('Alliance'+(d.allianceName?' · '+esc(d.allianceName):''), d.allianceStandings);
+        if(!out && d.standings?.length) out='<div class="psec">'+rows(d.standings)+'</div>';
+        return out||'<div class="empty">Geen standings gedeeld.</div>'; } },
     };
     const SECTION_ORDER = ['overview','skills','wallet','mails','contracts','standings'];
 
