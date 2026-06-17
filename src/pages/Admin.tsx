@@ -552,7 +552,8 @@ export default function Admin() {
 
         {/* Member Beheer */}
         {tab === 'members' && !loading && (
-          <div style={{ maxWidth: 580 }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 480px', maxWidth: 580 }}>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.75rem', letterSpacing: '0.08em' }}>
               {members.length} LEDEN — automatisch bijgewerkt bij inloggen
             </div>
@@ -644,6 +645,48 @@ export default function Admin() {
                 })}
               </div>
             )}
+          </div>
+
+          {/* Corp / alliance-tellingen */}
+          {members.length > 0 && (() => {
+            const corpMap = new Map<number, { name: string; count: number }>()
+            const allyMap = new Map<number, { name: string; count: number }>()
+            let unknown = 0
+            for (const m of members) {
+              const o = orgs[m.character_id]
+              if (!o) { unknown++; continue }
+              if (o.corpId) { const c = corpMap.get(o.corpId) ?? { name: o.corpName, count: 0 }; c.count++; corpMap.set(o.corpId, c) }
+              if (o.allianceId) { const a = allyMap.get(o.allianceId) ?? { name: o.allianceName ?? 'Alliance', count: 0 }; a.count++; allyMap.set(o.allianceId, a) }
+            }
+            const corps  = [...corpMap.entries()].sort((a, b) => b[1].count - a[1].count)
+            const allies = [...allyMap.entries()].sort((a, b) => b[1].count - a[1].count)
+            const row = (cat: 'corporations' | 'alliances', id: number, name: string, count: number) => (
+              <div key={`${cat}-${id}`} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.35rem 0.6rem', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <EveImage category={cat} id={id} variation="logo" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--blue)' }}>{count}</span>
+              </div>
+            )
+            return (
+              <div style={{ flex: '0 0 250px', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', background: 'var(--surface)' }}>
+                <div style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--gold)', padding: '0.5rem 0.6rem', borderBottom: '1px solid var(--border)', background: 'rgba(240,192,64,0.06)' }}>
+                  PER ALLIANCE ({allies.length})
+                </div>
+                {allies.length ? allies.map(([id, v]) => row('alliances', id, v.name, v.count))
+                  : <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.5rem 0.6rem' }}>—</div>}
+                <div style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--blue)', padding: '0.5rem 0.6rem', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'rgba(0,180,216,0.06)' }}>
+                  PER CORP ({corps.length})
+                </div>
+                {corps.length ? corps.map(([id, v]) => row('corporations', id, v.name, v.count))
+                  : <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.5rem 0.6rem' }}>—</div>}
+                {unknown > 0 && (
+                  <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', borderTop: '1px solid var(--border)' }}>
+                    {unknown} nog niet geladen…
+                  </div>
+                )}
+              </div>
+            )
+          })()}
           </div>
         )}
 
