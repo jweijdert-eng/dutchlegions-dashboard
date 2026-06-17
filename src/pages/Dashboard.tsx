@@ -896,13 +896,16 @@ export default function Dashboard() {
                 const ship = loc?.shipName && loc.shipName !== '—' ? loc.shipName : null
                 const shipType = ship && loc?.shipTypeName && loc.shipTypeName !== loc.shipName ? loc.shipTypeName : null
                 return (
-                  <div style={{ fontSize: '0.62rem', color: 'var(--text)', marginTop: '0.2rem' }}>
-                    <span style={{ color: 'var(--green)' }}>⬡</span>{' '}
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--green)' }}>⬡</span>
                     {system
                       ? <SolarSystem name={system} systemId={loc?.systemId ?? undefined} fontSize="0.62rem" />
                       : <span style={{ color: 'var(--text-dim)' }}>—</span>
                     }
-                    <span style={{ color: 'var(--text-dim)', margin: '0 0.25rem' }}>·</span>
+                    <span style={{ color: 'var(--text-dim)' }}>·</span>
+                    {loc?.shipTypeId && (
+                      <EveImage category="types" id={loc.shipTypeId} variation="icon" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
+                    )}
                     {ship
                       ? <span style={{ color: 'var(--gold)' }}>{ship}{shipType ? ` (${shipType})` : ''}</span>
                       : <span style={{ color: 'var(--text-dim)' }}>—</span>
@@ -946,14 +949,18 @@ export default function Dashboard() {
                       <div style={{ fontSize: '0.62rem', color: today > 0 ? 'var(--green)' : 'var(--text-dim)', marginTop: '0.1rem' }}>
                         {today > 0 ? `+${fmtISK(today)} vandaag` : 'Geen inkomsten vandaag'}
                       </div>
-                      <div style={{ fontSize: '0.58rem', color: 'var(--text)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <span style={{ color: 'var(--green)' }}>⬡</span>{' '}
+                      <div style={{ fontSize: '0.58rem', color: 'var(--text)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.2rem', overflow: 'hidden' }}>
+                        <span style={{ color: 'var(--green)', flexShrink: 0 }}>⬡</span>
                         {loc?.system && loc.system !== '—'
                           ? <SolarSystem name={loc.system} systemId={loc.systemId ?? undefined} fontSize="0.58rem" />
                           : <span style={{ color: 'var(--text-dim)' }}>—</span>
                         }
                         {loc?.shipName && loc.shipName !== '—' && (
-                          <span style={{ color: 'var(--gold)' }}> · {loc.shipName}</span>
+                          <>
+                            <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>·</span>
+                            {loc.shipTypeId && <EveImage category="types" id={loc.shipTypeId} variation="icon" size={32} px={16} style={{ borderRadius: 2, flexShrink: 0 }} />}
+                            <span style={{ color: 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loc.shipName}</span>
+                          </>
                         )}
                       </div>
                     </div>
