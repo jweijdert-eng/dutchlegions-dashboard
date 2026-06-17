@@ -20,18 +20,18 @@ function cors(): void {
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
 }
 
-// Verifieer een EVE access-token bij EVE SSO → character-id (of null als ongeldig).
-// Veilig: EVE valideert de token; we vertrouwen geen client-opgegeven id.
+// Verifieer een EVE v2 access-token → character-id (of null als ongeldig/verlopen).
+// Decodeert de JWT-payload en controleert vervaldatum + uitgever (EVE SSO).
 function eveVerify(string $token): ?int {
-    if ($token === '') return null;
-    $ctx = stream_context_create(['http' => [
-        'method' => 'GET',
-        'header' => "Authorization: Bearer $token\r\n",
-        'ignore_errors' => true,
-        'timeout' => 8,
-    ]]);
-    $r = @file_get_contents('https://login.eveonline.com/oauth/verify', false, $ctx);
-    if ($r === false) return null;
-    $j = json_decode($r, true);
-    return isset($j['CharacterID']) ? (int)$j['CharacterID'] : null;
+    $parts = explode('.', $token);
+    if (count($parts) < 2) return null;
+    $b64 = strtr($parts[1], '-_', '+/');
+    $b64 .= str_repeat('=', (4 - strlen($b64) % 4) % 4);
+    $payload = json_decode(base64_decode($b64), true);
+    if (!is_array($payload)) return null;
+    if (isset($payload['exp']) && (int)$payload['exp'] < time()) return null;       // verlopen
+    if (strpos((string)($payload['iss'] ?? ''), 'login.eveonline.com') === false) return null; // verkeerde uitgever
+    $sub = (string)($payload['sub'] ?? '');
+    if (strpos($sub, ':') !== false) $sub = substr(strrchr($sub, ':'), 1);          // CHARACTER:EVE:<id>
+    return ctype_digit($sub) ? (int)$sub : null;
 }
