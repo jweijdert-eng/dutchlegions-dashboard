@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
@@ -127,7 +127,12 @@ export default function Admin() {
   const { previewMode, setPreviewMode } = useLayoutMode()
   const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
   const [tab, setTab] = useState<'stats' | 'members' | 'settings' | 'sde' | 'chat'>('stats')
-  const [guestMsgs, setGuestMsgs] = useState<{ id: number; name: string; message: string; created_at: string }[]>([])
+  const [chatThreads, setChatThreads] = useState<{ thread: string; name: string; last_at: string; staff_unread: number; last_msg: string | null }[]>([])
+  const [activeThread, setActiveThread] = useState<string | null>(null)
+  const [threadMsgs, setThreadMsgs] = useState<{ id: number; sender: string; staff_name?: string; message: string; created_at: string }[]>([])
+  const [replyText, setReplyText] = useState('')
+  const activeThreadRef = useRef<string | null>(null)
+  activeThreadRef.current = activeThread
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [pageStats, setPageStats] = useState<{ page: string; views: number; users: number }[]>([])
   const [members, setMembers] = useState<SiteMember[]>([])
@@ -169,30 +174,57 @@ export default function Admin() {
     if (tab === 'members') fetchMembers()
     if (tab === 'settings') { fetchSettings(); fetchMotd(); loadSiteConfig() }
     if (tab === 'sde') fetchBpInfo()
-    if (tab === 'chat') fetchGuestChat()
   }, [tab])
 
-  async function fetchGuestChat() {
-    try { const r = await fetch('/api/guestchat.php', { cache: 'no-cache' }); const j = await r.json(); setGuestMsgs(Array.isArray(j) ? j.slice().reverse() : []) }
+  // Recruiter-chat: poll gesprekken (+ open thread) zolang de chat-tab actief is
+  useEffect(() => {
+    if (tab !== 'chat' || !adminToken) return
+    fetchChatThreads()
+    const id = setInterval(() => {
+      fetchChatThreads()
+      if (activeThreadRef.current) refreshThreadMsgs(activeThreadRef.current)
+    }, 5000)
+    return () => clearInterval(id)
+  }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function fetchChatThreads() {
+    if (!adminToken) return
+    try { const r = await fetch(`/api/pmchat.php?action=threads&adminCharId=${adminToken.characterId}`, { cache: 'no-cache' }); const j = await r.json(); if (Array.isArray(j)) setChatThreads(j) }
     catch { /* ignore */ }
   }
 
-  async function deleteGuestMsg(id: number) {
+  async function refreshThreadMsgs(thread: string) {
     if (!adminToken) return
-    setGuestMsgs(prev => prev.filter(m => m.id !== id))
-    await fetch('/api/guestchat.php', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId, id }),
-    }).catch(() => {})
+    try { const r = await fetch(`/api/pmchat.php?action=messages&thread=${thread}&adminCharId=${adminToken.characterId}`, { cache: 'no-cache' }); const j = await r.json(); if (Array.isArray(j)) setThreadMsgs(j) }
+    catch { /* ignore */ }
   }
 
-  async function clearGuestChat() {
-    if (!adminToken || !confirm('De hele login-chat wissen?')) return
-    setGuestMsgs([])
-    await fetch('/api/guestchat.php', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId }),
+  async function openThread(thread: string) {
+    setActiveThread(thread)
+    setChatThreads(prev => prev.map(t => t.thread === thread ? { ...t, staff_unread: 0 } : t))
+    await refreshThreadMsgs(thread)
+  }
+
+  async function sendReply() {
+    if (!adminToken || !activeThread) return
+    const msg = replyText.trim()
+    if (!msg) return
+    setReplyText('')
+    await fetch('/api/pmchat.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reply', adminCharId: adminToken.characterId, staff_name: adminToken.characterName, thread: activeThread, message: msg }),
     }).catch(() => {})
+    refreshThreadMsgs(activeThread)
+  }
+
+  async function deleteThread(thread: string) {
+    if (!adminToken || !confirm('Dit gesprek definitief verwijderen?')) return
+    await fetch('/api/pmchat.php', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminCharId: adminToken.characterId, thread }),
+    }).catch(() => {})
+    if (activeThread === thread) { setActiveThread(null); setThreadMsgs([]) }
+    fetchChatThreads()
   }
 
   async function fetchMotd() {
@@ -583,7 +615,7 @@ export default function Admin() {
           <button style={TAB_STYLE(tab === 'stats')}    onClick={() => setTab('stats')}>Statistieken</button>
           <button style={TAB_STYLE(tab === 'members')}  onClick={() => setTab('members')}>Member Beheer</button>
           <button style={TAB_STYLE(tab === 'settings')} onClick={() => setTab('settings')}>Site Instellingen</button>
-          <button style={TAB_STYLE(tab === 'chat')}     onClick={() => setTab('chat')}>Login Chat</button>
+          <button style={TAB_STYLE(tab === 'chat')}     onClick={() => setTab('chat')}>Recruiter Chat</button>
           <button style={TAB_STYLE(tab === 'sde')}      onClick={() => setTab('sde')}>SDE</button>
         </div>
 
@@ -1170,39 +1202,68 @@ export default function Admin() {
           )
         })()}
 
-        {/* Login Chat — moderatie van de publieke gast-shoutbox */}
+        {/* Recruiter Chat — privé 1-op-1 gesprekken vanaf de login-pagina */}
         {tab === 'chat' && (
-          <div style={{ maxWidth: 580 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.08em' }}>
-                {guestMsgs.length} BERICHTEN — publieke chat op de login-pagina
-              </div>
-              <button onClick={fetchGuestChat} style={{ padding: '0.25rem 0.6rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--text-dim)' }}>↻ Ververs</button>
-              {guestMsgs.length > 0 && (
-                <button onClick={clearGuestChat} style={{ marginLeft: 'auto', padding: '0.25rem 0.6rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--red)' }}>Alles wissen</button>
-              )}
+          <div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
+              {chatThreads.length} GESPREK{chatThreads.length === 1 ? '' : 'KEN'} — privéchats van bezoekers op de login-pagina
             </div>
-            {guestMsgs.length === 0 ? (
-              <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>Nog geen berichten in de login-chat.</div>
-            ) : (
-              <div style={{ border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                {guestMsgs.map((m, i) => (
-                  <div key={m.id} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.8rem',
-                    background: i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'transparent',
-                    borderBottom: i < guestMsgs.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                    fontSize: '0.78rem',
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {/* Gesprekkenlijst */}
+              <div style={{ flex: '0 0 240px', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', maxHeight: 460, overflowY: 'auto' }}>
+                {chatThreads.length === 0 ? (
+                  <div style={{ color: 'var(--text-dim)', fontSize: '0.78rem', padding: '1rem' }}>Nog geen gesprekken.</div>
+                ) : chatThreads.map(t => (
+                  <div key={t.thread} onClick={() => openThread(t.thread)} style={{
+                    padding: '0.55rem 0.7rem', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    background: activeThread === t.thread ? 'rgba(0,180,216,0.1)' : 'transparent',
                   }}>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '0.6rem', flexShrink: 0, width: 92 }}>
-                      {new Date(m.created_at.replace(' ', 'T')).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span style={{ fontWeight: 700, color: 'var(--blue)', flexShrink: 0, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
-                    <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', wordBreak: 'break-word' }}>{m.message}</span>
-                    <button onClick={() => deleteGuestMsg(m.id)} title="Verwijder" style={{ flexShrink: 0, padding: '0.15rem 0.45rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--red)' }}>✕</button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.78rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name || 'Bezoeker'}</span>
+                      {t.staff_unread > 0 && <span style={{ background: 'var(--red)', color: '#fff', fontSize: '0.55rem', fontWeight: 700, borderRadius: 8, padding: '0 5px', minWidth: 16, textAlign: 'center' }}>{t.staff_unread}</span>}
+                    </div>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '0.1rem' }}>{t.last_msg || ''}</div>
                   </div>
                 ))}
               </div>
-            )}
+
+              {/* Gesprek */}
+              <div style={{ flex: '1 1 320px', minWidth: 0, border: '1px solid var(--border)', borderRadius: 4, display: 'flex', flexDirection: 'column', height: 460 }}>
+                {!activeThread ? (
+                  <div style={{ margin: 'auto', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Kies een gesprek links.</div>
+                ) : (
+                  <>
+                    <div style={{ padding: '0.5rem 0.8rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.8rem', flex: 1 }}>{chatThreads.find(t => t.thread === activeThread)?.name || 'Bezoeker'}</span>
+                      <button onClick={() => deleteThread(activeThread)} style={{ padding: '0.15rem 0.5rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid rgba(224,85,85,0.3)', borderRadius: 3, cursor: 'pointer', background: 'transparent', color: 'var(--red)' }}>Verwijder</button>
+                    </div>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.7rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {threadMsgs.map(m => {
+                        const staff = m.sender === 'staff'
+                        return (
+                          <div key={m.id} style={{ display: 'flex', justifyContent: staff ? 'flex-end' : 'flex-start' }}>
+                            <div style={{
+                              maxWidth: '78%', padding: '0.4rem 0.6rem', borderRadius: 8, fontSize: '0.76rem', lineHeight: 1.4, wordBreak: 'break-word',
+                              background: staff ? 'rgba(0,180,216,0.18)' : 'rgba(255,255,255,0.06)',
+                              border: `1px solid ${staff ? 'rgba(0,180,216,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                            }}>
+                              {staff && m.staff_name && <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--blue)', marginBottom: '0.1rem' }}>{m.staff_name}</div>}
+                              <span style={{ color: 'var(--text)' }}>{m.message}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div style={{ padding: '0.6rem 0.8rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.4rem' }}>
+                      <input value={replyText} maxLength={280} placeholder="Antwoord…"
+                        onChange={e => setReplyText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendReply() }}
+                        style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 4, padding: '0.45rem 0.6rem', fontSize: '0.75rem', outline: 'none' }} />
+                      <button onClick={sendReply} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid rgba(0,180,216,0.5)', color: '#00d4ff', borderRadius: 4, padding: '0 0.8rem', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>➤</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

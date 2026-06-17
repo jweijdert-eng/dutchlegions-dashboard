@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { startLogin } from '../auth/sso'
 
-interface GuestMsg { id: number; name: string; message: string; created_at: string }
+interface PmMsg { id: number; sender: string; staff_name?: string; message: string; created_at: string }
 
 // Stabiele kleur per naam
 function nameColor(name: string): string {
@@ -10,9 +10,16 @@ function nameColor(name: string): string {
   return `hsl(${h}, 70%, 65%)`
 }
 
+// Onraadbaar thread-token per bezoeker
+function makeToken(): string {
+  try { const u = crypto.randomUUID?.(); if (u) return u.replace(/-/g, '') } catch { /* fallthrough */ }
+  let s = ''; for (let i = 0; i < 32; i++) s += '0123456789abcdef'[Math.floor(Math.random() * 16)]
+  return s
+}
+
 function GuestChat() {
-  const [messages, setMessages] = useState<GuestMsg[]>([])
-  const [name, setName] = useState(() => localStorage.getItem('guest_chat_name') ?? '')
+  const [messages, setMessages] = useState<PmMsg[]>([])
+  const [name, setName] = useState(() => localStorage.getItem('pm_name') ?? '')
   const [nameInput, setNameInput] = useState('')
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
@@ -21,25 +28,39 @@ function GuestChat() {
   const bodyRef = useRef<HTMLDivElement>(null)
   const openRef = useRef(false)
   openRef.current = open
+  const threadRef = useRef<string>(localStorage.getItem('pm_thread') ?? '')
 
-  function appendNew(rows: GuestMsg[]) {
+  function ensureThread(): string {
+    if (!threadRef.current) {
+      const tok = makeToken()
+      threadRef.current = tok
+      localStorage.setItem('pm_thread', tok)
+    }
+    return threadRef.current
+  }
+
+  function appendNew(rows: PmMsg[]) {
     if (!rows.length) return
+    const staffNew = rows.filter(r => r.sender === 'staff').length
     setMessages(prev => {
       const seen = new Set(prev.map(m => m.id))
-      const merged = [...prev, ...rows.filter(r => !seen.has(r.id))]
-      return merged.slice(-100)
+      return [...prev, ...rows.filter(r => !seen.has(r.id))].slice(-100)
     })
     lastId.current = Math.max(lastId.current, ...rows.map(r => r.id))
+    if (staffNew && !openRef.current) setUnread(u => u + staffNew)
+  }
+
+  function poll() {
+    const t = threadRef.current
+    if (!t) return
+    fetch(`/api/pmchat.php?action=thread&thread=${t}&after_id=${lastId.current}`).then(r => r.json())
+      .then((rows: PmMsg[]) => { if (Array.isArray(rows)) appendNew(rows) }).catch(() => {})
   }
 
   useEffect(() => {
-    let alive = true
-    fetch('/api/guestchat.php').then(r => r.json()).then((rows: GuestMsg[]) => { if (alive && Array.isArray(rows)) appendNew(rows) }).catch(() => {})
-    const id = setInterval(() => {
-      fetch(`/api/guestchat.php?after_id=${lastId.current}`).then(r => r.json())
-        .then((rows: GuestMsg[]) => { if (alive && Array.isArray(rows) && rows.length) { appendNew(rows); if (!openRef.current) setUnread(u => u + rows.length) } }).catch(() => {})
-    }, 4000)
-    return () => { alive = false; clearInterval(id) }
+    poll()
+    const id = setInterval(poll, 4000)
+    return () => clearInterval(id)
   }, [])
 
   useEffect(() => { if (open) setUnread(0) }, [open])
@@ -48,7 +69,7 @@ function GuestChat() {
   function saveName() {
     const n = nameInput.trim().slice(0, 64)
     if (!n) return
-    localStorage.setItem('guest_chat_name', n)
+    localStorage.setItem('pm_name', n)
     setName(n)
   }
 
@@ -56,16 +77,15 @@ function GuestChat() {
     const msg = text.trim()
     if (!msg || !name) return
     setText('')
+    const t = ensureThread()
     try {
-      const r = await fetch('/api/guestchat.php', {
+      const r = await fetch('/api/pmchat.php', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, message: msg }),
+        body: JSON.stringify({ action: 'send', thread: t, name, message: msg }),
       })
       const j = await r.json().catch(() => null)
-      // direct ophalen zodat het bericht meteen verschijnt
-      fetch(`/api/guestchat.php?after_id=${lastId.current}`).then(r => r.json())
-        .then((rows: GuestMsg[]) => { if (Array.isArray(rows)) appendNew(rows) }).catch(() => {})
-      if (j?.error === 'te snel') setText(msg)
+      if (j?.error === 'te snel') { setText(msg); return }
+      poll()
     } catch { /* ignore */ }
   }
 
@@ -94,21 +114,29 @@ function GuestChat() {
       <div style={panel}>
       <div style={{ padding: '0.6rem 0.85rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
-        <span style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.12em', color: '#fff', textTransform: 'uppercase' }}>Live Chat</span>
-        <span style={{ marginLeft: 'auto', fontSize: '0.58rem', color: 'var(--text-dim)' }}>publiek</span>
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.12em', color: '#fff', textTransform: 'uppercase' }}>Recruiter Chat</span>
+        <span style={{ marginLeft: 'auto', fontSize: '0.58rem', color: 'var(--text-dim)' }}>privé</span>
         <button onClick={() => setOpen(false)} title="Sluiten" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1, padding: 0 }}>✕</button>
       </div>
 
-      <div ref={bodyRef} style={{ height: 230, overflowY: 'auto', padding: '0.6rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+      <div ref={bodyRef} style={{ height: 250, overflowY: 'auto', padding: '0.6rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
         {messages.length === 0 ? (
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.7rem', margin: 'auto', textAlign: 'center' }}>Nog geen berichten.<br />Zeg hallo 👋</div>
-        ) : messages.map(m => (
-          <div key={m.id} style={{ fontSize: '0.72rem', lineHeight: 1.4, wordBreak: 'break-word' }}>
-            <span style={{ color: nameColor(m.name), fontWeight: 700 }}>{m.name}</span>
-            <span style={{ color: 'var(--text-dim)' }}>: </span>
-            <span style={{ color: 'var(--text)' }}>{m.message}</span>
-          </div>
-        ))}
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.7rem', margin: 'auto', textAlign: 'center', lineHeight: 1.6 }}>Stel hier je vraag aan de recruiters 👋<br />Alleen jij en de recruiters zien dit.</div>
+        ) : messages.map(m => {
+          const mine = m.sender === 'guest'
+          return (
+            <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '80%', padding: '0.35rem 0.6rem', borderRadius: 8, fontSize: '0.72rem', lineHeight: 1.4, wordBreak: 'break-word',
+                background: mine ? 'rgba(0,180,216,0.18)' : 'rgba(255,255,255,0.06)',
+                border: `1px solid ${mine ? 'rgba(0,180,216,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              }}>
+                {!mine && <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--blue)', marginBottom: '0.1rem' }}>{m.staff_name || 'Recruiter'}</div>}
+                <span style={{ color: 'var(--text)' }}>{m.message}</span>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       <div style={{ padding: '0.6rem 0.85rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
