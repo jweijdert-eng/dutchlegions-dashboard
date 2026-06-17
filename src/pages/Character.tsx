@@ -264,11 +264,6 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
             />
           </div>
         )}
-        {/* corp + alliance logo's rechtsboven */}
-        <div style={{ position: 'absolute', right: '0.85rem', top: '0.7rem', display: 'flex', gap: '0.35rem' }}>
-          {data.info.corporation_id && <EveImage category="corporations" id={data.info.corporation_id} variation="logo" size={64} px={34} style={{ borderRadius: 4, border: '1px solid rgba(255,255,255,0.15)' }} />}
-          {data.info.alliance_id && <EveImage category="alliances" id={data.info.alliance_id} variation="logo" size={64} px={34} style={{ borderRadius: 4, border: '1px solid rgba(255,255,255,0.15)' }} />}
-        </div>
         <div style={{ position: 'absolute', bottom: -42, left: '1.5rem', borderRadius: '50%', padding: 3, background: 'linear-gradient(135deg, var(--blue), #11113a)', boxShadow: '0 0 16px rgba(0,180,216,0.4)' }}>
           <EveImage
             category="characters" id={token.characterId} variation="portrait" size={128} px={82} round
@@ -280,9 +275,19 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
       <div style={{ padding: '3rem 1.5rem 0' }}>
         <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.2rem', letterSpacing: '0.01em' }}>{token.characterName}</div>
-            {data.corp && <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>[{data.corp.ticker}] {data.corp.name}</div>}
-            {data.allianceName && <div style={{ fontSize: '0.68rem', color: 'var(--blue)', marginTop: '0.1rem' }}>{data.allianceName}</div>}
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.25rem', letterSpacing: '0.01em' }}>{token.characterName}</div>
+            {data.corp && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                {data.info.corporation_id && <EveImage category="corporations" id={data.info.corporation_id} variation="logo" size={32} px={18} style={{ borderRadius: 3, flexShrink: 0 }} />}
+                [{data.corp.ticker}] {data.corp.name}
+              </div>
+            )}
+            {data.allianceName && (
+              <div style={{ fontSize: '0.68rem', color: 'var(--blue)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                {data.info.alliance_id && <EveImage category="alliances" id={data.info.alliance_id} variation="logo" size={32} px={18} style={{ borderRadius: 3, flexShrink: 0 }} />}
+                {data.allianceName}
+              </div>
+            )}
           </div>
           <span style={{ flexShrink: 0, fontSize: '0.62rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: 20, border: `1px solid ${secColor(data.info.security_status)}55`, color: secColor(data.info.security_status), background: `${secColor(data.info.security_status)}14` }}>
             {data.info.security_status.toFixed(1)} sec
