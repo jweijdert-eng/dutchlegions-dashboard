@@ -176,6 +176,10 @@
       {re:/\bmole\b/i, label:'mole'},
       {re:/infiltrat/i, label:'infiltrate'},
       {re:/hot[- ]?drop/i, label:'hotdrop'},
+      {re:/honeypot/i, label:'honeypot'},
+      {re:/cyno\s*alt/i, label:'cyno alt'},
+      {re:/\btitan\b/i, label:'titan'},
+      {re:/supercarrier|\bsupers?\b/i, label:'supers'},
       {re:/discord(\.gg|app\.com)?/i, label:'Discord'},
       {re:/teamspeak|ts3(\.|server)?/i, label:'TeamSpeak'},
       {re:/mumble/i, label:'Mumble'},
@@ -266,7 +270,7 @@
         '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"'+(c._enemy?' style="background:rgba(224,85,85,.1)"':'')+'><span class="plabel">'+(c._enemy?'<span title="vijand" style="color:var(--red)">⚠ </span>':'')+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:'+(c._enemy?'var(--red)':'var(--text-dim)')+'">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
       standings:{ ic:'⚖', lbl:'Standings', count:d=>d.standings?.length, html:d=>!d.standings?.length?'<div class="empty">Geen contacts gedeeld.</div>':
         '<div class="psec">'+d.standings.map(s=>{const c=s.standing>0?'var(--green)':s.standing<0?'var(--red)':'var(--text-dim)'; return row(esc(s.name||(s.type+' '+s.id)), s.standing.toFixed(1), c);}).join('')+'</div>' },
-      history:{ ic:'🏛', lbl:'Historie', count:d=>d.corpHistory?.length, html:d=>!d.corpHistory?.length?'<div class="empty">Geen werkgevershistorie.</div>':
+      history:{ ic:'🏛', lbl:'Alliance/Corp historie', count:d=>d.corpHistory?.length, html:d=>!d.corpHistory?.length?'<div class="empty">Geen alliance/corp-historie.</div>':
         '<div class="psec">'+d.corpHistory.map(h=>'<div class="prow"><span class="plabel">'+dt(h.start)+'</span><span class="pval" style="font-weight:500">'+esc(h.corpName)+(h.allianceName?' <span style="color:var(--text-dim)">· '+esc(h.allianceName)+'</span>':'')+'</span></div>').join('')+'</div>' },
       vetting:{ ic:'🛡', lbl:'Vetting', count:()=>null, html:d=>{
         if(!d.vetting) return '<div class="center" style="padding:2rem 0"><div class="spinner"></div><div class="sub">Standings van DL/Insidious controleren…</div></div>';
@@ -296,8 +300,8 @@
       if(!enemy.size){ flags.push({lvl:'info', txt:'Kon DL/Insidious-standings niet laden (geen leesrechten op corp/alliance-contacts?). Standing- en historie-check overgeslagen.'}); return flags; }
       // Werkgevershistorie: zat hij in een vijandige corp/alliance?
       const hh=[]; for(const h of (d.corpHistory||[])){ if(enemy.has(h.corpId))hh.push(esc(h.corpName)+' (corp)'); if(h.allianceId&&enemy.has(h.allianceId))hh.push(esc(h.allianceName||h.corpName)+' (alliance)'); }
-      if(hh.length) flags.push({lvl:'bad', txt:'Werkgevershistorie bevat vijand(en) van DL/Insidious: '+[...new Set(hh)].join(', ')});
-      else flags.push({lvl:'ok', txt:'Geen vijanden in werkgevershistorie.'});
+      if(hh.length) flags.push({lvl:'bad', txt:'Alliance/Corp-historie bevat vijand(en) van DL/Insidious: '+[...new Set(hh)].join(', ')});
+      else flags.push({lvl:'ok', txt:'Geen vijanden in alliance/corp-historie.'});
       // Persoonlijke contacts: heeft hij een DL/Insidious-vijand blauw staan?
       const blue=(d.standings||[]).filter(s=>s.standing>0&&enemy.has(s.id)).map(s=>esc(s.name||('#'+s.id)));
       if(blue.length) flags.push({lvl:'bad', txt:'Heeft vijand(en) van DL/Insidious blauw in z\'n contacts: '+blue.join(', ')});
@@ -313,10 +317,14 @@
         }
         if(hits.length) flags.push({lvl:'bad', txt:'Verdachte mails met DL/Insidious-vijanden:<br>'+hits.join('<br>')});
         else flags.push({lvl:'ok', txt:'Geen mailcontact met bekende vijanden (laatste '+d.mails.length+' mails).'});
-        // Inhoud-scan: verdachte termen / externe links
+        // Inhoud-scan: verdachte termen / externe links + namen van bekende vijanden
+        const eNames=await resolveNames([...enemy.keys()]);
+        const enemyNameList=[...eNames.values()].filter(n=>n && n.length>=4).map(n=>n.toLowerCase());
         const sus=[]; const allTerms=new Set();
-        for(const m of d.mails){ const terms=scanText((m.subject||'')+' '+(m.body||'')); if(terms.length){ m._suspect=terms; terms.forEach(t=>allTerms.add(t)); sus.push('"'+esc(m.subject||'(geen onderwerp)')+'" → '+terms.join(', ')); } }
-        if(sus.length) flags.push({lvl:'warn', txt:'Verdachte termen/links in mails ('+[...allTerms].join(', ')+'):<br>'+sus.join('<br>')});
+        for(const m of d.mails){ const txt=(m.subject||'')+' '+(m.body||''); const terms=scanText(txt);
+          const lc=txt.toLowerCase(); for(const en of enemyNameList){ if(lc.includes(en)) terms.push('vijand: '+en); }
+          if(terms.length){ const uniq=[...new Set(terms)]; m._suspect=uniq; uniq.forEach(t=>allTerms.add(t)); sus.push('"'+esc(m.subject||'(geen onderwerp)')+'" → '+esc(uniq.join(', '))); } }
+        if(sus.length) flags.push({lvl:'warn', txt:'Verdachte termen/links in mails ('+esc([...allTerms].join(', '))+'):<br>'+sus.join('<br>')});
         else flags.push({lvl:'ok', txt:'Geen verdachte termen of externe links in mails.'});
       }
       // Contracten met vijanden (uitgever/ontvanger/acceptor = vijand van DL/Insidious)
