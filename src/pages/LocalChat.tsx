@@ -25,16 +25,15 @@ function effectiveStanding(name: string, ownNames: string[], esi: EsiStanding, m
 }
 
 function standingColor(s: EsiStanding | 'own', fallback: string): string {
-  if (s === 'own')    return 'var(--gold)'
-  if (s === 'friend') return 'var(--green)'
-  if (s === 'enemy')  return 'var(--red)'
+  if (s === 'own' || s === 'friend') return 'var(--green)'   // eigen + vriend = groen
+  if (s === 'enemy')  return 'var(--red)'                    // neutraal/vijand = rood
   return fallback
 }
 
 function rowBg(s: EsiStanding | 'own', isMention: boolean, alt: boolean): string {
-  if (s === 'enemy')  return 'rgba(224,85,85,0.09)'
-  if (s === 'friend') return 'rgba(62,207,110,0.07)'
-  if (isMention)      return 'rgba(240,192,64,0.06)'
+  if (s === 'enemy')              return 'rgba(224,85,85,0.09)'
+  if (s === 'friend' || s === 'own') return 'rgba(62,207,110,0.07)'
+  if (isMention)                  return 'rgba(240,192,64,0.06)'
   return alt ? 'rgba(15,15,34,0.35)' : 'transparent'
 }
 
@@ -336,7 +335,7 @@ useEffect(() => {
                       <td style={{ ...TD, width: 72, color: 'var(--text-dim)', fontSize: '0.63rem', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                         {m.time.slice(11)}
                       </td>
-                      <td style={{ ...TD, width: 170, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 170, borderLeft: standing === 'enemy' ? '2px solid var(--red)' : standing === 'friend' ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : '2px solid transparent' }}>
+                      <td style={{ ...TD, width: 170, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 170, borderLeft: standing === 'enemy' ? '2px solid var(--red)' : (standing === 'friend' || standing === 'own') ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : '2px solid transparent' }}>
                         <span
                           onContextMenu={e => standing !== 'own' && openMenu(e, m.sender)}
                           title={standing !== 'own' ? 'Rechtermuisknop voor handmatige override' : undefined}
