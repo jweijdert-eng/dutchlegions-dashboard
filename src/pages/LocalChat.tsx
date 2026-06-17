@@ -4,7 +4,8 @@ import Layout, { PageHeader } from '../components/Layout'
 import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
 import { useLocalChat } from '../hooks/useLocalChat'
-import { useMemberSettings } from '../utils/memberSettings'
+import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
+import { useTranslate } from '../utils/translate'
 
 const TD: React.CSSProperties = { padding: '0.28rem 0.6rem', verticalAlign: 'top' }
 
@@ -60,6 +61,7 @@ export default function LocalChat() {
   const lastSigRef   = useRef<string | null>(null)
 
   const getEsiStanding = useEsiStandings(activeToken)
+  const tr = useTranslate(member.translate, member.translateLang)
 
   // Aantal berichten per speler — afgeleid van de huidige berichtenlijst
   const senderCounts = useMemo(() => {
@@ -300,6 +302,28 @@ useEffect(() => {
               color: filter === 'enemy' ? 'var(--red)' : 'var(--text-dim)',
             }}
           >▼ Vijanden</button>
+          {/* Vertalen aan/uit + doeltaal */}
+          <button
+            onClick={() => setMemberSettings({ translate: !member.translate })}
+            title="Local-berichten vertalen"
+            style={{
+              padding: '0.3rem 0.6rem', borderRadius: 2, fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+              background: member.translate ? 'rgba(0,180,216,0.12)' : 'transparent',
+              border: `1px solid ${member.translate ? 'var(--blue)' : 'var(--border)'}`,
+              color: member.translate ? 'var(--blue)' : 'var(--text-dim)',
+            }}
+          >🌐 Vertaal</button>
+          {member.translate && (
+            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+              {(['en', 'nl'] as const).map(l => (
+                <button key={l} onClick={() => setMemberSettings({ translateLang: l })} style={{
+                  padding: '0.3rem 0.5rem', fontSize: '0.66rem', fontWeight: 700, cursor: 'pointer', border: 'none',
+                  background: member.translateLang === l ? 'rgba(0,180,216,0.15)' : 'transparent',
+                  color: member.translateLang === l ? 'var(--blue)' : 'var(--text-dim)',
+                }}>{l.toUpperCase()}</button>
+              ))}
+            </div>
+          )}
           {(search || onlyMentions || filter) && (
             <button
               onClick={() => { setSearch(''); setOnlyMentions(false); setFilter(null) }}
@@ -353,7 +377,7 @@ useEffect(() => {
                         )}
                       </td>
                       <td style={{ ...TD, fontSize: '0.75rem', color: isMention ? 'var(--gold)' : 'var(--text)', wordBreak: 'break-word' }}>
-                        {highlight(m.message)}
+                        {highlight(tr(m.message))}
                       </td>
                     </tr>
                   )

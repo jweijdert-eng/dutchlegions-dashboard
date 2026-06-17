@@ -4,6 +4,8 @@ import { useAuth } from '../auth/AuthContext'
 import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
 import { useLocalChat } from '../hooks/useLocalChat'
+import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
+import { useTranslate } from '../utils/translate'
 
 const COLORS = [
   'var(--blue)', '#a78bfa', '#34d399', '#fb923c', '#f472b6', '#38bdf8', '#4ade80',
@@ -44,10 +46,12 @@ export default function LocalChatWidget() {
   const navigate   = useNavigate()
 
   const { messages, status } = useLocalChat()
+  const member = useMemberSettings()
   const [manuals,     setManuals]     = useState<Record<string, Standing>>(getStandings)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
   const getEsiStanding = useEsiStandings(activeToken)
+  const tr = useTranslate(member.translate, member.translateLang)
 
   const closeMenu = useCallback(() => setContextMenu(null), [])
   useEffect(() => {
@@ -85,9 +89,15 @@ export default function LocalChatWidget() {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.875rem', borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
           <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-dim)', letterSpacing: '0.15em' }}>LOCAL CHAT</span>
-          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: statusColor }}>
-            {statusLabel}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={e => { e.stopPropagation(); if (!member.translate) setMemberSettings({ translate: true }); else setMemberSettings({ translateLang: member.translateLang === 'en' ? 'nl' : 'en' }) }}
+              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setMemberSettings({ translate: false }) }}
+              title="Vertalen aan/uit (klik = taal wisselen, rechtsklik = uit)"
+              style={{ background: member.translate ? 'rgba(0,180,216,0.15)' : 'transparent', border: `1px solid ${member.translate ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 2, color: member.translate ? 'var(--blue)' : 'var(--text-dim)', fontSize: '0.58rem', fontWeight: 700, padding: '0.1rem 0.35rem', cursor: 'pointer' }}
+            >🌐 {member.translate ? member.translateLang.toUpperCase() : ''}</button>
+            <span style={{ fontSize: '0.68rem', fontWeight: 600, color: statusColor }}>{statusLabel}</span>
+          </div>
         </div>
 
         <div style={{ padding: '0.625rem 0.875rem', height: 'calc(100vh - 550px)', overflowY: 'auto', fontSize: '0.68rem', lineHeight: 1.5 }}>
@@ -125,7 +135,7 @@ export default function LocalChatWidget() {
                         {manuals[m.sender] && <span style={{ fontSize: '0.5rem', marginLeft: '0.2rem', opacity: 0.6 }}>✎</span>}
                       </span>
                       <span style={{ color: isMention ? 'var(--gold)' : 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {m.message}
+                        {tr(m.message)}
                       </span>
                     </div>
                   </div>

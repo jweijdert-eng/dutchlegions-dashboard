@@ -8,10 +8,12 @@ export interface MemberSettings {
   sound: boolean            // geluidswaarschuwing (intel/local)
   localWidget: boolean      // Local Chat-widget op het dashboard tonen
   accent: string            // persoonlijke accentkleur (#rrggbb), leeg = site-accent
+  translate: boolean        // Local-berichten vertalen
+  translateLang: 'en' | 'nl' // doeltaal voor de vertaling
 }
 
 const KEY = 'eve_member_settings'
-const DEFAULTS: MemberSettings = { hiddenTabs: [], notifications: true, sound: true, localWidget: true, accent: '' }
+const DEFAULTS: MemberSettings = { hiddenTabs: [], notifications: true, sound: true, localWidget: true, accent: '', translate: false, translateLang: 'en' }
 const EVENT = 'membersettings'
 
 export function getMemberSettings(): MemberSettings {
@@ -23,6 +25,8 @@ export function getMemberSettings(): MemberSettings {
       sound: raw.sound !== false,
       localWidget: raw.localWidget !== false,
       accent: /^#[0-9a-fA-F]{6}$/.test(raw.accent) ? raw.accent : '',
+      translate: raw.translate === true,
+      translateLang: raw.translateLang === 'nl' ? 'nl' : 'en',
     }
   } catch { return { ...DEFAULTS } }
 }
