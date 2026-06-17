@@ -120,6 +120,8 @@
     function stripHtml(h){ return (h||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim(); }
     async function esi(p,tok){ const r=await fetch(ESI+p+(p.includes('?')?'&':'?')+'datasource=tranquility', tok?{headers:{Authorization:'Bearer '+tok}}:undefined); if(!r.ok) throw new Error(p+' '+r.status); return r.json(); }
     async function resolveNames(ids){ const out=new Map(); const u=[...new Set(ids.filter(Boolean))]; if(!u.length)return out; try{ const r=await fetch(ESI+'/universe/names/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)}); if(r.ok) for(const x of await r.json()) out.set(x.id,x.name); }catch{} return out; }
+    // character-id → huidige corp/alliance (voor mail-vetting)
+    async function resolveAffiliations(ids){ const out=new Map(); const u=[...new Set(ids.filter(Boolean))]; if(!u.length)return out; try{ const r=await fetch(ESI+'/characters/affiliation/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)}); if(r.ok) for(const x of await r.json()) out.set(x.character_id,{corp:x.corporation_id,alliance:x.alliance_id||null}); }catch{} return out; }
     const dt = s => s ? new Date(s).toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'2-digit'}) : '';
     // concurrency-gelimiteerde map (om ESI niet plat te leggen)
     async function mapLimit(arr,limit,fn){ let i=0; const workers=Array.from({length:Math.min(limit,arr.length||1)},async()=>{ while(i<arr.length){ const idx=i++; await fn(arr[idx]); } }); await Promise.all(workers); }
@@ -196,7 +198,7 @@
       const riskSkills=allSkills.map(s=>({name:names.get(s.skill_id)||'',level:s.trained_skill_level,label:riskLabel(names.get(s.skill_id)||'')})).filter(s=>s.label);
       const cynoSkills=riskSkills.filter(s=>/cyno/i.test(s.name));
       let mails=[]; if(Array.isArray(mail)&&mail.length){ const recent=mail.slice(0,15); const sn=await resolveNames(recent.map(m=>m.from));
-        mails=await Promise.all(recent.map(async m=>{ let body=''; try{const f=await esi('/characters/'+id+'/mail/'+m.mail_id+'/',tok); body=stripHtml(f.body);}catch{} return {subject:m.subject||'',from:sn.get(m.from)||('#'+m.from),date:m.timestamp,read:!!m.is_read,body}; })); }
+        mails=await Promise.all(recent.map(async m=>{ let body=''; try{const f=await esi('/characters/'+id+'/mail/'+m.mail_id+'/',tok); body=stripHtml(f.body);}catch{} return {subject:m.subject||'',from:sn.get(m.from)||('#'+m.from),fromId:m.from,toIds:(m.recipients||[]).map(r=>r.recipient_id),date:m.timestamp,read:!!m.is_read,body}; })); }
       const ageY=info?((Date.now()-new Date(info.birthday))/(365.25*864e5)).toFixed(1):null;
       return {
         name:t.characterName,
@@ -243,7 +245,7 @@
         (!d.wallet_journal?.length?'<div class="empty">Geen wallet-historie.</div>':
         '<div class="psec">'+d.wallet_journal.map(j=>{const c=j.amount>=0?'var(--green)':'var(--red)'; return '<div class="prow"><span class="plabel">'+dt(j.date)+' · '+esc((j.type||'').replace(/_/g,' '))+'</span><span class="pval" style="color:'+c+'">'+(j.amount>=0?'+':'')+fmtISK(j.amount)+'</span></div>';}).join('')+'</div>') },
       mails:{ ic:'✉', lbl:'Mails', count:d=>d.mails?.length, html:d=>!d.mails?.length?'<div class="empty">Geen mails gedeeld.</div>':
-        d.mails.map(m=>'<div class="mail"><div class="mailhdr">'+(m.read?'':'<span style="color:var(--blue)">●</span>')+'<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||'(geen onderwerp)')+'</span><span style="color:var(--text-dim);flex-shrink:0">'+esc(m.from)+'</span></div>'+
+        d.mails.map(m=>'<div class="mail"'+(m._enemy?' style="border-color:var(--red)"':'')+'><div class="mailhdr">'+(m._enemy?'<span title="vijand" style="color:var(--red)">⚠</span>':(m.read?'':'<span style="color:var(--blue)">●</span>'))+'<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.subject||'(geen onderwerp)')+'</span><span style="color:'+(m._enemy?'var(--red)':'var(--text-dim)')+';flex-shrink:0">'+esc(m.from)+'</span></div>'+
         '<div class="mailbody"><div style="font-size:.55rem;color:var(--text-dim);margin-bottom:.3rem">'+dt(m.date)+'</div>'+(esc(m.body)||'<span style="color:var(--text-dim)">(leeg)</span>')+'</div></div>').join('') },
       contracts:{ ic:'◧', lbl:'Contracts', count:d=>d.contracts?.length, html:d=>!d.contracts?.length?'<div class="empty">Geen contracts.</div>':
         '<div class="psec">'+d.contracts.map(c=>{const val=c.price?fmtISK(c.price):c.reward?fmtISK(c.reward):''; return '<div class="prow"><span class="plabel">'+dt(c.date)+' · '+esc((c.type||'').replace(/_/g,' '))+(c.title?' — '+esc(c.title):'')+'</span><span class="pval" style="color:var(--text-dim)">'+esc(c.status||'')+(val?' · '+val:'')+'</span></div>';}).join('')+'</div>' },
@@ -285,6 +287,18 @@
       const blue=(d.standings||[]).filter(s=>s.standing>0&&enemy.has(s.id)).map(s=>esc(s.name||('#'+s.id)));
       if(blue.length) flags.push({lvl:'bad', txt:'Heeft vijand(en) van DL/Insidious blauw in z\'n contacts: '+blue.join(', ')});
       else flags.push({lvl:'ok', txt:'Geen DL/Insidious-vijanden blauw in contacts.'});
+      // Mailcontact met vijanden (afzender of ontvanger = vijand van DL/Insidious)
+      if(d.mails?.length){
+        const aff=await resolveAffiliations(d.mails.map(m=>m.fromId).filter(Boolean));
+        const isEnemy=(cid)=>{ const a=aff.get(cid)||{}; return enemy.has(cid)||enemy.has(a.corp)||enemy.has(a.alliance); };
+        const hits=[];
+        for(const m of d.mails){
+          if(m.fromId && isEnemy(m.fromId)){ m._enemy=true; hits.push('⬅ van <b>'+esc(m.from)+'</b>: "'+esc(m.subject||'(geen onderwerp)')+'"'); }
+          else if((m.toIds||[]).some(rid=>enemy.has(rid))){ m._enemy=true; hits.push('➡ aan vijand: "'+esc(m.subject||'(geen onderwerp)')+'"'); }
+        }
+        if(hits.length) flags.push({lvl:'bad', txt:'Verdachte mails met DL/Insidious-vijanden:<br>'+hits.join('<br>')});
+        else flags.push({lvl:'ok', txt:'Geen mailcontact met bekende vijanden (laatste '+d.mails.length+' mails).'});
+      }
       return flags;
     }
 
