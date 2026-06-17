@@ -19,7 +19,9 @@ function hashColor(name: string): string {
 
 function effectiveStanding(name: string, ownNames: string[], esi: EsiStanding, manual: Record<string, Standing>): EsiStanding | 'own' {
   if (ownNames.some(n => n.toLowerCase() === name.toLowerCase())) return 'own'
-  return manual[name] ?? esi
+  // Alleen eigen + expliciet blauw = vriend; al het andere (neutraal/onbekend/rood) = vijand.
+  const s = manual[name] ?? esi
+  return s === 'friend' ? 'friend' : 'enemy'
 }
 
 function standingColor(s: EsiStanding | 'own', fallback: string): string {
