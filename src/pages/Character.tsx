@@ -3,11 +3,13 @@ import { useAuth } from '../auth/AuthContext'
 import {
   getCharacterInfo, getSkillsInfo, getCorporation, getWallet, getCorpHistory, getMedals,
   getClones, getImplants, getCharacterAttributes, getStationInfo, getStructureName, resolveNames, getTypeInfo,
+  getAlliance, getLocation, getShip, getSystemInfo,
   type CharacterInfo, type CorporationInfo, type ClonesInfo, type CharacterAttributes, type SkillsInfo, type Medal,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import { MultiCharBody } from './MultiChar'
 import EveImage from '../components/EveImage'
+import SolarSystem from '../components/SolarSystem'
 import Location from '../components/Location'
 import { secColor } from '../utils/secColor'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -43,9 +45,11 @@ interface CharData {
   info: CharacterInfo
   corp: CorporationInfo | null
   allianceName: string | null
+  allianceTicker: string | null
   totalSP: number
   skillsInfo: SkillsInfo | null
   wallet: number
+  loc: { system: string | null; systemId: number | null; sec: number | null; shipName: string | null; shipType: string | null } | null
 }
 
 interface SkillStats {
@@ -110,11 +114,32 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
       const wallet = walletRes.status === 'fulfilled' ? walletRes.value : 0
       if (!info) { setLoading(false); return }
 
-      const [corpRes, allianceNames] = await Promise.all([
+      const [corpRes, allianceRes, locRes, shipRes] = await Promise.all([
         getCorporation(info.corporation_id).catch(() => null),
-        info.alliance_id ? resolveNames([info.alliance_id]) : Promise.resolve(new Map<number, string>()),
+        info.alliance_id ? getAlliance(info.alliance_id).catch(() => null) : Promise.resolve(null),
+        getLocation(token.characterId, token.accessToken).catch(() => null),
+        getShip(token.characterId, token.accessToken).catch(() => null),
       ])
-      setData({ info, corp: corpRes, allianceName: info.alliance_id ? (allianceNames.get(info.alliance_id) ?? null) : null, totalSP: skills?.total_sp ?? 0, skillsInfo: skills, wallet })
+
+      // Locatie + schip (zelfde stijl als het dashboard).
+      let loc: CharData['loc'] = null
+      const sysId = locRes?.solar_system_id ?? null
+      if (sysId) {
+        const [sys, typeName] = await Promise.all([
+          getSystemInfo(sysId).catch(() => null),
+          shipRes?.ship_type_id ? resolveNames([shipRes.ship_type_id]).then(m => m.get(shipRes.ship_type_id) ?? null).catch(() => null) : Promise.resolve(null),
+        ])
+        loc = {
+          system: sys?.name ?? null, systemId: sysId, sec: sys?.security_status ?? null,
+          shipName: shipRes?.ship_name ?? null, shipType: typeName,
+        }
+      }
+
+      setData({
+        info, corp: corpRes,
+        allianceName: allianceRes?.name ?? null, allianceTicker: allianceRes?.ticker ?? null,
+        totalSP: skills?.total_sp ?? 0, skillsInfo: skills, wallet, loc,
+      })
       setLoading(false)
     }
     load()
@@ -275,17 +300,31 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
       <div style={{ padding: '3rem 1.5rem 0' }}>
         <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.25rem', letterSpacing: '0.01em' }}>{token.characterName}</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.2rem', letterSpacing: '0.01em' }}>{token.characterName}</div>
             {data.corp && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                {data.info.corporation_id && <EveImage category="corporations" id={data.info.corporation_id} variation="logo" size={32} px={18} style={{ borderRadius: 3, flexShrink: 0 }} />}
-                [{data.corp.ticker}] {data.corp.name}
+              <div style={{ fontSize: '0.72rem', marginTop: '0.1rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                {data.info.corporation_id && <EveImage category="corporations" id={data.info.corporation_id} variation="logo" size={32} px={16} style={{ borderRadius: 2, border: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }} />}
+                <span style={{ color: 'var(--gold)', fontWeight: 700 }}>[{data.corp.ticker}]</span>
+                <span style={{ color: '#f97316' }}>{data.corp.name}</span>
               </div>
             )}
             {data.allianceName && (
-              <div style={{ fontSize: '0.68rem', color: 'var(--blue)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                {data.info.alliance_id && <EveImage category="alliances" id={data.info.alliance_id} variation="logo" size={32} px={18} style={{ borderRadius: 3, flexShrink: 0 }} />}
-                {data.allianceName}
+              <div style={{ fontSize: '0.68rem', marginTop: '0.1rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                {data.info.alliance_id && <EveImage category="alliances" id={data.info.alliance_id} variation="logo" size={32} px={16} style={{ borderRadius: 2, border: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }} />}
+                {data.allianceTicker && <span style={{ color: 'var(--gold)', fontWeight: 700 }}>[{data.allianceTicker}]</span>}
+                <span style={{ color: 'var(--blue)' }}>{data.allianceName}</span>
+              </div>
+            )}
+            {data.loc && (
+              <div style={{ fontSize: '0.62rem', color: 'var(--text)', marginTop: '0.2rem' }}>
+                <span style={{ color: 'var(--green)' }}>⬡</span>{' '}
+                {data.loc.system
+                  ? <SolarSystem name={data.loc.system} systemId={data.loc.systemId ?? undefined} fontSize="0.62rem" />
+                  : <span style={{ color: 'var(--text-dim)' }}>—</span>}
+                <span style={{ color: 'var(--text-dim)', margin: '0 0.25rem' }}>·</span>
+                {data.loc.shipName
+                  ? <span style={{ color: 'var(--gold)' }}>{data.loc.shipName}{data.loc.shipType && data.loc.shipType !== data.loc.shipName ? ` (${data.loc.shipType})` : ''}</span>
+                  : <span style={{ color: 'var(--text-dim)' }}>—</span>}
               </div>
             )}
           </div>
