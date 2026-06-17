@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dutch Legions — Recruiting</title>
+  <style>
+    :root { --bg:#05050e; --surface:#0f0f22; --border:#1c1c35; --text:#e1e4f0; --text-dim:#8a90b0; --blue:#00b4d8; --gold:#f0c040; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:
+        radial-gradient(120% 120% at 20% 0%, rgba(0,180,216,0.12), transparent 55%),
+        radial-gradient(100% 120% at 90% 100%, rgba(240,192,64,0.08), transparent 55%), var(--bg);
+      color:var(--text); font-family:'Segoe UI',system-ui,sans-serif;
+      display:flex; align-items:center; justify-content:center; padding:1.5rem; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+      box-shadow:0 8px 40px rgba(0,0,0,0.5); padding:2.5rem 2.25rem; max-width:420px; width:100%; text-align:center; }
+    h1 { font-size:1.4rem; letter-spacing:0.04em; margin:0 0 0.3rem; }
+    h1 span { color:var(--blue); }
+    .sub { color:var(--text-dim); font-size:0.85rem; margin-bottom:1.75rem; line-height:1.6; }
+    .login-btn { background:none; border:none; cursor:pointer; padding:0; transition:filter .15s, transform .15s; }
+    .login-btn:hover { filter:brightness(1.15); transform:translateY(-1px); }
+    .portrait { width:96px; height:96px; border-radius:50%; border:2px solid var(--blue);
+      box-shadow:0 0 18px rgba(0,180,216,0.4); margin-bottom:0.9rem; }
+    .name { font-size:1.2rem; font-weight:700; }
+    .ok { color:var(--gold); font-size:0.8rem; margin:0.5rem 0 1.4rem; }
+    .btn { display:inline-block; background:rgba(224,85,85,0.1); border:1px solid rgba(224,85,85,0.4);
+      color:#e05555; border-radius:5px; font-size:0.78rem; font-weight:600; padding:0.5rem 1rem; cursor:pointer; }
+    .err { color:#e05555; font-size:0.8rem; margin-top:1rem; }
+    .foot { margin-top:1.5rem; font-size:0.62rem; color:var(--text-dim); }
+    .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--blue);
+      border-radius:50%; animation:spin 0.8s linear infinite; margin:1rem auto; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card" id="app">
+    <div class="spinner"></div>
+  </div>
+
+  <script>
+    // ── Configuratie ──────────────────────────────────────────────────────────
+    const CLIENT_ID    = 'ea612f44ca444a50bb205e27d2fa3ead';
+    const REDIRECT_URI = 'https://recruiting.dutchlegionsdashboard.eu';
+    const SCOPES       = 'publicData';   // minimaal: alleen login. Later uit te breiden.
+    const STORE_KEY    = 'recruit_token';
+
+    const app = document.getElementById('app');
+
+    // ── PKCE helpers ────────────────────────────────────────────────────────────
+    function b64url(bytes) {
+      return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+    }
+    async function pkce() {
+      const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+      return { verifier, challenge: b64url(new Uint8Array(hash)) };
+    }
+
+    async function startLogin() {
+      const { verifier, challenge } = await pkce();
+      const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+      sessionStorage.setItem('pkce_verifier', verifier);
+      sessionStorage.setItem('oauth_state', state);
+      const params = new URLSearchParams({
+        response_type: 'code', client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
+        scope: SCOPES, state, code_challenge: challenge, code_challenge_method: 'S256',
+      });
+      location.href = 'https://login.eveonline.com/v2/oauth/authorize?' + params;
+    }
+
+    async function exchange(code, state) {
+      if (state !== sessionStorage.getItem('oauth_state')) throw new Error('State mismatch — probeer opnieuw.');
+      const verifier = sessionStorage.getItem('pkce_verifier');
+      if (!verifier) throw new Error('Geen PKCE-verifier — probeer opnieuw.');
+      sessionStorage.removeItem('oauth_state'); sessionStorage.removeItem('pkce_verifier');
+      const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: CLIENT_ID, code_verifier: verifier }),
+      });
+      if (!res.ok) throw new Error('Token-uitwisseling mislukt (' + res.status + ')');
+      const d = await res.json();
+      const payload = JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      const sub = String(payload.sub);
+      const charId = parseInt(sub.includes(':') ? sub.split(':').pop() : sub, 10);
+      return { accessToken: d.access_token, refreshToken: d.refresh_token,
+        expiresAt: Date.now() + d.expires_in * 1000, characterId: charId, characterName: payload.name };
+    }
+
+    // ── Weergave ────────────────────────────────────────────────────────────────
+    function renderLogin(err) {
+      app.innerHTML =
+        '<h1>Dutch Legions <span>Recruiting</span></h1>' +
+        '<div class="sub">Log in met je EVE Online-character om te beginnen met je aanmelding.</div>' +
+        '<button class="login-btn" id="login" aria-label="Log in met EVE Online">' +
+          '<img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-large.png" alt="LOG IN with EVE Online" width="270" />' +
+        '</button>' +
+        (err ? '<div class="err">' + err + '</div>' : '') +
+        '<div class="foot">Beveiligd via EVE Online SSO · Dutch Legions</div>';
+      document.getElementById('login').onclick = () => startLogin();
+    }
+
+    function renderLoggedIn(t) {
+      app.innerHTML =
+        '<img class="portrait" src="https://images.evetech.net/characters/' + t.characterId + '/portrait?size=128" alt="" />' +
+        '<div class="name">' + t.characterName + '</div>' +
+        '<div class="ok">✓ Ingelogd via EVE Online</div>' +
+        '<div class="sub">Welkom! De aanmeldstappen volgen hier binnenkort.</div>' +
+        '<button class="btn" id="logout">Uitloggen</button>' +
+        '<div class="foot">Dutch Legions · Recruiting</div>';
+      document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); renderLogin(); };
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    (async () => {
+      const url = new URLSearchParams(location.search);
+      const code = url.get('code'), state = url.get('state');
+      if (code && state) {
+        try {
+          const t = await exchange(code, state);
+          localStorage.setItem(STORE_KEY, JSON.stringify(t));
+          history.replaceState({}, '', REDIRECT_URI);  // ?code uit de URL halen
+          renderLoggedIn(t);
+        } catch (e) {
+          history.replaceState({}, '', REDIRECT_URI);
+          renderLogin(e.message || 'Login mislukt');
+        }
+        return;
+      }
+      const saved = localStorage.getItem(STORE_KEY);
+      if (saved) { try { return renderLoggedIn(JSON.parse(saved)); } catch {} }
+      renderLogin();
+    })();
+  </script>
+</body>
+</html>
