@@ -100,7 +100,7 @@ export default function Layout({ children, header, mainStyle }: LayoutProps) {
         )}
 
         {header}
-        <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0.6rem 0.7rem 1.5rem' : '0.875rem 1.25rem 1.5rem', ...mainStyle }}>
+        <main style={{ flex: 1, overflowY: 'scroll', scrollbarGutter: 'stable', padding: isMobile ? '0.6rem 0.7rem 1.5rem' : '0.875rem 1.25rem 1.5rem', ...mainStyle }}>
           {children}
         </main>
       </div>
