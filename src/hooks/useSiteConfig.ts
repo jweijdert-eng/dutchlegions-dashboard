@@ -36,6 +36,7 @@ export function fetchSiteConfig(force = false): Promise<SiteConfig> {
         }
         // Persoonlijke accentkleur (member-instelling) wint van de site-accent.
         applyAccent(getMemberSettings().accent || _cache.accent)
+        try { localStorage.setItem('eve_site_accent', _cache.accent) } catch { /* ignore */ }
         return _cache
       })
       .catch(() => { _cache = EMPTY; return _cache })
