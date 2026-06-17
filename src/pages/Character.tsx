@@ -252,33 +252,41 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
   if (!data) return null
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', boxShadow: '0 4px 18px rgba(0,0,0,0.35)' }}>
       {/* Banner + portrait */}
-      <div style={{ height: 80, background: 'linear-gradient(135deg, #0b0b2a, #0f0f35)', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+      <div style={{ height: 96, background: 'radial-gradient(120% 140% at 0% 0%, rgba(0,180,216,0.22), transparent 55%), linear-gradient(135deg, #0a0a24, #11113a)', position: 'relative' }}>
         {/* Corp logo achtergrond — eigen overflow:hidden zodat portrait vrij blijft */}
         {data.info.corporation_id && (
           <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
             <EveImage
-              category="corporations" id={data.info.corporation_id} variation="logo" size={256} px={120}
-              style={{ position: 'absolute', right: -10, top: '50%', transform: 'translateY(-50%)', opacity: 0.12, filter: 'blur(1px)', borderRadius: 0 }}
-            />
-            <EveImage
-              category="corporations" id={data.info.corporation_id} variation="logo" size={64} px={40}
-              style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', borderRadius: 3, border: '1px solid var(--border)' }}
+              category="corporations" id={data.info.corporation_id} variation="logo" size={256} px={150}
+              style={{ position: 'absolute', right: -20, top: '50%', transform: 'translateY(-50%)', opacity: 0.1, filter: 'blur(2px)', borderRadius: 0 }}
             />
           </div>
         )}
-        <EveImage
-          category="characters" id={token.characterId} variation="portrait" size={128} px={80}
-          style={{ position: 'absolute', bottom: -40, left: '1.5rem', borderRadius: 3, border: '2px solid var(--border)' }}
-        />
+        {/* corp + alliance logo's rechtsboven */}
+        <div style={{ position: 'absolute', right: '0.85rem', top: '0.7rem', display: 'flex', gap: '0.35rem' }}>
+          {data.info.corporation_id && <EveImage category="corporations" id={data.info.corporation_id} variation="logo" size={64} px={34} style={{ borderRadius: 4, border: '1px solid rgba(255,255,255,0.15)' }} />}
+          {data.info.alliance_id && <EveImage category="alliances" id={data.info.alliance_id} variation="logo" size={64} px={34} style={{ borderRadius: 4, border: '1px solid rgba(255,255,255,0.15)' }} />}
+        </div>
+        <div style={{ position: 'absolute', bottom: -42, left: '1.5rem', borderRadius: '50%', padding: 3, background: 'linear-gradient(135deg, var(--blue), #11113a)', boxShadow: '0 0 16px rgba(0,180,216,0.4)' }}>
+          <EveImage
+            category="characters" id={token.characterId} variation="portrait" size={128} px={82} round
+            style={{ display: 'block', border: '2px solid var(--surface)' }}
+          />
+        </div>
       </div>
 
-      <div style={{ padding: '2.75rem 1.5rem 0' }}>
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.2rem' }}>{token.characterName}</div>
-          {data.corp && <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>[{data.corp.ticker}] {data.corp.name}</div>}
-          {data.allianceName && <div style={{ fontSize: '0.68rem', color: 'var(--blue)', marginTop: '0.1rem' }}>{data.allianceName}</div>}
+      <div style={{ padding: '3rem 1.5rem 0' }}>
+        <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.2rem', letterSpacing: '0.01em' }}>{token.characterName}</div>
+            {data.corp && <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>[{data.corp.ticker}] {data.corp.name}</div>}
+            {data.allianceName && <div style={{ fontSize: '0.68rem', color: 'var(--blue)', marginTop: '0.1rem' }}>{data.allianceName}</div>}
+          </div>
+          <span style={{ flexShrink: 0, fontSize: '0.62rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: 20, border: `1px solid ${secColor(data.info.security_status)}55`, color: secColor(data.info.security_status), background: `${secColor(data.info.security_status)}14` }}>
+            {data.info.security_status.toFixed(1)} sec
+          </span>
         </div>
 
         {/* Tabs */}
@@ -308,7 +316,7 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
               { label: 'Corp Members',    value: data.corp ? `${data.corp.member_count}` : '—', color: 'var(--text)' },
               { label: 'Geboren',         value: fmtBirthday(data.info.birthday),      color: 'var(--text-dim)' },
             ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: 'rgba(15,15,34,0.5)', border: '1px solid var(--border)', borderRadius: 2, padding: '0.5rem 0.75rem' }}>
+              <div key={label} style={{ background: 'linear-gradient(160deg, rgba(0,180,216,0.06), rgba(15,15,34,0.55))', border: '1px solid var(--border)', borderRadius: 5, padding: '0.55rem 0.8rem' }}>
                 <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.2rem' }}>{label.toUpperCase()}</div>
                 <div style={{ fontSize: '0.82rem', fontWeight: 600, color }}>{value}</div>
               </div>
@@ -326,7 +334,7 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
                 { label: 'Geleerde skills',    value: String(skillStats.count),      color: 'var(--text)' },
                 { label: 'Skills op level V',  value: String(skillStats.atV),        color: 'var(--green)' },
               ].map(({ label, value, color }) => (
-                <div key={label} style={{ background: 'rgba(15,15,34,0.5)', border: '1px solid var(--border)', borderRadius: 2, padding: '0.5rem 0.75rem' }}>
+                <div key={label} style={{ background: 'linear-gradient(160deg, rgba(0,180,216,0.06), rgba(15,15,34,0.55))', border: '1px solid var(--border)', borderRadius: 5, padding: '0.55rem 0.8rem' }}>
                   <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.2rem' }}>{label.toUpperCase()}</div>
                   <div style={{ fontSize: '0.82rem', fontWeight: 600, color }}>{value}</div>
                 </div>
@@ -508,13 +516,13 @@ function CharCard({ token, allTokens }: { token: TokenData; allTokens: TokenData
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 {ATTRS.map(({ label, value, color }) => (
-                  <div key={label} style={{ background: 'rgba(15,15,34,0.5)', border: '1px solid var(--border)', borderRadius: 2, padding: '0.5rem 0.75rem' }}>
+                  <div key={label} style={{ background: 'linear-gradient(160deg, rgba(0,180,216,0.06), rgba(15,15,34,0.55))', border: '1px solid var(--border)', borderRadius: 5, padding: '0.55rem 0.8rem' }}>
                     <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.2rem' }}>{label.toUpperCase()}</div>
                     <div style={{ fontSize: '1rem', fontWeight: 700, color }}>{value}</div>
                   </div>
                 ))}
               </div>
-              <div style={{ background: 'rgba(15,15,34,0.5)', border: '1px solid var(--border)', borderRadius: 2, padding: '0.5rem 0.75rem' }}>
+              <div style={{ background: 'linear-gradient(160deg, rgba(0,180,216,0.06), rgba(15,15,34,0.55))', border: '1px solid var(--border)', borderRadius: 5, padding: '0.55rem 0.8rem' }}>
                 <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '0.35rem' }}>NEURAL REMAP</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
                   <span style={{ color: attrs.bonus_remaps ? 'var(--green)' : 'var(--text-dim)' }}>
