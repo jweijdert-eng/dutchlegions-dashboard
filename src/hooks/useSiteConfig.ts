@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { IntelChannel } from '../utils/intelChannels'
+import { getMemberSettings } from '../utils/memberSettings'
 
 // Publieke site-config uit /api/siteconfig.php: accentkleur + handige links.
 // Beheerd op de Admin-pagina. Module-gecachet zodat componenten één fetch delen.
@@ -33,7 +34,8 @@ export function fetchSiteConfig(force = false): Promise<SiteConfig> {
             ? d.intelChannels.filter(c => c && typeof c.prefix === 'string' && c.prefix.trim())
             : [],
         }
-        applyAccent(_cache.accent)
+        // Persoonlijke accentkleur (member-instelling) wint van de site-accent.
+        applyAccent(getMemberSettings().accent || _cache.accent)
         return _cache
       })
       .catch(() => { _cache = EMPTY; return _cache })

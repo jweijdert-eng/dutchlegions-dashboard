@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { DEFAULT_NAV } from '../components/Sidebar'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
+import { applyAccent, useSiteConfig } from '../hooks/useSiteConfig'
+
+const ACCENTS = [
+  '#00b4d8', '#22d3ee', '#14b8a6', '#3ecf6e', '#84cc16', '#f0c040',
+  '#f97316', '#e05555', '#f472b6', '#ec4899', '#a78bfa', '#6366f1',
+]
 
 // Eenvoudige toggle-switch.
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -59,8 +65,15 @@ function idbHas(dbName: string, version: number, store: string, key: string): Pr
 
 export default function Settings() {
   const settings = useMemberSettings()
+  const site = useSiteConfig()
   const [chatStatus, setChatStatus] = useState<'unknown' | 'linked' | 'none'>('unknown')
   const [busy, setBusy] = useState(false)
+
+  // Accentkleur live toepassen (persoonlijk wint van site; leeg = site-accent).
+  function pickAccent(hex: string) {
+    setMemberSettings({ accent: hex })
+    applyAccent(hex || site.accent || '')
+  }
 
   useEffect(() => {
     if (!SUPPORTED) { setChatStatus('none'); return }
@@ -138,6 +151,45 @@ export default function Settings() {
               <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Pieptoon bij een nieuwe threat in de Intel-feed.</div>
             </div>
             <Toggle on={settings.sound} onChange={v => setMemberSettings({ sound: v })} />
+          </div>
+        </div>
+
+        {/* Accentkleur */}
+        <div style={card}>
+          <div style={cardTitle}>🎨 Accentkleur</div>
+          <div style={cardSub}>Jouw persoonlijke accentkleur (overschrijft de site-kleur, alleen voor jou). Leeg = site-standaard.</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+            {ACCENTS.map(hex => {
+              const active = settings.accent.toLowerCase() === hex
+              return (
+                <button key={hex} onClick={() => pickAccent(hex)} title={hex}
+                  style={{ width: 26, height: 26, borderRadius: '50%', background: hex, cursor: 'pointer',
+                    border: active ? '2px solid #fff' : '2px solid transparent', boxShadow: active ? `0 0 0 2px ${hex}` : 'none' }} />
+              )
+            })}
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', marginLeft: '0.3rem' }} title="Eigen kleur">
+              <input type="color" value={settings.accent || site.accent || '#00b4d8'} onChange={e => pickAccent(e.target.value)}
+                style={{ width: 26, height: 26, padding: 0, border: '1px solid var(--border)', borderRadius: 4, background: 'none', cursor: 'pointer' }} />
+            </label>
+            {settings.accent && (
+              <button onClick={() => pickAccent('')}
+                style={{ marginLeft: '0.3rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.66rem', padding: '0.25rem 0.55rem', cursor: 'pointer' }}>
+                Site-standaard
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dashboard-widgets */}
+        <div style={card}>
+          <div style={cardTitle}>▦ Dashboard</div>
+          <div style={cardSub}>Onderdelen op je dashboard.</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Local Chat-widget</div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>De Local Chat-widget op het dashboard tonen.</div>
+            </div>
+            <Toggle on={settings.localWidget} onChange={v => setMemberSettings({ localWidget: v })} />
           </div>
         </div>
 

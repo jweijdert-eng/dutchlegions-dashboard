@@ -29,6 +29,7 @@ import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
 import LocalChatWidget from '../components/LocalChatWidget'
 import Starfield from '../components/Starfield'
+import { useMemberSettings } from '../utils/memberSettings'
 
 const GAP = '0.75rem'
 
@@ -582,6 +583,7 @@ export default function Dashboard() {
   const fetchId = useRef(0)
 
   const { editMode, setEditMode, previewMode } = useLayoutMode()
+  const member = useMemberSettings()
   const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(loadOrder)
   const [charOrder, setCharOrder]     = useState<number[]>([])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -982,7 +984,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {allTokens.some(t => t.characterId === 1831618559) && !previewMode && (
+      {member.localWidget && !previewMode && (
         <div style={{ marginBottom: GAP }}>
           <LocalChatWidget />
         </div>
