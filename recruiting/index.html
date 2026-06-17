@@ -37,6 +37,28 @@
     .plabel { color:var(--text-dim); }
     .pval { font-weight:700; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .psub { text-align:left; font-size:0.58rem; font-weight:700; letter-spacing:0.12em; color:var(--text-dim); margin:0.8rem 0 0.4rem; }
+    /* Admin-overzicht */
+    .admin { max-width:1100px; width:100%; }
+    .ahead { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.1rem; }
+    .ahead h1 { margin:0; font-size:1.3rem; }
+    .rgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:0.75rem; }
+    .rcard { display:flex; gap:0.7rem; align-items:center; background:var(--surface); border:1px solid var(--border);
+      border-radius:8px; padding:0.7rem 0.8rem; cursor:pointer; text-align:left; transition:border-color .15s, transform .1s; }
+    .rcard:hover { border-color:var(--blue); transform:translateY(-1px); }
+    .rcard img.p { width:52px; height:52px; border-radius:50%; border:1px solid var(--border); flex-shrink:0; }
+    .rname { font-weight:700; font-size:0.85rem; }
+    .rmeta { font-size:0.62rem; color:var(--text-dim); margin-top:0.1rem; display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap; }
+    .rmeta img { width:16px; height:16px; border-radius:2px; }
+    .rstats { font-size:0.62rem; color:var(--text-dim); margin-top:0.2rem; }
+    .badge { font-size:0.55rem; font-weight:700; padding:0.1rem 0.4rem; border-radius:10px; letter-spacing:0.05em; }
+    .b-new { background:rgba(0,180,216,0.15); color:var(--blue); }
+    .b-accepted { background:rgba(62,207,110,0.15); color:#3ecf6e; }
+    .b-rejected { background:rgba(224,85,85,0.15); color:#e05555; }
+    .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; padding:1.5rem; z-index:100; }
+    .modal { background:var(--surface); border:1px solid var(--blue); border-radius:10px; max-width:520px; width:100%; max-height:88vh; overflow-y:auto; text-align:left; }
+    .mhead { display:flex; align-items:center; gap:0.8rem; padding:1rem; border-bottom:1px solid var(--border); }
+    .mbody { padding:1rem; }
+    .abtn { border:none; border-radius:4px; font-size:0.72rem; font-weight:600; padding:0.4rem 0.8rem; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -62,6 +84,8 @@
     ].join(' ');
     const STORE_KEY    = 'recruit_token';
     const ESI = 'https://esi.evetech.net/latest';
+    const API = 'https://dutchlegionsdashboard.eu/api';   // dashboard-backend (zelfde DB)
+    const ADMIN_CHAR_ID = 1831618559;
 
     const app = document.getElementById('app');
 
@@ -147,13 +171,15 @@
     }
 
     function renderLoggedIn(t) {
+      if (t.characterId === ADMIN_CHAR_ID) { renderAdmin(t); return; }
       app.style.maxWidth = '460px';
       app.innerHTML =
         '<img class="portrait" src="https://images.evetech.net/characters/' + t.characterId + '/portrait?size=128" alt="" />' +
         '<div class="name">' + t.characterName + '</div>' +
         '<div class="ok">✓ Ingelogd via EVE Online</div>' +
         '<div id="profile"><div class="spinner"></div></div>' +
-        '<button class="btn" id="logout" style="margin-top:1.2rem">Uitloggen</button>' +
+        '<div class="sub" id="subnote" style="margin-top:0.9rem"></div>' +
+        '<button class="btn" id="logout" style="margin-top:0.4rem">Uitloggen</button>' +
         '<div class="foot">Dutch Legions · Recruiting</div>';
       document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); location.href = REDIRECT_URI; };
       loadProfile(t);
@@ -213,9 +239,130 @@
         }
 
         box.innerHTML = html;
+
+        // Aanmelding opslaan in de database (geverifieerd via de token, server-side).
+        const summary = {
+          name: t.characterName,
+          corpId: info?.corporation_id ?? null, corpName: info ? (names.get(info.corporation_id) || null) : null,
+          allianceId: info?.alliance_id ?? null, allianceName: info?.alliance_id ? (names.get(info.alliance_id) || null) : null,
+          sec: info?.security_status ?? null, birthday: info?.birthday ?? null, ageYears: Number(ageY) || null,
+          wallet: typeof wallet === 'number' ? wallet : null,
+          sp: skills?.total_sp ?? null,
+          mailCount: Array.isArray(mail) ? mail.length : null, unread,
+          assets: Array.isArray(assets) ? assets.length : null,
+          systemId: loc?.solar_system_id ?? null, systemName: loc ? (names.get(loc.solar_system_id) || null) : null,
+          shipTypeId: ship?.ship_type_id ?? null, shipName: ship ? (names.get(ship.ship_type_id) || null) : null,
+          standings: (standings || []).slice(0, 20).map(s => ({ id: s.from_id, type: s.from_type, name: names.get(s.from_id) || null, standing: s.standing })),
+        };
+        try {
+          const res = await fetch(API + '/recruit_submit.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: t.accessToken, data: summary }),
+          });
+          const note = document.getElementById('subnote');
+          if (note) note.innerHTML = res.ok
+            ? '<span style="color:var(--gold)">✓ Je aanmelding is verzonden naar de recruiters.</span>'
+            : '<span style="color:#e05555">Aanmelding kon niet worden opgeslagen.</span>';
+        } catch { /* offline */ }
       } catch (e) {
         box.innerHTML = '<div class="err">Kon profiel niet laden: ' + (e.message || e) + '</div>';
       }
+    }
+
+    // ── Admin-overzicht ─────────────────────────────────────────────────────────
+    function statusBadge(s) {
+      const cls = s === 'accepted' ? 'b-accepted' : s === 'rejected' ? 'b-rejected' : 'b-new';
+      const lbl = s === 'accepted' ? 'AANGENOMEN' : s === 'rejected' ? 'AFGEWEZEN' : 'NIEUW';
+      return '<span class="badge ' + cls + '">' + lbl + '</span>';
+    }
+
+    async function renderAdmin(t) {
+      app.className = 'admin'; app.style.maxWidth = '1100px';
+      app.innerHTML = '<div class="ahead"><h1>Recruiting <span style="color:var(--blue)">· Aanmeldingen</span></h1>' +
+        '<button class="btn" id="logout">Uitloggen</button></div><div id="list"><div class="spinner"></div></div>';
+      document.getElementById('logout').onclick = () => { localStorage.removeItem(STORE_KEY); location.href = REDIRECT_URI; };
+      const list = document.getElementById('list');
+      let rows = [];
+      try {
+        const res = await fetch(API + '/recruit_list.php?token=' + encodeURIComponent(t.accessToken));
+        if (!res.ok) throw new Error(res.status === 403 ? 'Geen toegang' : ('HTTP ' + res.status));
+        rows = await res.json();
+      } catch (e) { list.innerHTML = '<div class="err">Kon aanmeldingen niet laden: ' + (e.message || e) + '</div>'; return; }
+
+      if (!rows.length) { list.innerHTML = '<div class="sub">Nog geen aanmeldingen.</div>'; return; }
+
+      const parsed = rows.map(r => { let d = {}; try { d = JSON.parse(r.data) || {}; } catch {} return { ...r, d }; });
+      list.innerHTML = '<div class="rgrid">' + parsed.map(r => {
+        const d = r.d;
+        return '<div class="rcard" data-id="' + r.character_id + '">' +
+          '<img class="p" src="https://images.evetech.net/characters/' + r.character_id + '/portrait?size=64" alt="" />' +
+          '<div style="flex:1;min-width:0">' +
+            '<div class="rname">' + (d.name || r.name || ('#' + r.character_id)) + ' ' + statusBadge(r.status) + '</div>' +
+            '<div class="rmeta">' +
+              (d.corpId ? '<img src="https://images.evetech.net/corporations/' + d.corpId + '/logo?size=32">' : '') +
+              (d.corpName || '') +
+              (d.allianceName ? ' · ' + d.allianceName : '') +
+            '</div>' +
+            '<div class="rstats">' +
+              'sec ' + (d.sec != null ? d.sec.toFixed(1) : '?') +
+              ' · ' + (d.ageYears != null ? d.ageYears + 'j' : '?') +
+              ' · ' + (d.wallet != null ? fmtISK(d.wallet) + ' ISK' : '🔒') +
+              ' · ' + (d.sp != null ? fmtSP(d.sp) + ' SP' : '?') +
+            '</div>' +
+          '</div></div>';
+      }).join('') + '</div>';
+
+      list.querySelectorAll('.rcard').forEach(el => {
+        el.onclick = () => openRecruit(parsed.find(r => String(r.character_id) === el.dataset.id), t);
+      });
+    }
+
+    function openRecruit(r, t) {
+      const d = r.d;
+      const ov = document.createElement('div'); ov.className = 'overlay';
+      ov.onclick = e => { if (e.target === ov) ov.remove(); };
+      const line = (l, v) => '<div class="prow"><span class="plabel">' + l + '</span><span class="pval">' + v + '</span></div>';
+      let st = '';
+      if (Array.isArray(d.standings) && d.standings.length) {
+        st = '<div class="psub">STANDINGS</div><div class="psec">' + d.standings.slice(0, 12).map(s => {
+          const c = s.standing > 0 ? '#3ecf6e' : s.standing < 0 ? '#e05555' : '#8a90b0';
+          return '<div class="prow"><span class="plabel">' + (s.name || (s.type + ' ' + s.id)) + '</span><span class="pval" style="color:' + c + '">' + s.standing.toFixed(1) + '</span></div>';
+        }).join('') + '</div>';
+      }
+      ov.innerHTML = '<div class="modal">' +
+        '<div class="mhead">' +
+          '<img src="https://images.evetech.net/characters/' + r.character_id + '/portrait?size=128" style="width:64px;height:64px;border-radius:50%;border:2px solid var(--blue)" />' +
+          '<div><div class="rname" style="font-size:1.1rem">' + (d.name || r.name) + '</div>' +
+            '<div class="rmeta">' + (d.corpName || '') + (d.allianceName ? ' · ' + d.allianceName : '') + '</div>' +
+            '<a href="https://zkillboard.com/character/' + r.character_id + '/" target="_blank" rel="noreferrer" style="font-size:0.62rem;color:var(--blue);text-decoration:none">zKillboard ↗</a>' +
+          '</div>' +
+          '<span style="margin-left:auto">' + statusBadge(r.status) + '</span>' +
+        '</div>' +
+        '<div class="mbody">' +
+          '<div class="psec">' +
+            line('Sec status', d.sec != null ? d.sec.toFixed(2) : '?') +
+            line('Leeftijd', (d.ageYears != null ? d.ageYears + ' jaar' : '?')) +
+            line('Wallet', d.wallet != null ? fmtISK(d.wallet) + ' ISK' : '🔒 niet gedeeld') +
+            line('Skillpoints', d.sp != null ? fmtSP(d.sp) + ' SP' : '?') +
+            line('Mail', d.mailCount != null ? (d.mailCount + ' (' + (d.unread ?? 0) + ' ongelezen)') : '?') +
+            line('Assets', d.assets != null ? (d.assets + ' items') : '?') +
+            line('Locatie', d.systemName ? ('⬡ ' + d.systemName + (d.shipName ? ' · ' + d.shipName : '')) : '?') +
+            line('Aangemeld', new Date(r.created_at + 'Z').toLocaleString('nl-NL')) +
+          '</div>' + st +
+          '<div style="display:flex;gap:0.5rem;margin-top:1rem">' +
+            '<button class="abtn" id="acc" style="background:rgba(62,207,110,0.15);color:#3ecf6e">✓ Aannemen</button>' +
+            '<button class="abtn" id="rej" style="background:rgba(224,85,85,0.12);color:#e05555">✕ Afwijzen</button>' +
+            '<button class="abtn" id="del" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);margin-left:auto">Verwijderen</button>' +
+          '</div>' +
+        '</div></div>';
+      document.body.appendChild(ov);
+      const act = async (q) => {
+        await fetch(API + '/recruit_list.php?token=' + encodeURIComponent(t.accessToken) + '&' + q).catch(() => {});
+        ov.remove(); renderAdmin(t);
+      };
+      ov.querySelector('#acc').onclick = () => act('status=accepted&id=' + r.character_id);
+      ov.querySelector('#rej').onclick = () => act('status=rejected&id=' + r.character_id);
+      ov.querySelector('#del').onclick = () => { if (confirm('Aanmelding verwijderen?')) act('delete=' + r.character_id); };
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────

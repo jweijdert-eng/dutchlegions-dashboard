@@ -19,3 +19,19 @@ function cors(): void {
     header('Access-Control-Allow-Headers: Content-Type');
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
 }
+
+// Verifieer een EVE access-token bij EVE SSO → character-id (of null als ongeldig).
+// Veilig: EVE valideert de token; we vertrouwen geen client-opgegeven id.
+function eveVerify(string $token): ?int {
+    if ($token === '') return null;
+    $ctx = stream_context_create(['http' => [
+        'method' => 'GET',
+        'header' => "Authorization: Bearer $token\r\n",
+        'ignore_errors' => true,
+        'timeout' => 8,
+    ]]);
+    $r = @file_get_contents('https://login.eveonline.com/oauth/verify', false, $ctx);
+    if ($r === false) return null;
+    $j = json_decode($r, true);
+    return isset($j['CharacterID']) ? (int)$j['CharacterID'] : null;
+}
