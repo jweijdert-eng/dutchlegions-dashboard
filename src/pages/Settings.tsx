@@ -69,6 +69,7 @@ export default function Settings() {
   const site = useSiteConfig()
   const [chatStatus, setChatStatus] = useState<'unknown' | 'linked' | 'none'>('unknown')
   const [busy, setBusy] = useState(false)
+  const [accountsOpen, setAccountsOpen] = useState(false)
 
   // Accentkleur live toepassen (persoonlijk wint van site; leeg = site-accent).
   function pickAccent(hex: string) {
@@ -108,11 +109,18 @@ export default function Settings() {
     <Layout header={<PageHeader title="Instellingen" sub="Jouw persoonlijke voorkeuren (per browser)" />}>
       <div style={{ maxWidth: 620 }}>
 
-        {/* Accounts */}
+        {/* Accounts (inklapbaar) */}
         <div style={card}>
-          <div style={cardTitle}>👤 Accounts</div>
-          <div style={cardSub}>Je ingelogde characters. Klik om te kiezen wiens data je ziet (of "Alle accounts"). ★ = hoofdaccount, ⏏ = uitloggen.</div>
-          <AccountsPanel />
+          <div onClick={() => setAccountsOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+            <div style={{ ...cardTitle, marginBottom: 0 }}>👤 Accounts</div>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{accountsOpen ? '▲' : '▼'}</span>
+          </div>
+          {accountsOpen && (
+            <>
+              <div style={{ ...cardSub, marginTop: '0.5rem' }}>Je ingelogde characters. Klik om te kiezen wiens data je ziet (of "Alle accounts"). ★ = hoofdaccount, ⏏ = uitloggen.</div>
+              <AccountsPanel />
+            </>
+          )}
         </div>
 
         {/* Chatlogs-map */}
