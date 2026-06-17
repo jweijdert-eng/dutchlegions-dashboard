@@ -4,6 +4,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
 import { useLocalChat } from '../hooks/useLocalChat'
+import { useMemberSettings } from '../utils/memberSettings'
 
 const TD: React.CSSProperties = { padding: '0.28rem 0.6rem', verticalAlign: 'top' }
 
@@ -41,6 +42,7 @@ interface ContextMenu { x: number; y: number; name: string }
 
 export default function LocalChat() {
   const { tokens, mainCharId } = useAuth()
+  const member      = useMemberSettings()
   const ownNames    = useMemo(() => tokens.map(t => t.characterName), [tokens])
   const activeToken = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
 
@@ -88,10 +90,10 @@ export default function LocalChat() {
       last.message.toLowerCase().includes(n.toLowerCase()) ||
       last.sender.toLowerCase() === n.toLowerCase()
     )
-    if (isMention && Notification.permission === 'granted') {
+    if (isMention && member.notifications && Notification.permission === 'granted') {
       new Notification(`Local: ${last.sender}`, { body: last.message, icon: '/favicon.ico' })
     }
-  }, [messages, ownNames])
+  }, [messages, ownNames, member.notifications])
 
 useEffect(() => {
     // Nieuwste bovenaan: spring naar boven bij een nieuw bericht, tenzij de gebruiker

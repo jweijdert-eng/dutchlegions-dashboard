@@ -9,6 +9,7 @@ import { useLayoutMode } from '../context/LayoutModeContext'
 import { useAlerts } from '../context/useAlerts'
 import { useSiteSettings } from '../hooks/useSiteSettings'
 import { useSiteConfig } from '../hooks/useSiteConfig'
+import { useMemberSettings } from '../utils/memberSettings'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
 import SolarSystem from './SolarSystem'
 import EveImage from './EveImage'
@@ -38,7 +39,7 @@ type NavItem = { label: string; path: string; icon: string; badge: null | 'mail'
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
 
-const DEFAULT_NAV: NavItem[] = [
+export const DEFAULT_NAV: NavItem[] = [
   { label: 'Dashboard',   path: '/',           icon: '▣', badge: null },
   { label: 'Overzicht',   path: '/overview',   icon: '⊞', badge: null },
   { label: 'Character',   path: '/character',  icon: '◈', badge: null },
@@ -387,7 +388,9 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const siteConfig = useSiteConfig()   // accentkleur (auto toegepast) + handige links
   const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
   const isAdminChar = tokens.some(t => t.characterId === 1831618559)
+  const member = useMemberSettings()
   const [nav, setNav] = useState<NavItem[]>(loadNav)
+  const visibleNav = nav.filter(n => !member.hiddenTabs.includes(n.path))
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   // Inklapbaar op desktop (op mobiel is het altijd een volledige drawer)
@@ -578,8 +581,8 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.4rem 0' }}>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={nav.map(n => n.path)} strategy={verticalListSortingStrategy}>
-            {nav.map(item => (
+          <SortableContext items={visibleNav.map(n => n.path)} strategy={verticalListSortingStrategy}>
+            {visibleNav.map(item => (
               <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
                 subItems={item.path === '/kills' ? KILLS_SUBITEMS : undefined} />
             ))}
@@ -587,7 +590,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
         </DndContext>
 
         {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
-        {localChatOn && (
+        {localChatOn && !member.hiddenTabs.includes('/local') && (
           <NavLink
             to="/local"
             title={collapsed ? 'Local Chat' : undefined}
@@ -605,6 +608,24 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
             {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Local Chat</span>}
           </NavLink>
         )}
+
+        {/* Instellingen — altijd zichtbaar voor members */}
+        <NavLink
+          to="/settings"
+          title={collapsed ? 'Instellingen' : undefined}
+          style={({ isActive }) => ({
+            display: 'flex', alignItems: 'center', gap: '0.65rem',
+            padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            textDecoration: 'none',
+            background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+            borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+            color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+          })}
+        >
+          <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⚙</span>
+          {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Instellingen</span>}
+        </NavLink>
 
         {/* Admin — alleen het admin-character, niet in preview */}
         {isAdminChar && !previewMode && (

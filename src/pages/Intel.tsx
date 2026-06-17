@@ -4,6 +4,7 @@ import EveImage from '../components/EveImage'
 import { fetchDscanItems, type DscanGroup } from '../utils/dscan'
 import { useSiteConfig } from '../hooks/useSiteConfig'
 import { DEFAULT_INTEL_CHANNELS } from '../utils/intelChannels'
+import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 
 interface IntelEntry {
   id: string
@@ -282,7 +283,8 @@ export default function Intel() {
   const [activeTab, setActiveTab]           = useState<string>(() => DEFAULT_INTEL_CHANNELS[0].prefix)
   const [filter, setFilter]                 = useState('')
   const [threatOnly, setThreatOnly]         = useState(false)
-  const [soundOn, setSoundOn]               = useState(true)
+  const member  = useMemberSettings()
+  const soundOn = member.sound
   const [tick, setTick]                     = useState(0)
   const [reporterInfo, setReporterInfo]     = useState(new Map<string, ReporterInfo>())
   const [dscanCache, setDscanCache]         = useState(new Map<string, DscanGroup[]>())
@@ -507,7 +509,7 @@ export default function Intel() {
         right={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button
-              onClick={() => setSoundOn(s => !s)}
+              onClick={() => setMemberSettings({ sound: !soundOn })}
               title={soundOn ? 'Geluid aan' : 'Geluid uit'}
               style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 3, color: soundOn ? 'var(--blue)' : 'var(--text-dim)', fontSize: '0.75rem', padding: '0.25rem 0.5rem', cursor: 'pointer' }}
             >
