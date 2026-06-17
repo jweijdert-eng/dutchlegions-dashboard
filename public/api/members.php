@@ -47,7 +47,10 @@ if ($method === 'POST') {
         $pdo->prepare('UPDATE members SET blocked = 0 WHERE character_id = ?')->execute([$charId]);
         echo json_encode(['ok' => true]);
     } elseif ($action === 'allow') {
-        $pdo->prepare('UPDATE members SET allowed = 1 WHERE character_id = ?')->execute([$charId]);
+        // Upsert: werkt ook voor characters die nog nooit hebben ingelogd (op naam toegevoegd).
+        $name = trim((string)($body['name'] ?? ''));
+        $pdo->prepare("INSERT INTO members (character_id, name, last_seen, allowed) VALUES (?, ?, '2000-01-01 00:00:00', 1)
+            ON DUPLICATE KEY UPDATE allowed = 1")->execute([$charId, $name]);
         echo json_encode(['ok' => true]);
     } elseif ($action === 'disallow') {
         $pdo->prepare('UPDATE members SET allowed = 0 WHERE character_id = ?')->execute([$charId]);

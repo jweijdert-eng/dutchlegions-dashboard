@@ -130,6 +130,8 @@ export default function Admin() {
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [pageStats, setPageStats] = useState<{ page: string; views: number; users: number }[]>([])
   const [members, setMembers] = useState<SiteMember[]>([])
+  const [allowName, setAllowName] = useState('')
+  const [allowMsg, setAllowMsg] = useState('')
   const [orgs, setOrgs] = useState<Record<number, MemberOrg>>({})
   const [detailMember, setDetailMember] = useState<SiteMember | null>(null)
   const [detail, setDetail] = useState<MemberDetail | null>(null)
@@ -425,6 +427,29 @@ export default function Admin() {
     await refreshMembers()
   }
 
+  // Allowlist: voeg een character toe op naam (ook als die nog nooit heeft ingelogd)
+  async function addAllowByName() {
+    if (!adminToken) return
+    const name = allowName.trim()
+    if (!name) return
+    setAllowMsg('Zoeken…')
+    try {
+      const r = await fetch('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([name]),
+      })
+      const j = await r.json().catch(() => null)
+      const c = j?.characters?.[0]
+      if (!c) { setAllowMsg(`Character "${name}" niet gevonden.`); return }
+      await fetch('/api/members.php', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: c.id, name: c.name, action: 'allow' }),
+      })
+      setAllowMsg(`${c.name} op de allowlist gezet.`)
+      setAllowName('')
+      await refreshMembers()
+    } catch { setAllowMsg('Er ging iets mis bij het toevoegen.') }
+  }
+
   async function fetchSettings() {
     setLoading(true)
     try {
@@ -571,6 +596,22 @@ export default function Admin() {
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.75rem', letterSpacing: '0.08em' }}>
               {members.length} LEDEN — automatisch bijgewerkt bij inloggen
             </div>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <input
+                value={allowName}
+                onChange={e => { setAllowName(e.target.value); setAllowMsg('') }}
+                onKeyDown={e => { if (e.key === 'Enter') addAllowByName() }}
+                placeholder="Character-naam op allowlist zetten…"
+                style={{ flex: '1 1 220px', minWidth: 0, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 4, padding: '0.4rem 0.6rem', fontSize: '0.75rem' }}
+              />
+              <button
+                onClick={addAllowByName}
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.72rem', fontWeight: 600, border: '1px solid rgba(240,192,64,0.4)', borderRadius: 4, cursor: 'pointer', background: 'transparent', color: 'var(--gold)' }}
+              >
+                + Allowlist
+              </button>
+            </div>
+            {allowMsg && <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.6rem' }}>{allowMsg}</div>}
             {members.length === 0 ? (
               <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>
                 Nog niemand ingelogd op de dashboard.
