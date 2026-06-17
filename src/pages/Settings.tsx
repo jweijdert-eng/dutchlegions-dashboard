@@ -69,7 +69,7 @@ export default function Settings() {
   const site = useSiteConfig()
   const [chatStatus, setChatStatus] = useState<'unknown' | 'linked' | 'none'>('unknown')
   const [busy, setBusy] = useState(false)
-  const [accountsOpen, setAccountsOpen] = useState(false)
+  const [accountsOpen, setAccountsOpen] = useState(true)
 
   // Accentkleur live toepassen (persoonlijk wint van site; leeg = site-accent).
   function pickAccent(hex: string) {
