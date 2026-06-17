@@ -15,8 +15,12 @@ function GuestChat() {
   const [name, setName] = useState(() => localStorage.getItem('guest_chat_name') ?? '')
   const [nameInput, setNameInput] = useState('')
   const [text, setText] = useState('')
+  const [open, setOpen] = useState(false)
+  const [unread, setUnread] = useState(0)
   const lastId = useRef(0)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const openRef = useRef(false)
+  openRef.current = open
 
   function appendNew(rows: GuestMsg[]) {
     if (!rows.length) return
@@ -33,12 +37,13 @@ function GuestChat() {
     fetch('/api/guestchat.php').then(r => r.json()).then((rows: GuestMsg[]) => { if (alive && Array.isArray(rows)) appendNew(rows) }).catch(() => {})
     const id = setInterval(() => {
       fetch(`/api/guestchat.php?after_id=${lastId.current}`).then(r => r.json())
-        .then((rows: GuestMsg[]) => { if (alive && Array.isArray(rows)) appendNew(rows) }).catch(() => {})
+        .then((rows: GuestMsg[]) => { if (alive && Array.isArray(rows) && rows.length) { appendNew(rows); if (!openRef.current) setUnread(u => u + rows.length) } }).catch(() => {})
     }, 4000)
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight }, [messages])
+  useEffect(() => { if (open) setUnread(0) }, [open])
+  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight }, [messages, open])
 
   function saveName() {
     const n = nameInput.trim().slice(0, 64)
@@ -68,8 +73,15 @@ function GuestChat() {
     background: 'linear-gradient(160deg, rgba(11,11,26,0.92) 0%, rgba(5,5,14,0.96) 100%)',
     border: '1px solid rgba(0,180,216,0.2)', borderRadius: 6,
     boxShadow: '0 8px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
-    backdropFilter: 'blur(12px)', width: 320, maxWidth: '100%',
+    backdropFilter: 'blur(12px)', width: 320, maxWidth: 'calc(100vw - 32px)',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  }
+  const fab: React.CSSProperties = {
+    width: 56, height: 56, borderRadius: '50%', position: 'relative',
+    background: 'linear-gradient(135deg, rgba(0,180,216,0.95) 0%, rgba(0,140,180,0.95) 100%)',
+    border: '1px solid rgba(0,180,216,0.6)', color: '#021016', fontSize: '1.5rem', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end',
+    boxShadow: '0 6px 24px rgba(0,0,0,0.5), 0 0 18px rgba(0,180,216,0.45)', transition: 'transform 0.15s',
   }
   const inputStyle: React.CSSProperties = {
     flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
@@ -77,11 +89,14 @@ function GuestChat() {
   }
 
   return (
-    <div style={panel}>
+    <div style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
+      {open && (
+      <div style={panel}>
       <div style={{ padding: '0.6rem 0.85rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
         <span style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.12em', color: '#fff', textTransform: 'uppercase' }}>Live Chat</span>
         <span style={{ marginLeft: 'auto', fontSize: '0.58rem', color: 'var(--text-dim)' }}>publiek</span>
+        <button onClick={() => setOpen(false)} title="Sluiten" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1, padding: 0 }}>✕</button>
       </div>
 
       <div ref={bodyRef} style={{ height: 230, overflowY: 'auto', padding: '0.6rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
@@ -116,6 +131,19 @@ function GuestChat() {
           </div>
         )}
       </div>
+      </div>
+      )}
+
+      <button onClick={() => setOpen(o => !o)} style={fab} title={open ? 'Chat sluiten' : 'Live chat'}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)' }}>
+        {open ? '✕' : '💬'}
+        {!open && unread > 0 && (
+          <span style={{ position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9, background: 'var(--red)', color: '#fff', fontSize: '0.6rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #05050e' }}>
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
     </div>
   )
 }
@@ -169,9 +197,8 @@ export default function Login() {
         background: 'radial-gradient(ellipse at center, transparent 40%, rgba(5,5,14,0.7) 100%)',
       }} />
 
-      {/* Login + live chat */}
-      <div style={{ position: 'relative', zIndex: 10, display: 'flex', gap: '1.75rem', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', width: '100%', padding: '2rem 1.5rem' }}>
-      <div style={{ textAlign: 'center', width: '100%', maxWidth: 420 }}>
+      {/* Login card */}
+      <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', width: '100%', maxWidth: 420, padding: '0 1.5rem' }}>
 
         {/* Logos */}
         <div style={{
@@ -287,7 +314,6 @@ export default function Login() {
       </div>
 
       <GuestChat />
-      </div>
 
       <style>{`
         @keyframes twinkle {
