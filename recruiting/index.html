@@ -53,6 +53,15 @@
     .plabel { color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pval { font-weight:700; text-align:right; white-space:nowrap; }
     .empty { color:var(--text-dim); font-size:.8rem; padding:1rem 0; }
+    .sgrp { background:rgba(0,0,0,.2); border:1px solid var(--border); border-radius:6px; margin-bottom:.4rem; overflow:hidden; }
+    .sgrp > summary { display:flex; justify-content:space-between; gap:.6rem; align-items:center; cursor:pointer; padding:.5rem .8rem; font-size:.78rem; list-style:none; user-select:none; }
+    .sgrp > summary::-webkit-details-marker { display:none; }
+    .sgrp > summary::before { content:'▸'; color:var(--text-dim); margin-right:.4rem; transition:transform .15s; display:inline-block; }
+    .sgrp[open] > summary::before { transform:rotate(90deg); }
+    .sgrp > summary:hover { background:rgba(255,255,255,.04); }
+    .sgname { font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sgmeta { color:var(--text-dim); white-space:nowrap; font-size:.72rem; }
+    .sgrp .psec { background:transparent; border:none; border-top:1px solid var(--border); border-radius:0; }
     .mail { border:1px solid var(--border); border-radius:6px; margin-bottom:.35rem; overflow:hidden; }
     .mailhdr { padding:.45rem .7rem; cursor:pointer; display:flex; gap:.5rem; align-items:center; font-size:.74rem; background:rgba(255,255,255,.03); }
     .mailbody { display:none; padding:.6rem .7rem; font-size:.72rem; white-space:pre-wrap; word-break:break-word; border-top:1px solid var(--border); max-height:300px; overflow-y:auto; }
@@ -102,6 +111,21 @@
     async function esi(p,tok){ const r=await fetch(ESI+p+(p.includes('?')?'&':'?')+'datasource=tranquility', tok?{headers:{Authorization:'Bearer '+tok}}:undefined); if(!r.ok) throw new Error(p+' '+r.status); return r.json(); }
     async function resolveNames(ids){ const out=new Map(); const u=[...new Set(ids.filter(Boolean))]; if(!u.length)return out; try{ const r=await fetch(ESI+'/universe/names/?datasource=tranquility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)}); if(r.ok) for(const x of await r.json()) out.set(x.id,x.name); }catch{} return out; }
     const dt = s => s ? new Date(s).toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'2-digit'}) : '';
+    // concurrency-gelimiteerde map (om ESI niet plat te leggen)
+    async function mapLimit(arr,limit,fn){ let i=0; const workers=Array.from({length:Math.min(limit,arr.length||1)},async()=>{ while(i<arr.length){ const idx=i++; await fn(arr[idx]); } }); await Promise.all(workers); }
+    // Deel skills in per EVE-skillgroep (Gunnery, Spaceship Command, …) met SP-subtotaal.
+    async function groupSkills(allSkills,names){
+      if(!allSkills.length) return [];
+      const tc=(()=>{ try{return JSON.parse(localStorage.getItem('rec_typegrp')||'{}');}catch{return{};} })();
+      const uniq=[...new Set(allSkills.map(s=>s.skill_id))].filter(t=>tc[t]==null);
+      await mapLimit(uniq,8,async tid=>{ try{const t=await esi('/universe/types/'+tid+'/'); tc[tid]=t.group_id||0;}catch{tc[tid]=0;} });
+      try{ localStorage.setItem('rec_typegrp',JSON.stringify(tc)); }catch{}
+      const grpIds=[...new Set(allSkills.map(s=>tc[s.skill_id]).filter(Boolean))];
+      const gn={}; await mapLimit(grpIds,8,async gid=>{ try{const g=await esi('/universe/groups/'+gid+'/'); gn[gid]=g.name;}catch{gn[gid]='Groep '+gid;} });
+      const byGrp=new Map();
+      for(const s of allSkills){ const gid=tc[s.skill_id]||0; const name=gn[gid]||'Overig'; if(!byGrp.has(name))byGrp.set(name,{name,totalSp:0,count:0,skills:[]}); const g=byGrp.get(name); g.totalSp+=s.skillpoints_in_skill; g.count++; g.skills.push({name:names.get(s.skill_id)||('Skill '+s.skill_id),level:s.trained_skill_level,sp:s.skillpoints_in_skill}); }
+      return [...byGrp.values()].sort((a,b)=>b.totalSp-a.totalSp).map(g=>({name:g.name,totalSp:g.totalSp,count:g.count,skills:g.skills.sort((a,b)=>b.sp-a.sp)}));
+    }
 
     // ── OAuth ─────────────────────────────────────────────────────────────────
     async function startLogin(){ const {verifier,challenge}=await pkce(); const state=b64url(crypto.getRandomValues(new Uint8Array(16))); sessionStorage.setItem('pkce_verifier',verifier); sessionStorage.setItem('oauth_state',state);
@@ -137,9 +161,10 @@
         esi('/characters/'+id+'/wallet/journal/',tok).catch(()=>null),
         esi('/characters/'+id+'/contracts/',tok).catch(()=>null),
       ]);
-      const topSkills=(skills?.skills||[]).slice().sort((a,b)=>b.skillpoints_in_skill-a.skillpoints_in_skill).slice(0,20);
-      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of (standings||[]).slice(0,12))ids.push(s.from_id); for(const sk of topSkills)ids.push(sk.skill_id);
+      const allSkills=(skills?.skills||[]).slice().sort((a,b)=>b.skillpoints_in_skill-a.skillpoints_in_skill);
+      const ids=[]; if(info){ if(info.corporation_id)ids.push(info.corporation_id); if(info.alliance_id)ids.push(info.alliance_id);} if(ship)ids.push(ship.ship_type_id); if(loc)ids.push(loc.solar_system_id); for(const s of (standings||[]).slice(0,12))ids.push(s.from_id); for(const sk of allSkills)ids.push(sk.skill_id);
       const names=await resolveNames(ids);
+      const skillGroups=await groupSkills(allSkills,names);
       let mails=[]; if(Array.isArray(mail)&&mail.length){ const recent=mail.slice(0,15); const sn=await resolveNames(recent.map(m=>m.from));
         mails=await Promise.all(recent.map(async m=>{ let body=''; try{const f=await esi('/characters/'+id+'/mail/'+m.mail_id+'/',tok); body=stripHtml(f.body);}catch{} return {subject:m.subject||'',from:sn.get(m.from)||('#'+m.from),date:m.timestamp,read:!!m.is_read,body}; })); }
       const ageY=info?((Date.now()-new Date(info.birthday))/(365.25*864e5)).toFixed(1):null;
@@ -155,7 +180,7 @@
         shipTypeId:ship?.ship_type_id??null, shipName:ship?(names.get(ship.ship_type_id)||null):null,
         standings:(standings||[]).slice(0,20).map(s=>({id:s.from_id,type:s.from_type,name:names.get(s.from_id)||null,standing:s.standing})),
         mails,
-        skills:topSkills.map(sk=>({name:names.get(sk.skill_id)||('Skill '+sk.skill_id),level:sk.trained_skill_level,sp:sk.skillpoints_in_skill})),
+        skillGroups,
         wallet_journal:(Array.isArray(journal)?journal:[]).slice(0,40).map(j=>({date:j.date,type:j.ref_type,amount:j.amount,balance:j.balance,desc:j.description||''})),
         contracts:(Array.isArray(contracts)?contracts:[]).slice(0,40).map(c=>({id:c.contract_id,type:c.type,status:c.status,title:c.title||'',price:c.price,reward:c.reward,date:c.date_issued})),
       };
@@ -175,8 +200,12 @@
         row('Assets', d.assets!=null?(d.assets+' items'):'?')+
         row('Locatie', d.systemName?('⬡ '+esc(d.systemName)+(d.shipName?' · '+esc(d.shipName):'')):'?')+
         '</div>' },
-      skills:{ ic:'◎', lbl:'Skills', count:d=>d.skillCount, html:d=>!d.skills?.length?'<div class="empty">Geen skills gedeeld.</div>':
-        '<div class="psec">'+d.skills.map(s=>row(esc(s.name),'Lvl '+s.level+' · '+fmtSP(s.sp))).join('')+'</div>' },
+      skills:{ ic:'◎', lbl:'Skills', count:d=>d.skillCount, html:d=>{
+        if(d.skillGroups?.length) return d.skillGroups.map(g=>
+          '<details class="sgrp"><summary><span class="sgname">'+esc(g.name)+'</span><span class="sgmeta">'+g.count+' skills · '+fmtSP(g.totalSp)+' SP</span></summary>'+
+          '<div class="psec">'+g.skills.map(s=>row(esc(s.name),'Lvl '+s.level+' · '+fmtSP(s.sp))).join('')+'</div></details>').join('');
+        if(d.skills?.length) return '<div class="psec">'+d.skills.map(s=>row(esc(s.name),'Lvl '+s.level+' · '+fmtSP(s.sp))).join('')+'</div>';
+        return '<div class="empty">Geen skills gedeeld.</div>'; } },
       wallet:{ ic:'◑', lbl:'Wallet', count:()=>null, html:d=>
         '<div class="psec" style="margin-bottom:.8rem">'+row('Saldo', d.wallet!=null?fmtISK(d.wallet)+' ISK':'🔒','var(--gold)')+'</div>'+
         (!d.wallet_journal?.length?'<div class="empty">Geen wallet-historie.</div>':
