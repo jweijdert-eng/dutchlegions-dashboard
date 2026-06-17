@@ -37,6 +37,7 @@ const Assets       = lz(() => import('./pages/Assets'))
 const Admin        = lz(() => import('./pages/Admin'))
 const Fleet        = lz(() => import('./pages/Fleet'))
 const Settings     = lz(() => import('./pages/Settings'))
+const Recruiter    = lz(() => import('./pages/Recruiter'))
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -198,6 +199,7 @@ function AppRoutes() {
       <Route path="/hauling"    element={<ProtectedRoute><Hauling /></ProtectedRoute>} />
       <Route path="/assets"     element={<ProtectedRoute><Assets /></ProtectedRoute>} />
       <Route path="/admin"      element={<AdminRoute><Admin /></AdminRoute>} />
+      <Route path="/recruiter"  element={<AdminRoute><Recruiter /></AdminRoute>} />
       <Route path="/login"      element={<Login />} />
       <Route path="/debug/unresolved" element={<ProtectedRoute><DebugUnresolved /></ProtectedRoute>} />
       <Route path="*"          element={<Navigate to="/" replace />} />

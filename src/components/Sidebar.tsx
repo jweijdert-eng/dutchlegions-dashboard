@@ -638,6 +638,26 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Instellingen</span>}
         </NavLink>
 
+        {/* Recruiter — alleen het admin-character */}
+        {isAdminChar && !previewMode && (
+          <NavLink
+            to="/recruiter"
+            title={collapsed ? 'Recruiter' : undefined}
+            style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: '0.65rem',
+              padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              textDecoration: 'none',
+              background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+              borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+              color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+            })}
+          >
+            <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>🔍</span>
+            {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Recruiter</span>}
+          </NavLink>
+        )}
+
         {/* Admin — alleen het admin-character, niet in preview */}
         {isAdminChar && !previewMode && (
           <>
