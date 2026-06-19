@@ -190,6 +190,9 @@ async function apiDelete(charId: number, id: string) {
 const JOB_LABEL: Record<JobState, string> = { todo: 'Te doen', running: 'Job draait', done: 'Klaar' }
 const JOB_COLOR: Record<JobState, string> = { todo: 'var(--text-dim)', running: 'var(--gold)', done: '#3ecf6e' }
 
+// Standaard mineralen (komen uit ore) — die mijn je zelf i.p.v. kopen
+const MINERAL_IDS = new Set([34, 35, 36, 37, 38, 39, 40, 11399])
+
 export default function BuildProject() {
   const { tokens, activeTokens, mainCharId } = useAuth()
   const charId = mainCharId ?? tokens[0]?.characterId ?? 0
@@ -469,6 +472,26 @@ export default function BuildProject() {
     return bom.buys.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.net, 0)
   }, [bom, prices])
 
+  // Boodschappenlijst: per koop-onderdeel het exacte aantal dat je nóg moet kopen
+  // (na voorraad én al-gekocht). Te kopiëren als EVE-multibuy (naam<TAB>aantal).
+  const [copied, setCopied] = useState(false)
+  const remaining = (b: BuyRow) => buyCovered(b) ? 0 : Math.max(0, b.net - (active?.progress[b.typeId]?.bought ?? 0))
+  // Te kopen = alles behalve mineralen (die mijn je); mineralen apart als 'te mijnen'
+  const shoppingList = useMemo(() => {
+    if (!bom || !active) return [] as { typeId: number; name: string; qty: number }[]
+    return bom.buys.filter(b => !MINERAL_IDS.has(b.typeId)).map(b => ({ typeId: b.typeId, name: nameOf(b.typeId), qty: remaining(b) })).filter(x => x.qty > 0)
+  }, [bom, active, names])
+  const mineList = useMemo(() => {
+    if (!bom || !active) return [] as { typeId: number; name: string; qty: number }[]
+    return bom.buys.filter(b => MINERAL_IDS.has(b.typeId)).map(b => ({ typeId: b.typeId, name: nameOf(b.typeId), qty: remaining(b) })).filter(x => x.qty > 0)
+  }, [bom, active, names])
+  const remainingCost = useMemo(() => shoppingList.reduce((s, x) => s + (prices.get(x.typeId) ?? 0) * x.qty, 0), [shoppingList, prices])
+  const copyShoppingList = () => {
+    const txt = shoppingList.map(x => `${x.name}\t${x.qty}`).join('\n')
+    if (!txt) return
+    navigator.clipboard?.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
+  }
+
   // Bouwen-vs-kopen per eenheid: kosten om zelf te bouwen (directe materialen tegen
   // Jita-sell, met ME) versus de marktprijs van het kant-en-klare item.
   const me = active?.me ?? 0
@@ -722,7 +745,16 @@ export default function BuildProject() {
               })}
             </Section>
 
-            {/* Te kopen */}
+            {/* Te kopen — inkoop-toolbar met multibuy-export */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '0 2px 6px' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                Inkoop: <strong style={{ color: '#fff' }}>{shoppingList.length}</strong> regels · ~{fmtISK(remainingCost)} ISK
+                {mineList.length > 0 && <> · <span style={{ color: '#f0c674' }}>⛏️ {mineList.length} mineralen zelf mijnen</span></>}
+              </span>
+              <button onClick={copyShoppingList} disabled={shoppingList.length === 0}
+                style={{ ...pill, marginLeft: 'auto', background: 'rgba(255,255,255,0.08)', borderColor: 'var(--text-dim)', color: shoppingList.length ? 'var(--text)' : 'var(--text-dim)' }}
+                title="Kopieer als EVE multibuy (zonder mineralen) — plak in het markt-multibuy venster">{copied ? '✓ gekopieerd' : '📋 Kopieer inkooplijst'}</button>
+            </div>
             <Section title={`Te kopen (${bom.buys.filter(b => !buyCovered(b)).length}/${bom.buys.length})`}>
               {bom.buys.map(b => {
                 const pr = active.progress[b.typeId]
@@ -739,7 +771,12 @@ export default function BuildProject() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(b.typeId)}</div>
                       <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {b.net > 0 ? <span>{fmtNum(b.net)} kopen{price > 0 && <> · ~{fmtISK(price * b.net)} ISK</>}</span> : <span style={{ color: '#3ecf6e' }}>✓ in voorraad</span>}
+                        {(() => { const rem = covered ? 0 : Math.max(0, b.net - bought); const mineral = MINERAL_IDS.has(b.typeId)
+                          if (rem <= 0) return <span style={{ color: '#3ecf6e' }}>✓ {covered ? 'compleet' : 'in voorraad'}</span>
+                          return mineral
+                            ? <span style={{ color: '#f0c674', fontWeight: 600 }}>⛏️ nog {fmtNum(rem)} mijnen</span>
+                            : <span style={{ color: '#fff', fontWeight: 600 }}>nog {fmtNum(rem)} kopen{price > 0 && <> · ~{fmtISK(price * rem)} ISK</>}</span>
+                        })()}
                         <span>({fmtNum(b.needed)} nodig)</span>
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                         {(() => { const v = buildable ? verdict(b.typeId) : null; return v && v.cheaper === 'build' && v.savePct >= 2
