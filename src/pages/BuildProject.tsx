@@ -590,14 +590,15 @@ export default function BuildProject() {
               {([['tree', '🌳 Bouwschema'], ['list', '📋 Inkooplijst']] as const).map(([m, lbl2]) => (
                 <button key={m} onClick={() => setViewMode(m)} style={{
                   ...pill, padding: '4px 12px',
-                  borderColor: viewMode === m ? 'var(--blue)' : 'var(--border)',
-                  color: viewMode === m ? '#fff' : 'var(--text-dim)',
+                  background: viewMode === m ? 'rgba(80,150,255,0.18)' : 'rgba(255,255,255,0.05)',
+                  borderColor: viewMode === m ? 'var(--blue)' : 'var(--text-dim)',
+                  color: viewMode === m ? '#fff' : 'var(--text)',
                 }}>{lbl2}</button>
               ))}
               {viewMode === 'tree' && allParents.size > 1 && (
                 <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-                  <button onClick={collapseAll} style={{ ...pill, padding: '4px 10px' }} title="Alle sub-onderdelen inklappen">⊟ Alles inklappen</button>
-                  <button onClick={expandAll} style={{ ...pill, padding: '4px 10px' }} title="Alles uitklappen">⊞ Alles uitklappen</button>
+                  <button onClick={collapseAll} style={{ ...pill, padding: '4px 10px', background: 'rgba(255,255,255,0.08)', borderColor: 'var(--text-dim)', color: 'var(--text)' }} title="Alle sub-onderdelen inklappen">⊟ Alles inklappen</button>
+                  <button onClick={expandAll} style={{ ...pill, padding: '4px 10px', background: 'rgba(255,255,255,0.08)', borderColor: 'var(--text-dim)', color: 'var(--text)' }} title="Alles uitklappen">⊞ Alles uitklappen</button>
                 </span>
               )}
             </div>
