@@ -78,13 +78,8 @@ const DEFAULT_LAYOUT: LayoutEntry[] = [
 ]
 
 const NAV_LS_KEY = 'nav_layout_v1'
-export function loadLayout(): LayoutEntry[] {
-  let layout: LayoutEntry[] = DEFAULT_LAYOUT
-  try {
-    const saved = JSON.parse(localStorage.getItem(NAV_LS_KEY) ?? 'null')
-    if (Array.isArray(saved) && saved.length) layout = saved
-  } catch { /* default */ }
-  // opschonen + nieuwe pagina's die nog nergens staan onderaan toevoegen
+// Onbekende paden eruit + nieuwe pagina's die nog nergens staan onderaan toevoegen
+function cleanLayout(layout: LayoutEntry[]): LayoutEntry[] {
   const present = new Set<string>()
   const clean: LayoutEntry[] = []
   for (const e of layout) {
@@ -99,7 +94,17 @@ export function loadLayout(): LayoutEntry[] {
   for (const i of NAV_ITEMS) if (!present.has(i.path)) clean.push({ kind: 'item', path: i.path })
   return clean
 }
+export function loadLayout(): LayoutEntry[] {
+  let layout: LayoutEntry[] = DEFAULT_LAYOUT
+  try {
+    const saved = JSON.parse(localStorage.getItem(NAV_LS_KEY) ?? 'null')
+    if (Array.isArray(saved) && saved.length) layout = saved
+  } catch { /* default */ }
+  return cleanLayout(layout)
+}
 export function saveLayout(l: LayoutEntry[]) { try { localStorage.setItem(NAV_LS_KEY, JSON.stringify(l)) } catch { /* ignore */ } }
+
+const ADMIN_CHAR_ID = 1831618559
 
 const rowStyle = (isActive: boolean, collapsed: boolean, nested: boolean): React.CSSProperties => ({
   display: 'flex', alignItems: 'center', gap: '0.65rem',
@@ -164,7 +169,7 @@ const eArrow: React.CSSProperties = { fontSize: '0.55rem', lineHeight: 1, backgr
 const eInput: React.CSSProperties = { background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid var(--border)', borderRadius: 3, padding: '2px 4px', fontSize: '0.7rem' }
 const eSelect: React.CSSProperties = { fontSize: '0.6rem', background: 'rgba(0,0,0,0.35)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 3, maxWidth: 90 }
 
-function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void; labelOf: (p: string) => string; onRenameItem: (p: string, v: string) => void }) {
+function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish, saved }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void; labelOf: (p: string) => string; onRenameItem: (p: string, v: string) => void; onPublish: () => void; saved: 'idle' | 'saving' | 'done' }) {
   const groups = layout.filter((e): e is Extract<LayoutEntry, { kind: 'group' }> => e.kind === 'group')
   const moveTop = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= layout.length) return; const n = [...layout];[n[i], n[j]] = [n[j], n[i]]; onChange(n) }
   const addGroup = () => onChange([...layout, { kind: 'group', id: 'grp-' + Date.now().toString(36), label: 'Nieuwe groep', icon: '▦', children: [] }])
@@ -191,9 +196,17 @@ function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem }: { layou
 
   return (
     <div style={{ padding: '2px 6px 8px' }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         <button onClick={addGroup} style={eBtn}>＋ Groep</button>
         <button onClick={onReset} style={eBtn} title="Terug naar de standaard-indeling">↺ Standaard</button>
+      </div>
+      <button onClick={onPublish} disabled={saved === 'saving'}
+        style={{ ...eBtn, width: '100%', marginBottom: 8, padding: '5px', background: saved === 'done' ? 'rgba(62,207,110,0.2)' : 'rgba(0,180,216,0.15)', borderColor: saved === 'done' ? '#3ecf6e' : 'var(--blue)', color: saved === 'done' ? '#3ecf6e' : 'var(--blue)', fontWeight: 700 }}
+        title="Sla deze indeling op zodat alle members 'm zien">
+        {saved === 'saving' ? '⏳ opslaan…' : saved === 'done' ? '✓ opgeslagen voor iedereen' : '💾 Opslaan voor iedereen'}
+      </button>
+      <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', marginBottom: 8, lineHeight: 1.4 }}>
+        Wijzigingen zie je meteen zelf; klik <strong>Opslaan voor iedereen</strong> om ze voor alle members te publiceren.
       </div>
       {layout.map((e, i) => e.kind === 'group' ? (
         <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 5, marginBottom: 6, padding: 4 }}>
@@ -480,6 +493,25 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
     try { localStorage.setItem('nav_labels', JSON.stringify(next)) } catch { /* ignore */ }
     return next
   })
+
+  // Gedeelde menu-indeling van de server laden (geldt voor iedereen; overschrijft de lokale cache)
+  useEffect(() => {
+    fetch('/api/navconfig.php').then(r => r.ok ? r.json() : null).then(d => {
+      if (!d) return
+      if (Array.isArray(d.layout) && d.layout.length) { const l = cleanLayout(d.layout); setLayout(l); saveLayout(l) }
+      if (d.labels && typeof d.labels === 'object' && !Array.isArray(d.labels)) { setLabels(d.labels); try { localStorage.setItem('nav_labels', JSON.stringify(d.labels)) } catch { /* ignore */ } }
+    }).catch(() => { /* offline: lokale cache */ })
+  }, [])
+  // Admin publiceert de huidige indeling naar iedereen
+  const [navSaved, setNavSaved] = useState<'idle' | 'saving' | 'done'>('idle')
+  const publishNav = async () => {
+    setNavSaved('saving')
+    try {
+      const r = await fetch('/api/navconfig.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ characterId: ADMIN_CHAR_ID, layout, labels }) })
+      setNavSaved(r.ok ? 'done' : 'idle')
+      if (r.ok) setTimeout(() => setNavSaved('idle'), 2000)
+    } catch { setNavSaved('idle') }
+  }
   const isHidden = (p: string) => member.hiddenTabs.includes(p)
   // welke groepen staan open (persistent per browser)
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
@@ -668,16 +700,16 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.4rem 0' }}>
-        {!collapsed && (
+        {!collapsed && isAdminChar && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 0.6rem 2px' }}>
-            <button onClick={() => setNavEdit(v => !v)} title="Menu indelen — groepen maken en items verplaatsen"
+            <button onClick={() => setNavEdit(v => !v)} title="Menu indelen voor iedereen — groepen maken en items verplaatsen"
               style={{ fontSize: '0.6rem', background: 'none', border: 'none', cursor: 'pointer', color: navEdit ? 'var(--blue)' : 'var(--text-dim)' }}>
               {navEdit ? '✓ klaar' : '✎ menu'}
             </button>
           </div>
         )}
-        {navEdit && !collapsed
-          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} />
+        {navEdit && !collapsed && isAdminChar
+          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} />
           : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
           ? layout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
