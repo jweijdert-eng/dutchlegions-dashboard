@@ -47,6 +47,13 @@ function loadRecipes(): Promise<Map<number, Recipe>> {
   return _bpInflight
 }
 
+// Reactie-recepten (zelfde compacte vorm als blueprints.json)
+let _rxInflight: Promise<Record<string, CompactBp>> | null = null
+function loadReactions(): Promise<Record<string, CompactBp>> {
+  if (!_rxInflight) _rxInflight = fetch('/reactions.json').then(r => r.json()).catch(() => ({}))
+  return _rxInflight
+}
+
 // PI-produceerbare commodities = alle schematic-outputs (is_input=false) uit schematics.json
 let _piInflight: Promise<Set<number>> | null = null
 function loadPiOutputs(): Promise<Set<number>> {
@@ -191,6 +198,7 @@ export default function BuildProject() {
   const [names, setNames] = useState<Record<string, string>>({})
   const [recipes, setRecipes] = useState<Map<number, Recipe>>(new Map())
   const [piSet, setPiSet] = useState<Set<number>>(new Set())
+  const [reactionSet, setReactionSet] = useState<Set<number>>(new Set())
   const [projects, setProjects] = useState<Project[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -216,7 +224,18 @@ export default function BuildProject() {
   const nameOf = (id: number) => names[String(id)] ?? `Type ${id}`
 
   useEffect(() => {
-    Promise.all([loadTypeNames(), loadRecipes(), loadPiOutputs()]).then(([n, r, pi]) => { setNames(n); setRecipes(r); setPiSet(pi) })
+    Promise.all([loadTypeNames(), loadRecipes(), loadPiOutputs(), loadReactions()]).then(([n, r, pi, rx]) => {
+      setNames(n); setPiSet(pi)
+      // reacties samenvoegen met de receptenmap (manufacturing heeft voorrang bij overlap)
+      const merged = new Map(r)
+      const rset = new Set<number>()
+      for (const [bid, bp] of Object.entries(rx)) {
+        const [prodId, perRun] = bp.p
+        rset.add(prodId)
+        if (!merged.has(prodId)) merged.set(prodId, { perRun, materials: bp.m, bpId: Number(bid) })
+      }
+      setRecipes(merged); setReactionSet(rset)
+    })
   }, [])
 
   useEffect(() => {
@@ -469,15 +488,17 @@ export default function BuildProject() {
   }
   const targetVerdict = active ? verdict(active.targetTypeId) : null
 
-  // Heb je de blueprint om dit te bouwen? (alleen tonen als we je BP's hebben opgehaald)
+  // Heb je de blueprint/formula om dit te bouwen?
   const bpBadge = (typeId: number) => {
-    if (bpOwned.size === 0) return null
     const r = recipes.get(typeId)
     if (!r) return null
-    const bp = bpOwned.get(r.bpId)
-    return bp
-      ? <span style={{ ...badge, color: '#7fd1ff' }} title={`Blueprint in bezit · ME ${bp.me}`}>📘 {bp.bpo ? 'BPO' : 'BPC'} ME{bp.me}</span>
-      : <span style={{ ...badge, color: 'var(--red)' }} title="Je hebt deze blueprint (nog) niet">⚠ geen BP</span>
+    const isReaction = reactionSet.has(typeId)
+    const bp = bpOwned.size ? bpOwned.get(r.bpId) : undefined
+    if (bp) return <span style={{ ...badge, color: '#7fd1ff' }} title={`In bezit · ME ${bp.me}`}>📘 {isReaction ? 'Formula' : bp.bpo ? 'BPO' : 'BPC'}{isReaction ? '' : ` ME${bp.me}`}</span>
+    // reactie-formula's komen niet betrouwbaar uit ESI /blueprints → toon neutrale ⚗️ i.p.v. een rode waarschuwing
+    if (isReaction) return <span style={{ ...badge, color: '#c9a0ff' }} title="Reactie — vereist een Reaction Formula">⚗️ reactie</span>
+    if (bpOwned.size === 0) return null
+    return <span style={{ ...badge, color: 'var(--red)' }} title="Je hebt deze blueprint (nog) niet">⚠ geen BP</span>
   }
 
   // Te maken met Planetary Interaction?

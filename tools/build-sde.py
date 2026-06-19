@@ -4,6 +4,7 @@ Draai: python tools/build-sde.py  (daarna committen + pushen)
 
 Output (compact, meegedeployd met de site → geen lokale server nodig):
   public/blueprints.json  { bpId: { m:[[matId,qty],...], p:[prodId,qty] } }   (manufacturing)
+  public/reactions.json   { formulaId: { m:[[matId,qty],...], p:[prodId,qty] } } (reacties)
   public/type-names.json  { typeId: "Naam" }                                  (published types, en)
   public/schematics.json  { id: { schematic_name, cycle_time, pins:[{type_id,is_input,quantity}] } } (PI)
 """
@@ -47,6 +48,22 @@ for bid, b in bp.items():
         'p': [prod['type_id'], prod['quantity']],
     }
 write('blueprints.json', out_bp)
+
+# Reacties (reaction-formula's) — zelfde compacte vorm als manufacturing
+out_rx = {}
+for bid, b in bp.items():
+    rx = (b.get('activities') or {}).get('reaction')
+    if not rx:
+        continue
+    prods = rx.get('products') or {}
+    if not prods:
+        continue
+    prod = next(iter(prods.values()))
+    out_rx[bid] = {
+        'm': [[m['type_id'], m['quantity']] for m in (rx.get('materials') or {}).values()],
+        'p': [prod['type_id'], prod['quantity']],
+    }
+write('reactions.json', out_rx)
 
 # Type-namen (published, Engels)
 types = load('types.json')
