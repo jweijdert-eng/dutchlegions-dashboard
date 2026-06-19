@@ -157,6 +157,75 @@ function GroupRow({ group, badgeCount, collapsed, open, onToggle }: { group: Ext
   )
 }
 
+// ── Menu-editor: groepen maken/hernoemen/verwijderen, items verplaatsen & ordenen ──
+const eBtn: React.CSSProperties = { fontSize: '0.62rem', background: 'rgba(255,255,255,0.07)', color: 'var(--text)', border: '1px solid var(--text-dim)', borderRadius: 4, padding: '2px 7px', cursor: 'pointer' }
+const eArrow: React.CSSProperties = { fontSize: '0.55rem', lineHeight: 1, background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '0 1px' }
+const eInput: React.CSSProperties = { background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid var(--border)', borderRadius: 3, padding: '2px 4px', fontSize: '0.7rem' }
+const eSelect: React.CSSProperties = { fontSize: '0.6rem', background: 'rgba(0,0,0,0.35)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 3, maxWidth: 90 }
+
+function NavEditor({ layout, onChange, onReset }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void }) {
+  const groups = layout.filter((e): e is Extract<LayoutEntry, { kind: 'group' }> => e.kind === 'group')
+  const moveTop = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= layout.length) return; const n = [...layout];[n[i], n[j]] = [n[j], n[i]]; onChange(n) }
+  const addGroup = () => onChange([...layout, { kind: 'group', id: 'grp-' + Date.now().toString(36), label: 'Nieuwe groep', icon: '▦', children: [] }])
+  const renameGroup = (id: string, label: string) => onChange(layout.map(e => e.kind === 'group' && e.id === id ? { ...e, label } : e))
+  const setIcon = (id: string, icon: string) => onChange(layout.map(e => e.kind === 'group' && e.id === id ? { ...e, icon: icon || '▦' } : e))
+  const deleteGroup = (id: string) => { const n: LayoutEntry[] = []; for (const e of layout) { if (e.kind === 'group' && e.id === id) e.children.forEach(p => n.push({ kind: 'item', path: p })); else n.push(e) } onChange(n) }
+  const moveChild = (gid: string, idx: number, dir: -1 | 1) => onChange(layout.map(e => {
+    if (e.kind !== 'group' || e.id !== gid) return e
+    const j = idx + dir; if (j < 0 || j >= e.children.length) return e
+    const ch = [...e.children];[ch[idx], ch[j]] = [ch[j], ch[idx]]; return { ...e, children: ch }
+  }))
+  const moveItem = (path: string, target: string) => {
+    let n: LayoutEntry[] = layout.map(e => e.kind === 'group' ? { ...e, children: e.children.filter(p => p !== path) } : e).filter(e => !(e.kind === 'item' && e.path === path))
+    if (target === '__top') n = [...n, { kind: 'item', path }]
+    else n = n.map(e => e.kind === 'group' && e.id === target ? { ...e, children: [...e.children, path] } : e)
+    onChange(n)
+  }
+  const groupSelect = (path: string, current: string) => (
+    <select value={current} onChange={e => moveItem(path, e.target.value)} title="Naar groep verplaatsen" style={eSelect}>
+      <option value="__top">— los —</option>
+      {groups.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+    </select>
+  )
+
+  return (
+    <div style={{ padding: '2px 6px 8px' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <button onClick={addGroup} style={eBtn}>＋ Groep</button>
+        <button onClick={onReset} style={eBtn} title="Terug naar de standaard-indeling">↺ Standaard</button>
+      </div>
+      {layout.map((e, i) => e.kind === 'group' ? (
+        <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 5, marginBottom: 6, padding: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveTop(i, -1)} style={eArrow}>▲</button><button onClick={() => moveTop(i, 1)} style={eArrow}>▼</button></span>
+            <input value={e.icon} onChange={ev => setIcon(e.id, ev.target.value.slice(0, 2))} style={{ ...eInput, width: 26, textAlign: 'center' }} title="Icoon" />
+            <input value={e.label} onChange={ev => renameGroup(e.id, ev.target.value)} style={{ ...eInput, flex: 1, fontWeight: 700 }} />
+            <button onClick={() => deleteGroup(e.id)} title="Groep opheffen (items worden los)" style={{ ...eArrow, color: 'var(--red)', fontSize: '0.7rem' }}>✕</button>
+          </div>
+          <div style={{ marginLeft: 6, marginTop: 3 }}>
+            {e.children.length === 0 && <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', padding: '2px 4px' }}>leeg — verplaats items hierheen</div>}
+            {e.children.map((p, ci) => ITEM_BY_PATH[p] && (
+              <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '1px 2px', fontSize: '0.7rem' }}>
+                <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveChild(e.id, ci, -1)} style={eArrow}>▲</button><button onClick={() => moveChild(e.id, ci, 1)} style={eArrow}>▼</button></span>
+                <span style={{ width: 14, textAlign: 'center' }}>{ITEM_BY_PATH[p].icon}</span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ITEM_BY_PATH[p].label}</span>
+                {groupSelect(p, e.id)}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : ITEM_BY_PATH[e.path] ? (
+        <div key={e.path} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px', marginBottom: 2, fontSize: '0.7rem' }}>
+          <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveTop(i, -1)} style={eArrow}>▲</button><button onClick={() => moveTop(i, 1)} style={eArrow}>▼</button></span>
+          <span style={{ width: 14, textAlign: 'center' }}>{ITEM_BY_PATH[e.path].icon}</span>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ITEM_BY_PATH[e.path].label}</span>
+          {groupSelect(e.path, '__top')}
+        </div>
+      ) : null)}
+    </div>
+  )
+}
+
 interface CharData {
   characterId: number
   wallet: number | null
@@ -398,7 +467,10 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
   const isAdminChar = tokens.some(t => t.characterId === 1831618559)
   const member = useMemberSettings()
-  const [layout] = useState<LayoutEntry[]>(loadLayout)
+  const [layout, setLayout] = useState<LayoutEntry[]>(loadLayout)
+  const applyLayout = (l: LayoutEntry[]) => { setLayout(l); saveLayout(l) }
+  const resetNav = () => { try { localStorage.removeItem('nav_layout_v1') } catch { /* ignore */ }; setLayout(loadLayout()) }
+  const [navEdit, setNavEdit] = useState(false)
   const isHidden = (p: string) => member.hiddenTabs.includes(p)
   // welke groepen staan open (persistent per browser)
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
@@ -587,7 +659,17 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.4rem 0' }}>
-        {collapsed
+        {!collapsed && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 0.6rem 2px' }}>
+            <button onClick={() => setNavEdit(v => !v)} title="Menu indelen — groepen maken en items verplaatsen"
+              style={{ fontSize: '0.6rem', background: 'none', border: 'none', cursor: 'pointer', color: navEdit ? 'var(--blue)' : 'var(--text-dim)' }}>
+              {navEdit ? '✓ klaar' : '✎ menu'}
+            </button>
+          </div>
+        )}
+        {navEdit && !collapsed
+          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} />
+          : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
           ? layout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
               .filter(p => ITEM_BY_PATH[p] && !isHidden(p))
