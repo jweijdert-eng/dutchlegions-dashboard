@@ -3,7 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
-import { getWarIds, getWar, getCharacterInfo, resolveNames, type War, type WarParty, type WarAlly } from '../api/esi'
+import { getWarIds, getWar, getWarKillmails, getKillmailDetail, getCharacterInfo, resolveNames, type War, type WarParty, type WarAlly, type Killmail } from '../api/esi'
 
 const PAGE = 60
 
@@ -40,6 +40,11 @@ export default function Wars() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [filter, setFilter] = useState<'all' | 'active' | 'mine'>('all')
   usePageLoading(loading)
+
+  // Killmails per oorlog (lazy bij uitklappen)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [kmByWar, setKmByWar] = useState<Map<number, Killmail[]>>(new Map())
+  const [kmLoading, setKmLoading] = useState<Set<number>>(new Set())
 
   // Eigen corp/alliance bepalen → om betrokken oorlogen te markeren
   useEffect(() => {
@@ -90,6 +95,40 @@ export default function Wars() {
 
   const mineCount = useMemo(() => wars.filter(involvesMine).length, [wars, involvesMine])
   const nameOf = (id: number) => names.get(id) ?? `#${id}`
+
+  const loadKills = useCallback(async (warId: number) => {
+    setKmLoading(prev => new Set(prev).add(warId))
+    try {
+      const refs = await getWarKillmails(warId).catch(() => [] as { killmail_id: number; killmail_hash: string }[])
+      const kms = (await Promise.all(refs.slice(0, 25).map(r => getKillmailDetail(r.killmail_id, r.killmail_hash))))
+        .filter((k): k is Killmail => !!k)
+        .sort((a, b) => b.killmail_time.localeCompare(a.killmail_time))
+      const ids = new Set<number>()
+      for (const k of kms) {
+        ids.add(k.victim.ship_type_id)
+        if (k.victim.character_id) ids.add(k.victim.character_id)
+        const fb = k.attackers.find(a => a.final_blow)
+        if (fb?.character_id) ids.add(fb.character_id)
+        else if (fb?.corporation_id) ids.add(fb.corporation_id)
+      }
+      const nm = await resolveNames([...ids].filter(Boolean)).catch(() => new Map<number, string>())
+      setNames(prev => new Map([...prev, ...nm]))
+      setKmByWar(prev => new Map(prev).set(warId, kms))
+    } finally {
+      setKmLoading(prev => { const n = new Set(prev); n.delete(warId); return n })
+    }
+  }, [])
+
+  const toggleWar = (warId: number) => {
+    setExpanded(prev => {
+      const n = new Set(prev)
+      if (n.has(warId)) n.delete(warId)
+      else { n.add(warId); if (!kmByWar.has(warId)) loadKills(warId) }
+      return n
+    })
+  }
+
+  const fmtTime = (s: string) => new Date(s).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
   const Party = ({ p, big }: { p: WarParty | WarAlly; big?: boolean }) => {
     const id = partyId(p)
@@ -160,6 +199,41 @@ export default function Wars() {
                   {w.allies!.length > 8 && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>+{w.allies!.length - 8}</span>}
                 </div>
               )}
+
+              {/* Killmails (lazy) */}
+              {(() => {
+                const kills = w.aggressor.ships_killed + w.defender.ships_killed
+                const open = expanded.has(w.id)
+                return (
+                  <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                    <button onClick={() => kills > 0 && toggleWar(w.id)} disabled={kills === 0}
+                      style={{ ...pill, cursor: kills > 0 ? 'pointer' : 'default', color: kills > 0 ? 'var(--text)' : 'var(--text-dim)', borderColor: 'var(--text-dim)', background: kills > 0 ? 'rgba(255,255,255,0.05)' : 'transparent' }}>
+                      {kills > 0 ? (open ? '▾' : '▸') : '—'} {kills} killmail{kills !== 1 ? 's' : ''}
+                    </button>
+                    {open && (
+                      <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {kmLoading.has(w.id) && <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', padding: '2px 4px' }}>⏳ killmails laden…</div>}
+                        {!kmLoading.has(w.id) && (kmByWar.get(w.id) ?? []).length === 0 && <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', padding: '2px 4px' }}>Geen killmails opgehaald.</div>}
+                        {(kmByWar.get(w.id) ?? []).map(k => {
+                          const fb = k.attackers.find(a => a.final_blow)
+                          const fbId = fb?.character_id ?? fb?.corporation_id ?? 0
+                          return (
+                            <a key={k.killmail_id} href={`https://zkillboard.com/kill/${k.killmail_id}/`} target="_blank" rel="noreferrer"
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 4px', textDecoration: 'none', fontSize: '0.66rem', color: 'var(--text-dim)', borderRadius: 3 }}>
+                              <span style={{ width: 80, flexShrink: 0 }}>{fmtTime(k.killmail_time)}</span>
+                              <EveImage category="types" id={k.victim.ship_type_id} variation="icon" size={32} px={20} style={{ borderRadius: 2, flexShrink: 0 }} />
+                              <span style={{ flex: 1, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {nameOf(k.victim.ship_type_id)}{k.victim.character_id ? ` · ${nameOf(k.victim.character_id)}` : ''}
+                              </span>
+                              <span style={{ flexShrink: 0 }}>← {fbId ? nameOf(fbId) : '—'} ↗</span>
+                            </a>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )
         })}

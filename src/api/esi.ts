@@ -201,6 +201,8 @@ export interface War {
 // Lijst van war-id's, nieuwste eerst (max 2000); max_war_id voor oudere pagina's.
 export const getWarIds = (maxWarId?: number) => esiGet<number[]>(`/wars/${maxWarId ? `?max_war_id=${maxWarId}` : ''}`)
 export const getWar = (id: number) => esiGet<War>(`/wars/${id}/`)
+export const getWarKillmails = (warId: number, page = 1) =>
+  esiGet<{ killmail_id: number; killmail_hash: string }[]>(`/wars/${warId}/killmails/?page=${page}`)
 
 export interface CorporationInfo {
   name: string
