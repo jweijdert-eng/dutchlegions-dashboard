@@ -47,6 +47,20 @@ function loadRecipes(): Promise<Map<number, Recipe>> {
   return _bpInflight
 }
 
+// PI-produceerbare commodities = alle schematic-outputs (is_input=false) uit schematics.json
+let _piInflight: Promise<Set<number>> | null = null
+function loadPiOutputs(): Promise<Set<number>> {
+  if (!_piInflight) _piInflight = fetch('/schematics.json')
+    .then(r => r.json() as Promise<Record<string, { pins: { type_id: number; is_input: boolean }[] }>>)
+    .then(sch => {
+      const s = new Set<number>()
+      for (const sc of Object.values(sch)) for (const p of sc.pins) if (!p.is_input) s.add(p.type_id)
+      return s
+    })
+    .catch(() => new Set<number>())
+  return _piInflight
+}
+
 // ME verlaagt de materiaalhoeveelheid per run (0–10%). TE laten we buiten beschouwing.
 function applyME(qty: number, me: number): number {
   return Math.max(1, Math.ceil(qty * (1 - me / 100)))
@@ -176,6 +190,7 @@ export default function BuildProject() {
 
   const [names, setNames] = useState<Record<string, string>>({})
   const [recipes, setRecipes] = useState<Map<number, Recipe>>(new Map())
+  const [piSet, setPiSet] = useState<Set<number>>(new Set())
   const [projects, setProjects] = useState<Project[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -201,7 +216,7 @@ export default function BuildProject() {
   const nameOf = (id: number) => names[String(id)] ?? `Type ${id}`
 
   useEffect(() => {
-    Promise.all([loadTypeNames(), loadRecipes()]).then(([n, r]) => { setNames(n); setRecipes(r) })
+    Promise.all([loadTypeNames(), loadRecipes(), loadPiOutputs()]).then(([n, r, pi]) => { setNames(n); setRecipes(r); setPiSet(pi) })
   }, [])
 
   useEffect(() => {
@@ -457,6 +472,11 @@ export default function BuildProject() {
       : <span style={{ ...badge, color: 'var(--red)' }} title="Je hebt deze blueprint (nog) niet">⚠ geen BP</span>
   }
 
+  // Te maken met Planetary Interaction?
+  const piBadge = (typeId: number) => piSet.has(typeId)
+    ? <span style={{ ...badge, color: '#9b8cff' }} title="Te produceren met Planetary Interaction">🪐 PI</span>
+    : null
+
   if (!charId) return <Layout header={<PageHeader title="Bouwproject" />}><div style={{ padding: '2rem', color: 'var(--text-dim)' }}>Log in om bouwprojecten te beheren.</div></Layout>
 
   return (
@@ -603,6 +623,7 @@ export default function BuildProject() {
                           {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                           {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                           {bpBadge(n.typeId)}
+                          {piBadge(n.typeId)}
                         </div>
                       </div>
                       {isB
@@ -640,6 +661,7 @@ export default function BuildProject() {
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                         {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                         {bpBadge(b.typeId)}
+                        {piBadge(b.typeId)}
                       </div>
                       {(() => { const v = verdict(b.typeId); return v ? (
                         <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: 1 }}>
@@ -676,6 +698,7 @@ export default function BuildProject() {
                           ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen −{v.savePct}%</span>
                           : null })()}
                         {buildable && bpBadge(b.typeId)}
+                        {piBadge(b.typeId)}
                       </div>
                     </div>
                     <input type="number" min={0} placeholder="0" value={bought || ''} onChange={e => setBuy(b.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })}
