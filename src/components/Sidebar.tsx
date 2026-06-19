@@ -116,6 +116,24 @@ export function saveLayout(l: LayoutEntry[]) { try { localStorage.setItem(NAV_LS
 
 const ADMIN_CHAR_ID = 1831618559
 
+// Voegt de actuele externe links in de layout: verdwenen links eruit, ontbrekende in
+// een groep met de naam 'Links' (bestaande hergebruikt, anders nieuw). Puur (geen state).
+function mergeLinks(layout: LayoutEntry[], urls: string[]): LayoutEntry[] {
+  const urlSet = new Set(urls)
+  let next: LayoutEntry[] = layout
+    .map(e => e.kind === 'group' ? { ...e, children: e.children.filter(c => !isExternal(c) || urlSet.has(c)) } : e)
+    .filter(e => e.kind !== 'item' || !isExternal(e.path) || urlSet.has(e.path))
+  const present = new Set<string>()
+  for (const e of next) { if (e.kind === 'group') e.children.forEach(c => present.add(c)); else present.add(e.path) }
+  const missing = urls.filter(u => !present.has(u))
+  if (missing.length) {
+    let idx = next.findIndex(e => e.kind === 'group' && /^links$/i.test(e.label))
+    if (idx === -1) { next = [...next, { kind: 'group', id: 'grp-links', label: 'Links', icon: '🔗', children: [] }]; idx = next.length - 1 }
+    next = next.map((e, i) => i === idx && e.kind === 'group' ? { ...e, children: [...e.children, ...missing] } : e)
+  }
+  return next
+}
+
 const rowStyle = (isActive: boolean, collapsed: boolean, nested: boolean): React.CSSProperties => ({
   display: 'flex', alignItems: 'center', gap: '0.65rem',
   padding: collapsed ? '0.55rem 0' : nested ? '0.4rem 1rem 0.4rem 0.9rem' : '0.55rem 1rem',
@@ -530,28 +548,8 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
       if (d.labels && typeof d.labels === 'object' && !Array.isArray(d.labels)) { setLabels(d.labels); try { localStorage.setItem('nav_labels', JSON.stringify(d.labels)) } catch { /* ignore */ } }
     }).catch(() => { /* offline: lokale cache */ })
   }, [])
-  // Links synchroniseren met de layout: verdwenen links opruimen, nieuwe onderaan in 'Links'
-  useEffect(() => {
-    const urls = links.map(l => l.url)
-    const urlSet = new Set(urls)
-    setLayout(prev => {
-      // 1) link-keys die niet meer bestaan eruit
-      let next: LayoutEntry[] = prev
-        .map(e => e.kind === 'group' ? { ...e, children: e.children.filter(c => !isExternal(c) || urlSet.has(c)) } : e)
-        .filter(e => e.kind !== 'item' || !isExternal(e.path) || urlSet.has(e.path))
-      // 2) ontbrekende links toevoegen aan de 'Links'-groep
-      const present = new Set<string>()
-      for (const e of next) { if (e.kind === 'group') e.children.forEach(c => present.add(c)); else present.add(e.path) }
-      const missing = urls.filter(u => !present.has(u))
-      if (missing.length) {
-        if (!next.some(e => e.kind === 'group' && e.id === 'grp-links')) next = [...next, { kind: 'group', id: 'grp-links', label: 'Links', icon: '🔗', children: [] }]
-        next = next.map(e => e.kind === 'group' && e.id === 'grp-links' ? { ...e, children: [...e.children, ...missing] } : e)
-      }
-      if (JSON.stringify(next) === JSON.stringify(prev)) return prev
-      saveLayout(next)
-      return next
-    })
-  }, [links.map(l => l.url).join(',')])
+  // De getoonde indeling = opgeslagen layout mét de actuele links erin (afgeleid → geen race)
+  const displayLayout = mergeLinks(layout, links.map(l => l.url))
 
   // Eén menu-key renderen: interne pagina (LeafRow) of externe link (LinkRow)
   const renderEntry = (key: string, nested: boolean, collapsed = false) => {
@@ -768,14 +766,14 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           </div>
         )}
         {navEdit && !collapsed && isAdminChar
-          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} iconFor={iconFor} known={knownKey} />
+          ? <NavEditor layout={displayLayout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} iconFor={iconFor} known={knownKey} />
           : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
-          ? layout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
+          ? displayLayout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
               .filter(p => knownKey(p) && !isHidden(p))
               .map(p => renderEntry(p, false, true))
           // Uitgeklapt: losse items + uitklapbare groepen
-          : layout.map(e => {
+          : displayLayout.map(e => {
               if (e.kind === 'item') return knownKey(e.path) && !isHidden(e.path) ? renderEntry(e.path, false) : null
               const visibleChildren = e.children.filter(p => knownKey(p) && !isHidden(p))
               if (visibleChildren.length === 0) return null
