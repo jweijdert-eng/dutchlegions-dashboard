@@ -52,6 +52,7 @@ export const DEFAULT_NAV: NavItem[] = [
   { label: 'Fittings',    path: '/fittings',   icon: '⌬', badge: null },
   { label: 'Blueprints',  path: '/blueprints', icon: '⬡', badge: null },
   { label: 'Build vs Buy',path: '/buildvsbuy', icon: '⚙', badge: null },
+  { label: 'Bouwproject', path: '/build',      icon: '⊞', badge: null },
 ]
 
 function loadNav(): NavItem[] {

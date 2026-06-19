@@ -31,6 +31,7 @@ const DebugUnresolved = lz(() => import('./pages/DebugUnresolved'))
 const MultiChar    = lz(() => import('./pages/MultiChar'))
 const LocalChat    = lz(() => import('./pages/LocalChat'))
 const BuildvsBuy   = lz(() => import('./pages/BuildvsBuy'))
+const BuildProject = lz(() => import('./pages/BuildProject'))
 const Ratting      = lz(() => import('./pages/Ratting'))
 const Hauling      = lz(() => import('./pages/Hauling'))
 const Assets       = lz(() => import('./pages/Assets'))
@@ -220,6 +221,7 @@ function AppRoutes() {
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
       <Route path="/local"      element={<LocalChatRoute><LocalChat /></LocalChatRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
+      <Route path="/build"      element={<ProtectedRoute><BuildProject /></ProtectedRoute>} />
       <Route path="/ratting"    element={<ProtectedRoute><Ratting /></ProtectedRoute>} />
       <Route path="/fleet"      element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
       <Route path="/settings"   element={<ProtectedRoute><Settings /></ProtectedRoute>} />
