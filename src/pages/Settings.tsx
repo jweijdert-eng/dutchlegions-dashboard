@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
-import { DEFAULT_NAV } from '../components/Sidebar'
+import { NAV_ITEMS } from '../components/Sidebar'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { applyAccent, useSiteConfig } from '../hooks/useSiteConfig'
 import AccountsPanel from '../components/AccountsPanel'
@@ -28,7 +28,7 @@ const cardSub: React.CSSProperties = { fontSize: '0.66rem', color: 'var(--text-d
 // Tabs die je niet kunt verbergen.
 const FIXED = new Set(['/'])
 // Local Chat is geen vaste nav-item maar wél toggle-baar.
-const TOGGLEABLE = [...DEFAULT_NAV.filter(n => !FIXED.has(n.path)), { label: 'Local Chat', path: '/local', icon: '⌁', badge: null as null }]
+const TOGGLEABLE = [...NAV_ITEMS.filter(n => !FIXED.has(n.path)), { label: 'Local Chat', path: '/local', icon: '⌁', badge: null as null }]
 
 const SUPPORTED = typeof window !== 'undefined' && 'showDirectoryPicker' in window
 

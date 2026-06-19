@@ -39,121 +39,118 @@ type NavItem = { label: string; path: string; icon: string; badge: null | 'mail'
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
 
-export const DEFAULT_NAV: NavItem[] = [
-  { label: 'Dashboard',   path: '/',           icon: '▣', badge: null },
-  { label: 'Character',   path: '/character',  icon: '◈', badge: null },
-  { label: 'Finance',     path: '/wallet',     icon: '◑', badge: null },
-  { label: 'Killboard',   path: '/kills',      icon: '◉', badge: null },
-  { label: 'Fleet',       path: '/fleet',      icon: '⚑', badge: null },
-  { label: 'Ratting',     path: '/ratting',    icon: '⦿', badge: null },
-  { label: 'Industry',    path: '/industry',   icon: '◫', badge: 'jobs' },
-  { label: 'Mining',      path: '/mining',     icon: '⬟', badge: null },
-  { label: 'Planets',     path: '/planets',    icon: '○', badge: null },
-  { label: 'Fittings',    path: '/fittings',   icon: '⌬', badge: null },
-  { label: 'Blueprints',  path: '/blueprints', icon: '⬡', badge: null },
-  { label: 'Build vs Buy',path: '/buildvsbuy', icon: '⚙', badge: null },
-  { label: 'Bouwproject', path: '/build',      icon: '⊞', badge: null },
+// Registry van alle navigeerbare pagina's (los van hoe ze in de menu-boom staan)
+export const NAV_ITEMS: NavItem[] = [
+  { label: 'Dashboard',    path: '/',           icon: '▣', badge: null },
+  { label: 'Character',    path: '/character',  icon: '◈', badge: null },
+  { label: 'Skills',       path: '/skills',     icon: '◎', badge: null },
+  { label: 'Mail',         path: '/mail',       icon: '✉', badge: 'mail' },
+  { label: 'Assets',       path: '/assets',     icon: '◫', badge: null },
+  { label: 'Notities',     path: '/notes',      icon: '✎', badge: null },
+  { label: 'Finance',      path: '/wallet',     icon: '◑', badge: null },
+  { label: 'Market',       path: '/market',     icon: '◊', badge: null },
+  { label: 'Contracts',    path: '/contracts',  icon: '◧', badge: null },
+  { label: 'Hauling',      path: '/hauling',    icon: '⇶', badge: null },
+  { label: 'Killboard',    path: '/kills',      icon: '◉', badge: null },
+  { label: 'Fleet',        path: '/fleet',      icon: '⚑', badge: null },
+  { label: 'Ratting',      path: '/ratting',    icon: '⦿', badge: null },
+  { label: 'Industry',     path: '/industry',   icon: '◫', badge: 'jobs' },
+  { label: 'Mining',       path: '/mining',     icon: '⬟', badge: null },
+  { label: 'Planets',      path: '/planets',    icon: '○', badge: null },
+  { label: 'Fittings',     path: '/fittings',   icon: '⌬', badge: null },
+  { label: 'Blueprints',   path: '/blueprints', icon: '⬡', badge: null },
+  { label: 'Build vs Buy', path: '/buildvsbuy', icon: '⚙', badge: null },
+  { label: 'Bouwproject',  path: '/build',      icon: '⊞', badge: null },
+]
+const ITEM_BY_PATH: Record<string, NavItem> = Object.fromEntries(NAV_ITEMS.map(i => [i.path, i]))
+
+// Menu-boom: een geordende lijst van losse items of uitklapbare groepen.
+export type LayoutEntry =
+  | { kind: 'item'; path: string }
+  | { kind: 'group'; id: string; label: string; icon: string; children: string[] }
+
+const DEFAULT_LAYOUT: LayoutEntry[] = [
+  { kind: 'item', path: '/' },
+  { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
+  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/market', '/contracts', '/hauling'] },
+  { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build'] },
+  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/fleet', '/ratting'] },
 ]
 
-function loadNav(): NavItem[] {
+const NAV_LS_KEY = 'nav_layout_v1'
+export function loadLayout(): LayoutEntry[] {
+  let layout: LayoutEntry[] = DEFAULT_LAYOUT
   try {
-    const saved = JSON.parse(localStorage.getItem('nav_order') ?? 'null') as string[] | null
-    if (!saved) return DEFAULT_NAV
-    const map = Object.fromEntries(DEFAULT_NAV.map(n => [n.path, n]))
-    const ordered = saved.map(p => map[p]).filter(Boolean)
-    const missing = DEFAULT_NAV.filter(n => !saved.includes(n.path))
-    return [...ordered, ...missing]
-  } catch { return DEFAULT_NAV }
+    const saved = JSON.parse(localStorage.getItem(NAV_LS_KEY) ?? 'null')
+    if (Array.isArray(saved) && saved.length) layout = saved
+  } catch { /* default */ }
+  // opschonen + nieuwe pagina's die nog nergens staan onderaan toevoegen
+  const present = new Set<string>()
+  const clean: LayoutEntry[] = []
+  for (const e of layout) {
+    if (e.kind === 'group') {
+      const children = (e.children ?? []).filter(p => ITEM_BY_PATH[p])
+      children.forEach(p => present.add(p))
+      clean.push({ ...e, children })
+    } else if (e.kind === 'item' && ITEM_BY_PATH[e.path]) {
+      present.add(e.path); clean.push(e)
+    }
+  }
+  for (const i of NAV_ITEMS) if (!present.has(i.path)) clean.push({ kind: 'item', path: i.path })
+  return clean
+}
+export function saveLayout(l: LayoutEntry[]) { try { localStorage.setItem(NAV_LS_KEY, JSON.stringify(l)) } catch { /* ignore */ } }
+
+const rowStyle = (isActive: boolean, collapsed: boolean, nested: boolean): React.CSSProperties => ({
+  display: 'flex', alignItems: 'center', gap: '0.65rem',
+  padding: collapsed ? '0.55rem 0' : nested ? '0.4rem 1rem 0.4rem 0.9rem' : '0.55rem 1rem',
+  justifyContent: collapsed ? 'center' : 'flex-start',
+  position: 'relative', textDecoration: 'none',
+  background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+  borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+  color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+  userSelect: 'none',
+  fontSize: nested ? '0.72rem' : '0.75rem',
+  marginLeft: nested ? -1 : undefined,
+})
+
+// Eén navigeerbaar item (zowel top-level als genest in een groep)
+function LeafRow({ item, badgeCount, collapsed, nested }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; nested?: boolean }) {
+  const count = badgeCount(item.badge)
+  return (
+    <NavLink to={item.path} end={item.path === '/'} title={collapsed ? item.label : undefined}
+      style={({ isActive }) => rowStyle(isActive, !!collapsed, !!nested)}>
+      <span style={{ fontSize: nested ? 12 : 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+      {!collapsed && <span style={{ fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>}
+      {!collapsed && <Badge count={count} />}
+      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />}
+    </NavLink>
+  )
 }
 
-type SubItem = { label: string; to: string; corp?: boolean; icon?: string }
-const KILLS_SUBITEMS: SubItem[] = [
-  { label: 'Mijn killboard', to: '/kills',            corp: false },
-  { label: 'Corp killboard', to: '/kills?board=corp', corp: true },
-]
-const CHARACTER_SUBITEMS: SubItem[] = [
-  { label: 'Skills',    to: '/skills', icon: '◎' },
-  { label: 'Mail',      to: '/mail',   icon: '✉' },
-  { label: 'Assets',    to: '/assets', icon: '◫' },
-  { label: 'Notities',  to: '/notes',  icon: '✎' },
-]
-const FINANCE_SUBITEMS: SubItem[] = [
-  { label: 'Wallet',    to: '/wallet',    icon: '◑' },
-  { label: 'Market',    to: '/market',    icon: '◊' },
-  { label: 'Contracts', to: '/contracts', icon: '◧' },
-  { label: 'Hauling',   to: '/hauling',   icon: '⇶' },
-]
-
-function SortableNavItem({ item, badgeCount, collapsed, subItems }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number | null; collapsed?: boolean; subItems?: SubItem[] }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.path })
-  const { editMode } = useLayoutMode()
+// Uitklapbare groep (hoofd-item met genest lijstje)
+function GroupRow({ group, badgeCount, collapsed, open, onToggle }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void }) {
   const location = useLocation()
-  const [searchParams] = useSearchParams()
-  const count = badgeCount(item.badge)
-  const hasSub = !!subItems && subItems.length > 0 && !collapsed
-  const onThisRoute = location.pathname === item.path || (subItems?.some(s => s.to.split('?')[0] === location.pathname) ?? false)
-  const [open, setOpen] = useState(onThisRoute)
-  useEffect(() => { if (onThisRoute) setOpen(true) }, [onThisRoute])
-
-  const rowStyle = (isActive: boolean): React.CSSProperties => ({
-    display: 'flex', alignItems: 'center', gap: '0.65rem',
-    padding: collapsed ? '0.6rem 0' : '0.55rem 1rem',
-    justifyContent: collapsed ? 'center' : 'flex-start',
-    position: 'relative', textDecoration: 'none',
-    background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
-    borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-    color: isActive ? 'var(--blue)' : 'var(--text-dim)',
-    userSelect: 'none',
-  })
-
-  const dragHandle = editMode && !collapsed && (
-    <span {...attributes} {...listeners}
-      style={{ fontSize: 10, width: 10, color: 'var(--text-dim)', cursor: 'grab', flexShrink: 0, letterSpacing: '-1px' }}
-      title="Versleep om volgorde te wijzigen">⠿</span>
-  )
-
+  const childActive = group.children.includes(location.pathname)
+  const totalBadge = group.children.reduce((s, p) => s + badgeCount(ITEM_BY_PATH[p]?.badge ?? null), 0)
+  const expanded = open || childActive
   return (
-    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}>
-      <NavLink
-        to={item.path}
-        end={item.path === '/'}
-        title={collapsed ? item.label : undefined}
-        onClick={() => { if (hasSub) setOpen(true) }}
-        style={({ isActive }) => rowStyle(isActive || (hasSub && onThisRoute))}
-      >
-        {dragHandle}
-        <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-        {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>}
-        {hasSub && (
-          <span onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(o => !o) }}
-            style={{ fontSize: '0.6rem', color: 'var(--text-dim)', cursor: 'pointer', padding: '0 0.2rem' }}>{open ? '▾' : '▸'}</span>
-        )}
-        {!collapsed && !hasSub && <Badge count={count} />}
-        {collapsed && (count ?? 0) > 0 && (
-          <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />
-        )}
-      </NavLink>
-
-      {hasSub && open && (
-        <div style={{ marginLeft: '1.4rem', borderLeft: '1px solid var(--border)', paddingTop: 1, paddingBottom: 1 }}>
-          {subItems!.map(s => {
-            // Kills onderscheidt op ?board=corp; andere dropdowns op het pad.
-            const active = location.pathname === s.to.split('?')[0]
-              && (item.path !== '/kills' || (searchParams.get('board') === 'corp') === !!s.corp)
-            return (
-              <NavLink key={s.to} to={s.to} style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                padding: '0.38rem 1rem 0.38rem 0.85rem', textDecoration: 'none', fontSize: '0.72rem',
-                background: active ? 'rgba(0,180,216,0.07)' : 'transparent',
-                borderLeft: `2px solid ${active ? 'var(--blue)' : 'transparent'}`, marginLeft: -1,
-                color: active ? 'var(--blue)' : 'var(--text-dim)',
-                fontWeight: active ? 600 : 400,
-              }}>
-                <span style={{ fontSize: '0.62rem', width: 14, textAlign: 'center', opacity: 0.8 }}>{s.icon ?? (s.corp ? '👥' : '◈')}</span>
-                {s.label}
-              </NavLink>
-            )
-          })}
+    <div>
+      <div onClick={onToggle} title={collapsed ? group.label : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer',
+          padding: collapsed ? '0.55rem 0' : '0.55rem 1rem', justifyContent: collapsed ? 'center' : 'flex-start',
+          color: childActive ? 'var(--blue)' : 'var(--text)', userSelect: 'none',
+          borderLeft: `2px solid ${childActive && !expanded ? 'var(--blue)' : 'transparent'}`,
+        }}>
+        <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{group.icon}</span>
+        {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1, textTransform: 'uppercase' }}>{group.label}</span>}
+        {!collapsed && totalBadge > 0 && !expanded && <Badge count={totalBadge} />}
+        {!collapsed && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>{expanded ? '▾' : '▸'}</span>}
+      </div>
+      {!collapsed && expanded && (
+        <div style={{ marginLeft: '1.1rem', borderLeft: '1px solid var(--border)', paddingTop: 1, paddingBottom: 2 }}>
+          {group.children.map(p => ITEM_BY_PATH[p] && <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} nested />)}
         </div>
       )}
     </div>
@@ -401,9 +398,18 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
   const isAdminChar = tokens.some(t => t.characterId === 1831618559)
   const member = useMemberSettings()
-  const [nav, setNav] = useState<NavItem[]>(loadNav)
-  const visibleNav = nav.filter(n => !member.hiddenTabs.includes(n.path))
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const [layout] = useState<LayoutEntry[]>(loadLayout)
+  const isHidden = (p: string) => member.hiddenTabs.includes(p)
+  // welke groepen staan open (persistent per browser)
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try { const s = JSON.parse(localStorage.getItem('nav_open_groups') ?? 'null'); if (Array.isArray(s)) return new Set(s) } catch { /* default */ }
+    return new Set(loadLayout().filter((e): e is Extract<LayoutEntry, { kind: 'group' }> => e.kind === 'group').map(e => e.id))
+  })
+  const toggleGroup = (id: string) => setOpenGroups(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id)
+    try { localStorage.setItem('nav_open_groups', JSON.stringify([...n])) } catch { /* ignore */ }
+    return n
+  })
 
   // Inklapbaar op desktop (op mobiel is het altijd een volledige drawer)
   const [collapsedRaw, setCollapsedRaw] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
@@ -412,17 +418,6 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
     setCollapsedRaw(c => { localStorage.setItem('sidebar_collapsed', c ? '0' : '1'); return !c })
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    setNav(prev => {
-      const oldIndex = prev.findIndex(n => n.path === active.id)
-      const newIndex = prev.findIndex(n => n.path === over.id)
-      const next = arrayMove(prev, oldIndex, newIndex)
-      localStorage.setItem('nav_order', JSON.stringify(next.map(n => n.path)))
-      return next
-    })
-  }
   const [charData, setCharData] = useState<Map<number, CharData>>(new Map())
 
   useEffect(() => {
@@ -592,14 +587,20 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.4rem 0' }}>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={visibleNav.map(n => n.path)} strategy={verticalListSortingStrategy}>
-            {visibleNav.map(item => (
-              <SortableNavItem key={item.path} item={item} badgeCount={badgeCount} collapsed={collapsed}
-                subItems={item.path === '/kills' ? KILLS_SUBITEMS : item.path === '/character' ? CHARACTER_SUBITEMS : item.path === '/wallet' ? FINANCE_SUBITEMS : undefined} />
-            ))}
-          </SortableContext>
-        </DndContext>
+        {collapsed
+          // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
+          ? layout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
+              .filter(p => ITEM_BY_PATH[p] && !isHidden(p))
+              .map(p => <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} collapsed />)
+          // Uitgeklapt: losse items + uitklapbare groepen
+          : layout.map(e => {
+              if (e.kind === 'item') return ITEM_BY_PATH[e.path] && !isHidden(e.path)
+                ? <LeafRow key={e.path} item={ITEM_BY_PATH[e.path]} badgeCount={badgeCount} />
+                : null
+              const visibleChildren = e.children.filter(p => !isHidden(p))
+              if (visibleChildren.length === 0) return null
+              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={openGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} />
+            })}
 
         {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
         {localChatOn && !member.hiddenTabs.includes('/local') && (
