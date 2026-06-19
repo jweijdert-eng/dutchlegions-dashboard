@@ -506,17 +506,14 @@ export default function BuildProject() {
     ? <span style={{ ...badge, color: '#9b8cff' }} title="Te produceren met Planetary Interaction">🪐 PI</span>
     : null
 
-  // Expliciete Bouwen/Kopen-schakelaar voor onderdelen die je zelf kunt maken
-  const decision = (typeId: number) => {
-    const buying = !!active?.buyOverrides[typeId]
-    return (
-      <span style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-        <button onClick={() => { if (buying) toggleBuyOverride(typeId) }} title="Zelf bouwen"
-          style={{ padding: '2px 8px', border: 'none', cursor: 'pointer', fontSize: '0.6rem', background: !buying ? 'rgba(62,207,110,0.22)' : 'transparent', color: !buying ? '#3ecf6e' : 'var(--text-dim)', fontWeight: !buying ? 700 : 400 }}>🔨 Bouwen</button>
-        <button onClick={() => { if (!buying) toggleBuyOverride(typeId) }} title="Kopen i.p.v. bouwen"
-          style={{ padding: '2px 8px', border: 'none', cursor: 'pointer', fontSize: '0.6rem', background: buying ? 'rgba(127,176,255,0.22)' : 'transparent', color: buying ? '#7fb0ff' : 'var(--text-dim)', fontWeight: buying ? 700 : 400 }}>🛒 Kopen</button>
-      </span>
-    )
+  // Advies: wat is het voordeligst — zelf bouwen of kopen? (op basis van de kosten)
+  const adviceBadge = (typeId: number) => {
+    const v = verdict(typeId)
+    if (!v) return null
+    const build = v.cheaper === 'build'
+    return <span style={{ ...badge, color: build ? '#3ecf6e' : '#7fb0ff', fontWeight: 700 }}
+      title={`Zelf bouwen ~${fmtISK(v.build)}/st vs kopen ~${fmtISK(v.buy)}/st`}>
+      👍 advies: {build ? 'bouwen' : 'kopen'} ({v.savePct}% goedkoper)</span>
   }
 
   if (!charId) return <Layout header={<PageHeader title="Bouwproject" />}><div style={{ padding: '2rem', color: 'var(--text-dim)' }}>Log in om bouwprojecten te beheren.</div></Layout>
@@ -673,16 +670,16 @@ export default function BuildProject() {
                           {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                           {bpBadge(n.typeId)}
                           {piBadge(n.typeId)}
+                          {n.typeId !== active.targetTypeId && adviceBadge(n.typeId)}
                         </div>
                       </div>
-                      {/* Bouwen/Kopen-keuze: schakelaar voor maakbare onderdelen, vast label voor ruwe materialen.
-                          Het eindproduct bouw je per definitie, dus daar geen schakelaar. */}
-                      {buildable && n.typeId !== active.targetTypeId
-                        ? decision(n.typeId)
-                        : !buildable && <span style={{ fontSize: '0.6rem', color: '#7fb0ff', flexShrink: 0, padding: '0 4px' }}>🛒 Kopen</span>}
+                      {/* voortgang: job-status bij bouwen, gekocht-aantal bij kopen */}
                       {isB
                         ? <button onClick={() => toggleBuild(n.typeId)} title="Klik om door te schakelen: te doen → job draait → klaar" style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
                         : <input type="number" min={0} placeholder="0" value={active.progress[n.typeId]?.bought || ''} onChange={e => setBuy(n.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })} style={{ ...input, width: 70 }} title="Aantal gekocht" />}
+                      {/* kleine wissel-knop om het advies eventueel te negeren */}
+                      {buildable && n.typeId !== active.targetTypeId &&
+                        <button onClick={() => toggleBuyOverride(n.typeId)} style={{ ...pill, borderColor: active.buyOverrides[n.typeId] ? '#7fb0ff' : 'var(--border)', color: active.buyOverrides[n.typeId] ? '#7fb0ff' : 'var(--text-dim)' }} title="Wissel tussen zelf bouwen en kopen">{active.buyOverrides[n.typeId] ? '→ bouwen' : '→ kopen'}</button>}
                     </div>
                   )
                 })}
