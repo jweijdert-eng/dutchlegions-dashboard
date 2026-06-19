@@ -39,6 +39,16 @@ type NavItem = { label: string; path: string; icon: string; badge: null | 'mail'
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
 
+// Standaard externe links (als de admin er nog geen heeft ingesteld in siteconfig).
+const DEFAULT_LINKS = [
+  { label: 'Insidious Auth',            url: 'https://auth.insidiousevil.org/',    color: '#e05555' },
+  { label: 'Dutch Legions',             url: 'https://dutchlegions.nl/dashboard/', color: '#f0a030' },
+  { label: 'Dutch Legions - Logistics', url: 'https://procurer.space/',            color: '#4ade80' },
+]
+// Een menu-key is geldig als het een bekende pagina is of een externe (http) link.
+const isExternal = (k: string) => /^https?:\/\//.test(k)
+const keepKey = (k: string) => !!ITEM_BY_PATH[k] || isExternal(k)
+
 // Registry van alle navigeerbare pagina's (los van hoe ze in de menu-boom staan)
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard',    path: '/',           icon: '▣', badge: null },
@@ -84,10 +94,10 @@ function cleanLayout(layout: LayoutEntry[]): LayoutEntry[] {
   const clean: LayoutEntry[] = []
   for (const e of layout) {
     if (e.kind === 'group') {
-      const children = (e.children ?? []).filter(p => ITEM_BY_PATH[p])
+      const children = (e.children ?? []).filter(keepKey)
       children.forEach(p => present.add(p))
       clean.push({ ...e, children })
-    } else if (e.kind === 'item' && ITEM_BY_PATH[e.path]) {
+    } else if (e.kind === 'item' && keepKey(e.path)) {
       present.add(e.path); clean.push(e)
     }
   }
@@ -134,8 +144,20 @@ function LeafRow({ item, badgeCount, collapsed, nested, label }: { item: NavItem
   )
 }
 
-// Uitklapbare groep (hoofd-item met genest lijstje)
-function GroupRow({ group, badgeCount, collapsed, open, onToggle, labelOf }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void; labelOf: (p: string) => string }) {
+// Externe link-regel (opent in nieuw tabblad)
+function LinkRow({ url, label, color, collapsed, nested }: { url: string; label: string; color: string; collapsed?: boolean; nested?: boolean }) {
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title={collapsed ? label : undefined}
+      style={{ ...rowStyle(false, !!collapsed, !!nested) }}>
+      <span style={{ fontSize: nested ? 9 : 10, width: 16, textAlign: 'center', flexShrink: 0, color }}>●</span>
+      {!collapsed && <span style={{ fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{label}</span>}
+      {!collapsed && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>↗</span>}
+    </a>
+  )
+}
+
+// Uitklapbare groep (hoofd-item met genest lijstje); kinderen worden via renderChild gerenderd
+function GroupRow({ group, badgeCount, collapsed, open, onToggle, renderChild }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void; renderChild: (key: string) => React.ReactNode }) {
   const location = useLocation()
   const childActive = group.children.includes(location.pathname)
   const totalBadge = group.children.reduce((s, p) => s + badgeCount(ITEM_BY_PATH[p]?.badge ?? null), 0)
@@ -156,7 +178,7 @@ function GroupRow({ group, badgeCount, collapsed, open, onToggle, labelOf }: { g
       </div>
       {!collapsed && expanded && (
         <div style={{ marginLeft: '1.1rem', borderLeft: '1px solid var(--border)', paddingTop: 1, paddingBottom: 2 }}>
-          {group.children.map(p => ITEM_BY_PATH[p] && <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} nested label={labelOf(p)} />)}
+          {group.children.map(p => renderChild(p))}
         </div>
       )}
     </div>
@@ -169,7 +191,7 @@ const eArrow: React.CSSProperties = { fontSize: '0.55rem', lineHeight: 1, backgr
 const eInput: React.CSSProperties = { background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid var(--border)', borderRadius: 3, padding: '2px 4px', fontSize: '0.7rem' }
 const eSelect: React.CSSProperties = { fontSize: '0.6rem', background: 'rgba(0,0,0,0.35)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 3, maxWidth: 90 }
 
-function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish, saved }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void; labelOf: (p: string) => string; onRenameItem: (p: string, v: string) => void; onPublish: () => void; saved: 'idle' | 'saving' | 'done' }) {
+function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish, saved, iconFor, known }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void; labelOf: (p: string) => string; onRenameItem: (p: string, v: string) => void; onPublish: () => void; saved: 'idle' | 'saving' | 'done'; iconFor: (k: string) => string; known: (k: string) => boolean }) {
   const groups = layout.filter((e): e is Extract<LayoutEntry, { kind: 'group' }> => e.kind === 'group')
   const moveTop = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= layout.length) return; const n = [...layout];[n[i], n[j]] = [n[j], n[i]]; onChange(n) }
   const addGroup = () => onChange([...layout, { kind: 'group', id: 'grp-' + Date.now().toString(36), label: 'Nieuwe groep', icon: '▦', children: [] }])
@@ -218,20 +240,20 @@ function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish
           </div>
           <div style={{ marginLeft: 6, marginTop: 3 }}>
             {e.children.length === 0 && <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', padding: '2px 4px' }}>leeg — verplaats items hierheen</div>}
-            {e.children.map((p, ci) => ITEM_BY_PATH[p] && (
+            {e.children.map((p, ci) => known(p) && (
               <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '1px 2px', fontSize: '0.7rem' }}>
                 <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveChild(e.id, ci, -1)} style={eArrow}>▲</button><button onClick={() => moveChild(e.id, ci, 1)} style={eArrow}>▼</button></span>
-                <span style={{ width: 14, textAlign: 'center' }}>{ITEM_BY_PATH[p].icon}</span>
+                <span style={{ width: 14, textAlign: 'center' }}>{iconFor(p)}</span>
                 <input value={labelOf(p)} onChange={ev => onRenameItem(p, ev.target.value)} style={{ ...eInput, flex: 1, minWidth: 0 }} title="Naam aanpassen" />
                 {groupSelect(p, e.id)}
               </div>
             ))}
           </div>
         </div>
-      ) : ITEM_BY_PATH[e.path] ? (
+      ) : known(e.path) ? (
         <div key={e.path} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px', marginBottom: 2, fontSize: '0.7rem' }}>
           <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveTop(i, -1)} style={eArrow}>▲</button><button onClick={() => moveTop(i, 1)} style={eArrow}>▼</button></span>
-          <span style={{ width: 14, textAlign: 'center' }}>{ITEM_BY_PATH[e.path].icon}</span>
+          <span style={{ width: 14, textAlign: 'center' }}>{iconFor(e.path)}</span>
           <input value={labelOf(e.path)} onChange={ev => onRenameItem(e.path, ev.target.value)} style={{ ...eInput, flex: 1, minWidth: 0 }} title="Naam aanpassen" />
           {groupSelect(e.path, '__top')}
         </div>
@@ -487,7 +509,13 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const [navEdit, setNavEdit] = useState(false)
   // Eigen labels per pagina (overschrijft de standaardnaam)
   const [labels, setLabels] = useState<Record<string, string>>(() => { try { return JSON.parse(localStorage.getItem('nav_labels') ?? '{}') || {} } catch { return {} } })
-  const labelOf = (path: string) => { const o = labels[path]; return o && o.trim() ? o : (ITEM_BY_PATH[path]?.label ?? path) }
+  // Externe links (admin-config of standaard) — ook plaatsbaar als menu-items, gekoppeld op URL
+  const links = siteConfig.links.length ? siteConfig.links.map((l, i) => ({ label: l.label, url: l.url, color: LINK_COLORS[i % LINK_COLORS.length] })) : DEFAULT_LINKS
+  const linkByUrl = new Map(links.map(l => [l.url, l] as const))
+  const isInternal = (k: string) => !!ITEM_BY_PATH[k]
+  const knownKey = (k: string) => isInternal(k) || linkByUrl.has(k)
+  const iconFor = (k: string) => isInternal(k) ? ITEM_BY_PATH[k].icon : '🔗'
+  const labelOf = (key: string) => { const o = labels[key]; if (o && o.trim()) return o; return isInternal(key) ? ITEM_BY_PATH[key].label : (linkByUrl.get(key)?.label ?? key) }
   const renameItem = (path: string, value: string) => setLabels(prev => {
     const next = { ...prev, [path]: value.slice(0, 24) }
     try { localStorage.setItem('nav_labels', JSON.stringify(next)) } catch { /* ignore */ }
@@ -502,6 +530,36 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
       if (d.labels && typeof d.labels === 'object' && !Array.isArray(d.labels)) { setLabels(d.labels); try { localStorage.setItem('nav_labels', JSON.stringify(d.labels)) } catch { /* ignore */ } }
     }).catch(() => { /* offline: lokale cache */ })
   }, [])
+  // Links synchroniseren met de layout: verdwenen links opruimen, nieuwe onderaan in 'Links'
+  useEffect(() => {
+    const urls = links.map(l => l.url)
+    const urlSet = new Set(urls)
+    setLayout(prev => {
+      // 1) link-keys die niet meer bestaan eruit
+      let next: LayoutEntry[] = prev
+        .map(e => e.kind === 'group' ? { ...e, children: e.children.filter(c => !isExternal(c) || urlSet.has(c)) } : e)
+        .filter(e => e.kind !== 'item' || !isExternal(e.path) || urlSet.has(e.path))
+      // 2) ontbrekende links toevoegen aan de 'Links'-groep
+      const present = new Set<string>()
+      for (const e of next) { if (e.kind === 'group') e.children.forEach(c => present.add(c)); else present.add(e.path) }
+      const missing = urls.filter(u => !present.has(u))
+      if (missing.length) {
+        if (!next.some(e => e.kind === 'group' && e.id === 'grp-links')) next = [...next, { kind: 'group', id: 'grp-links', label: 'Links', icon: '🔗', children: [] }]
+        next = next.map(e => e.kind === 'group' && e.id === 'grp-links' ? { ...e, children: [...e.children, ...missing] } : e)
+      }
+      if (JSON.stringify(next) === JSON.stringify(prev)) return prev
+      saveLayout(next)
+      return next
+    })
+  }, [links.map(l => l.url).join(',')])
+
+  // Eén menu-key renderen: interne pagina (LeafRow) of externe link (LinkRow)
+  const renderEntry = (key: string, nested: boolean, collapsed = false) => {
+    if (isInternal(key)) return <LeafRow key={key} item={ITEM_BY_PATH[key]} badgeCount={badgeCount} nested={nested} collapsed={collapsed} label={labelOf(key)} />
+    const l = linkByUrl.get(key); if (!l) return null
+    return <LinkRow key={key} url={l.url} label={labelOf(key)} color={l.color} nested={nested} collapsed={collapsed} />
+  }
+
   // Admin publiceert de huidige indeling naar iedereen
   const [navSaved, setNavSaved] = useState<'idle' | 'saving' | 'done'>('idle')
   const publishNav = async () => {
@@ -709,20 +767,18 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           </div>
         )}
         {navEdit && !collapsed && isAdminChar
-          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} />
+          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} iconFor={iconFor} known={knownKey} />
           : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
           ? layout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
-              .filter(p => ITEM_BY_PATH[p] && !isHidden(p))
-              .map(p => <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} collapsed label={labelOf(p)} />)
+              .filter(p => knownKey(p) && !isHidden(p))
+              .map(p => renderEntry(p, false, true))
           // Uitgeklapt: losse items + uitklapbare groepen
           : layout.map(e => {
-              if (e.kind === 'item') return ITEM_BY_PATH[e.path] && !isHidden(e.path)
-                ? <LeafRow key={e.path} item={ITEM_BY_PATH[e.path]} badgeCount={badgeCount} label={labelOf(e.path)} />
-                : null
-              const visibleChildren = e.children.filter(p => !isHidden(p))
+              if (e.kind === 'item') return knownKey(e.path) && !isHidden(e.path) ? renderEntry(e.path, false) : null
+              const visibleChildren = e.children.filter(p => knownKey(p) && !isHidden(p))
               if (visibleChildren.length === 0) return null
-              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={openGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} labelOf={labelOf} />
+              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={openGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} renderChild={k => renderEntry(k, true)} />
             })}
 
         {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
@@ -787,50 +843,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
         )}
       </div>
 
-      {/* Externe links — door admin beheerd (siteconfig); anders de standaardlinks */}
-      <div style={{ borderTop: '1px solid var(--border)', padding: collapsed ? '0.5rem 0.4rem 0.35rem' : '0.5rem 0.5rem 0.35rem' }}>
-        {(siteConfig.links.length > 0
-          ? siteConfig.links.map((l, i) => ({ label: l.label, url: l.url, color: LINK_COLORS[i % LINK_COLORS.length] }))
-          : [
-              { label: 'Insidious Auth',            url: 'https://auth.insidiousevil.org/',    color: '#e05555' },
-              { label: 'Dutch Legions',             url: 'https://dutchlegions.nl/dashboard/', color: '#f0a030' },
-              { label: 'Dutch Legions - Logistics', url: 'https://procurer.space/',            color: '#4ade80' },
-            ]
-        ).map(({ label, url, color }) => (
-          <a
-            key={url}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            title={collapsed ? label : undefined}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: '0.4rem',
-              padding: '0.3rem 0.55rem', marginBottom: '0.25rem',
-              textDecoration: 'none', borderRadius: 2,
-              background: `${color}0d`,
-              border: `1px solid ${color}44`,
-              color: `${color}cc`, fontSize: '0.68rem',
-              transition: 'color 0.15s, border-color 0.15s, background 0.15s',
-            }}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLAnchorElement
-              el.style.color = color
-              el.style.borderColor = `${color}99`
-              el.style.background = `${color}1a`
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLAnchorElement
-              el.style.color = `${color}cc`
-              el.style.borderColor = `${color}44`
-              el.style.background = `${color}0d`
-            }}
-          >
-            <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>↗</span>
-            {!collapsed && label}
-          </a>
-        ))}
-      </div>
-
+      {/* De externe corp-links zitten nu in de menu-boom hierboven (groep 'Links'). */}
 
       {/* Accountbeheer + character-switcher staan nu op de Instellingen-pagina. */}
       <NavLink
