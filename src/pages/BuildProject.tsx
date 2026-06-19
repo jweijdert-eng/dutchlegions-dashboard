@@ -103,6 +103,35 @@ function computeBom(
   return { builds, buys, buildable: true }
 }
 
+// ── Hiërarchische boom (per tak de benodigde hoeveelheid, met ME) ───────────
+interface TreeNode { typeId: number; qty: number; runs: number; build: boolean; children: TreeNode[]; depth: number }
+function buildTree(target: number, targetQty: number, me: number, recipes: Map<number, Recipe>, buyOverrides: Record<number, true>): TreeNode | null {
+  if (!recipes.has(target)) return null
+  const isBuilt = (t: number) => recipes.has(t) && !buyOverrides[t]
+  const make = (typeId: number, qty: number, depth: number, seen: Set<number>): TreeNode => {
+    const built = depth === 0 ? recipes.has(typeId) : isBuilt(typeId)
+    const children: TreeNode[] = []
+    let runs = 0
+    if (built && !seen.has(typeId) && depth < 20) {
+      const r = recipes.get(typeId)!
+      runs = Math.ceil(qty / r.perRun)
+      const seen2 = new Set(seen).add(typeId)
+      for (const [m, mq] of r.materials) children.push(make(m, applyME(mq, me) * runs, depth + 1, seen2))
+    }
+    return { typeId, qty, runs, build: built && children.length > 0, children, depth }
+  }
+  return make(target, targetQty, 0, new Set())
+}
+function flattenTree(root: TreeNode, collapsed: Set<number>): TreeNode[] {
+  const rows: TreeNode[] = []
+  const walk = (n: TreeNode) => {
+    rows.push(n)
+    if (n.children.length && !collapsed.has(n.typeId)) for (const c of n.children) walk(c)
+  }
+  walk(root)
+  return rows
+}
+
 // ── Jita-prijzen (fuzzwork aggregates, The Forge) ───────────────────────────
 async function fetchJitaSell(typeIds: number[]): Promise<Map<number, number>> {
   const out = new Map<number, number>()
@@ -278,11 +307,22 @@ export default function BuildProject() {
     return m
   }, [useSupply, ownedMap, jobOutputMap])
 
-  // De bill-of-materials van het actieve project
+  // De bill-of-materials van het actieve project (platte aggregatie voor kosten/voortgang)
   const bom = useMemo(() => {
     if (!active || recipes.size === 0) return null
     return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides, supply)
   }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes, supply])
+
+  // Hiërarchische boom voor het overzicht
+  const tree = useMemo(() => {
+    if (!active || recipes.size === 0) return null
+    return buildTree(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes])
+  const buildByType = useMemo(() => new Map((bom?.builds ?? []).map(b => [b.typeId, b])), [bom])
+  const buyByType = useMemo(() => new Map((bom?.buys ?? []).map(b => [b.typeId, b])), [bom])
+  const [viewMode, setViewMode] = useState<'tree' | 'list'>('tree')
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  const toggleCollapse = (typeId: number) => setCollapsed(prev => { const n = new Set(prev); n.has(typeId) ? n.delete(typeId) : n.add(typeId); return n })
 
   // Jita-prijzen voor alle betrokken types (koop-materialen én bouwbare items,
   // zodat we per onderdeel bouwen-vs-kopen kunnen vergelijken)
@@ -501,6 +541,62 @@ export default function BuildProject() {
               </div>
             </div>
 
+            {/* Weergave-schakelaar */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              {([['tree', '🌳 Bouwschema'], ['list', '📋 Inkooplijst']] as const).map(([m, lbl2]) => (
+                <button key={m} onClick={() => setViewMode(m)} style={{
+                  ...pill, padding: '4px 12px',
+                  borderColor: viewMode === m ? 'var(--blue)' : 'var(--border)',
+                  color: viewMode === m ? '#fff' : 'var(--text-dim)',
+                }}>{lbl2}</button>
+              ))}
+            </div>
+
+            {/* Hiërarchisch bouwschema */}
+            {viewMode === 'tree' && tree && (
+              <Section title="Bouwschema (wat valt waaronder)">
+                {flattenTree(tree, collapsed).map((n, i) => {
+                  const isB = n.build
+                  const bRow = isB ? buildByType.get(n.typeId) : undefined
+                  const yRow = !isB ? buyByType.get(n.typeId) : undefined
+                  const covered = isB ? (bRow ? buildCovered(bRow) : false) : (yRow ? buyCovered(yRow) : false)
+                  const owned = useSupply ? (ownedMap.get(n.typeId) ?? 0) : 0
+                  const inJob = useSupply ? (jobOutputMap.get(n.typeId) ?? 0) : 0
+                  const job = active.progress[n.typeId]?.job ?? 'todo'
+                  const inMaking = useSupply && jobActive.has(n.typeId)
+                  const buildable = recipes.has(n.typeId)
+                  const hasKids = n.children.length > 0
+                  return (
+                    <div key={`${n.typeId}-${n.depth}-${i}`} style={{ ...rowWrap, paddingLeft: 8 + n.depth * 18, opacity: covered && !inMaking ? 0.55 : 1 }}>
+                      {hasKids
+                        ? <button onClick={() => toggleCollapse(n.typeId)} style={{ ...btnGhost, width: 14, padding: 0, flexShrink: 0 }} title={collapsed.has(n.typeId) ? 'Uitklappen' : 'Inklappen'}>{collapsed.has(n.typeId) ? '▶' : '▼'}</button>
+                        : <span style={{ width: 14, flexShrink: 0 }} />}
+                      <StatusGlyph kind={inMaking ? 'job' : covered ? 'have' : null} />
+                      <EveImage category="types" id={n.typeId} variation="icon" size={32} px={24} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {nameOf(n.typeId)}{n.typeId === active.targetTypeId && <span style={{ color: 'var(--blue)', fontSize: '0.6rem', marginLeft: 6 }}>EINDPRODUCT</span>}
+                        </div>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <span>{fmtNum(n.qty)} {isB ? 'te bouwen' : 'nodig'}{isB && n.runs > 0 ? ` · ${n.runs} run${n.runs !== 1 ? 's' : ''}` : ''}</span>
+                          {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                          {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
+                          {bpBadge(n.typeId)}
+                        </div>
+                      </div>
+                      {isB
+                        ? <button onClick={() => toggleBuild(n.typeId)} style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
+                        : <>
+                            <input type="number" min={0} placeholder="0" value={active.progress[n.typeId]?.bought || ''} onChange={e => setBuy(n.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })} style={{ ...input, width: 80 }} title="Aantal gekocht" />
+                            {buildable && <button onClick={() => toggleBuyOverride(n.typeId)} style={{ ...pill, borderColor: active.buyOverrides[n.typeId] ? 'var(--gold)' : 'var(--border)', color: active.buyOverrides[n.typeId] ? 'var(--gold)' : 'var(--text-dim)' }} title="Zelf bouwen i.p.v. kopen">{active.buyOverrides[n.typeId] ? 'kopen ✓' : 'bouwen?'}</button>}
+                          </>}
+                    </div>
+                  )
+                })}
+              </Section>
+            )}
+
+            {viewMode === 'list' && (<>
             {/* Te bouwen */}
             <Section title={`Te bouwen (${bom.builds.filter(b => !buildCovered(b)).length}/${bom.builds.length})`}>
               {bom.builds.map(b => {
@@ -571,6 +667,7 @@ export default function BuildProject() {
                 )
               })}
             </Section>
+            </>)}
           </div>
         )}
 
