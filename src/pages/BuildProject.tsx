@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
+import { getAssets, getIndustryJobs } from '../api/esi'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type JobState = 'todo' | 'running' | 'done'
@@ -58,10 +59,13 @@ function fmtISK(v: number): string {
   return Math.round(v).toString()
 }
 
-// ── Materiaalboom → platte bill-of-materials ────────────────────────────────
-interface BuildRow { typeId: number; needed: number; runs: number; output: number }
-interface BuyRow { typeId: number; qty: number }
-function computeBom(target: number, targetQty: number, me: number, recipes: Map<number, Recipe>, buyOverrides: Record<number, true>) {
+// ── Materiaalboom → platte bill-of-materials (netto, na voorraad/jobs) ───────
+interface BuildRow { typeId: number; needed: number; net: number; runs: number; output: number }
+interface BuyRow { typeId: number; needed: number; net: number }
+function computeBom(
+  target: number, targetQty: number, me: number,
+  recipes: Map<number, Recipe>, buyOverrides: Record<number, true>, supply: Map<number, number>,
+) {
   const isBuilt = (t: number) => recipes.has(t) && !buyOverrides[t]
   if (!recipes.has(target)) return { builds: [] as BuildRow[], buys: [] as BuyRow[], buildable: false }
 
@@ -78,22 +82,24 @@ function computeBom(target: number, targetQty: number, me: number, recipes: Map<
   }
   visit(target)   // het eindproduct bouwen we sowieso
 
-  // ouders-eerst verwerken zodat de totale vraag per node vaststaat vóór het uitsplitsen
+  // ouders-eerst: trek beschikbare voorraad/in-productie af en bouw alleen het tekort,
+  // zodat het tekort doorwerkt naar de sub-materialen (MRP / netto-behoefte)
   const demand = new Map<number, number>([[target, targetQty]])
   const builds: BuildRow[] = []
   for (let i = order.length - 1; i >= 0; i--) {
     const t = order[i]
     const r = recipes.get(t)!
     const need = demand.get(t) ?? 0
-    const runs = Math.ceil(need / r.perRun)
-    builds.push({ typeId: t, needed: need, runs, output: runs * r.perRun })
+    const net = Math.max(0, need - (supply.get(t) ?? 0))
+    const runs = Math.ceil(net / r.perRun)
+    builds.push({ typeId: t, needed: need, net, runs, output: runs * r.perRun })
     for (const [m, q] of r.materials) {
       demand.set(m, (demand.get(m) ?? 0) + applyME(q, me) * runs)
     }
   }
   const buys: BuyRow[] = []
-  for (const [t, q] of demand) if (!isBuilt(t)) buys.push({ typeId: t, qty: q })
-  buys.sort((a, b) => b.qty - a.qty)
+  for (const [t, q] of demand) if (!isBuilt(t)) buys.push({ typeId: t, needed: q, net: Math.max(0, q - (supply.get(t) ?? 0)) })
+  buys.sort((a, b) => b.net - a.net || b.needed - a.needed)
   return { builds, buys, buildable: true }
 }
 
@@ -135,7 +141,7 @@ const JOB_LABEL: Record<JobState, string> = { todo: 'Te doen', running: 'Job dra
 const JOB_COLOR: Record<JobState, string> = { todo: 'var(--text-dim)', running: 'var(--gold)', done: '#3ecf6e' }
 
 export default function BuildProject() {
-  const { tokens, mainCharId } = useAuth()
+  const { tokens, activeTokens, mainCharId } = useAuth()
   const charId = mainCharId ?? tokens[0]?.characterId ?? 0
   const charName = tokens.find(t => t.characterId === charId)?.characterName ?? ''
 
@@ -146,6 +152,13 @@ export default function BuildProject() {
   const [loading, setLoading] = useState(true)
   usePageLoading(loading)
   const [prices, setPrices] = useState<Map<number, number>>(new Map())
+
+  // Voorraad (assets) + lopende productie (industry jobs)
+  const [ownedMap, setOwnedMap] = useState<Map<number, number>>(new Map())
+  const [jobOutputMap, setJobOutputMap] = useState<Map<number, number>>(new Map())
+  const [jobActive, setJobActive] = useState<Set<number>>(new Set())
+  const [invLoading, setInvLoading] = useState(false)
+  const [useSupply, setUseSupply] = useState(true)
 
   // create-dialoog
   const [creating, setCreating] = useState(false)
@@ -165,13 +178,50 @@ export default function BuildProject() {
     apiLoad(charId).then(p => { setProjects(p); setActiveId(p[0]?.id ?? null) }).finally(() => setLoading(false))
   }, [charId])
 
+  // Voorraad + jobs ophalen over alle ingelogde characters
+  const refreshInventory = useCallback(async () => {
+    if (activeTokens.length === 0 || recipes.size === 0) return
+    setInvLoading(true)
+    try {
+      const owned = new Map<number, number>()
+      const jobOut = new Map<number, number>()
+      const active = new Set<number>()
+      await Promise.all(activeTokens.map(async t => {
+        const [assets, jobs] = await Promise.all([
+          getAssets(t.characterId, t.accessToken).catch(() => []),
+          getIndustryJobs(t.characterId, t.accessToken).catch(() => []),
+        ])
+        for (const a of assets) owned.set(a.type_id, (owned.get(a.type_id) ?? 0) + a.quantity)
+        for (const j of jobs) {
+          if (j.activity_id !== 1 || !j.product_type_id) continue            // alleen manufacturing
+          if (j.status !== 'active' && j.status !== 'ready' && j.status !== 'paused') continue
+          const perRun = recipes.get(j.product_type_id)?.perRun ?? 1
+          jobOut.set(j.product_type_id, (jobOut.get(j.product_type_id) ?? 0) + j.runs * perRun)
+          active.add(j.product_type_id)
+        }
+      }))
+      setOwnedMap(owned); setJobOutputMap(jobOut); setJobActive(active)
+    } finally { setInvLoading(false) }
+  }, [activeTokens.map(t => t.characterId).join(','), recipes])
+
+  useEffect(() => { refreshInventory() }, [refreshInventory])
+
   const active = projects.find(p => p.id === activeId) ?? null
+
+  // Voorraad + in-productie als beschikbare 'supply' voor de netto-berekening
+  const supply = useMemo(() => {
+    const m = new Map<number, number>()
+    if (!useSupply) return m
+    for (const [id, q] of ownedMap) m.set(id, (m.get(id) ?? 0) + q)
+    for (const [id, out] of jobOutputMap) m.set(id, (m.get(id) ?? 0) + out)
+    return m
+  }, [useSupply, ownedMap, jobOutputMap])
 
   // De bill-of-materials van het actieve project
   const bom = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes])
+    return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides, supply)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes, supply])
 
   // Jita-prijzen voor de koop-lijst
   useEffect(() => {
@@ -235,25 +285,24 @@ export default function BuildProject() {
     return { ...p, buyOverrides: bo }
   })
 
-  // Voortgangs-percentage: aandeel afgeronde koop- + bouwregels
+  // helpers voor 'gedekt'-status (netto 0, of automatisch via voorraad/job, of handmatig)
+  const buyCovered = (b: BuyRow) => {
+    const pr = active?.progress[b.typeId]
+    return b.net === 0 || pr?.done || (pr?.bought ?? 0) >= b.net
+  }
+  const buildCovered = (b: BuildRow) => b.net === 0 || active?.progress[b.typeId]?.job === 'done'
+
   const pct = useMemo(() => {
     if (!active || !bom) return 0
-    let total = 0, done = 0
-    for (const b of bom.buys) {
-      total++
-      const pr = active.progress[b.typeId]
-      if (pr?.done || (pr?.bought ?? 0) >= b.qty) done++
-    }
-    for (const b of bom.builds) {
-      total++
-      if (active.progress[b.typeId]?.job === 'done') done++
-    }
-    return total ? Math.round((done / total) * 100) : 0
+    const total = bom.buys.length + bom.builds.length
+    if (!total) return 0
+    const done = bom.buys.filter(buyCovered).length + bom.builds.filter(buildCovered).length
+    return Math.round((done / total) * 100)
   }, [active, bom])
 
   const totalCost = useMemo(() => {
     if (!bom) return 0
-    return bom.buys.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.qty, 0)
+    return bom.buys.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.net, 0)
   }, [bom, prices])
 
   if (!charId) return <Layout header={<PageHeader title="Bouwproject" />}><div style={{ padding: '2rem', color: 'var(--text-dim)' }}>Log in om bouwprojecten te beheren.</div></Layout>
@@ -265,7 +314,14 @@ export default function BuildProject() {
         {/* Projectenlijst */}
         <div style={{ width: 240, flexShrink: 0 }}>
           <button onClick={() => setCreating(true)} style={btnPrimary}>+ Nieuw project</button>
-          <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0.6rem 2px', fontSize: '0.66rem', color: 'var(--text-dim)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={useSupply} onChange={e => setUseSupply(e.target.checked)} />
+            Voorraad &amp; jobs meerekenen
+          </label>
+          <button onClick={refreshInventory} disabled={invLoading} style={{ ...btnGhost, fontSize: '0.66rem', padding: '2px 2px' }}>
+            {invLoading ? '⏳ voorraad laden…' : '↻ Voorraad verversen'}
+          </button>
+          <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {projects.length === 0 && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Nog geen projecten.</div>}
             {projects.map(p => (
               <button key={p.id} onClick={() => setActiveId(p.id)} style={{
@@ -316,7 +372,7 @@ export default function BuildProject() {
                 <EveImage category="types" id={active.targetTypeId} variation="icon" size={64} px={48} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{active.targetName}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · ~{fmtISK(totalCost)} ISK materiaal (Jita sell)</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita sell){useSupply && ' · voorraad/jobs meegerekend'}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <label style={{ ...lbl, fontSize: '0.62rem' }}>Aantal<input type="number" min={1} value={active.targetQty} onChange={e => updateActive(p => ({ ...p, targetQty: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ ...input, width: 76 }} /></label>
@@ -333,18 +389,27 @@ export default function BuildProject() {
             </div>
 
             {/* Te bouwen */}
-            <Section title={`Te bouwen (${bom.builds.length})`}>
+            <Section title={`Te bouwen (${bom.builds.filter(b => !buildCovered(b)).length}/${bom.builds.length})`}>
               {bom.builds.map(b => {
                 const job = active.progress[b.typeId]?.job ?? 'todo'
+                const owned = useSupply ? (ownedMap.get(b.typeId) ?? 0) : 0
+                const inJob = useSupply ? (jobOutputMap.get(b.typeId) ?? 0) : 0
+                const covered = buildCovered(b)
                 return (
-                  <div key={b.typeId} style={rowWrap}>
+                  <div key={b.typeId} style={{ ...rowWrap, opacity: covered ? 0.5 : 1 }}>
                     <EveImage category="types" id={b.typeId} variation="icon" size={32} px={26} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {nameOf(b.typeId)}{b.typeId === active.targetTypeId && <span style={{ color: 'var(--blue)', fontSize: '0.6rem', marginLeft: 6 }}>EINDPRODUCT</span>}
                       </div>
-                      <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>{fmtNum(b.output)} stuks · {b.runs} run{b.runs !== 1 ? 's' : ''}</div>
+                      <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {b.net > 0 ? <span>{fmtNum(b.output)} te bouwen · {b.runs} run{b.runs !== 1 ? 's' : ''}</span> : <span style={{ color: '#3ecf6e' }}>✓ gedekt</span>}
+                        <span style={{ color: 'var(--text-dim)' }}>({fmtNum(b.needed)} nodig)</span>
+                        {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                        {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
+                      </div>
                     </div>
+                    {jobActive.has(b.typeId) && useSupply && <span style={{ ...pill, color: 'var(--gold)', borderColor: 'var(--gold)' }} title="Er draait een job voor dit onderdeel">in productie</span>}
                     <button onClick={() => toggleBuild(b.typeId)} style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
                   </div>
                 )
@@ -352,25 +417,28 @@ export default function BuildProject() {
             </Section>
 
             {/* Te kopen */}
-            <Section title={`Te kopen (${bom.buys.length})`}>
+            <Section title={`Te kopen (${bom.buys.filter(b => !buyCovered(b)).length}/${bom.buys.length})`}>
               {bom.buys.map(b => {
                 const pr = active.progress[b.typeId]
                 const bought = pr?.bought ?? 0
-                const complete = pr?.done || bought >= b.qty
+                const covered = buyCovered(b)
+                const owned = useSupply ? (ownedMap.get(b.typeId) ?? 0) : 0
                 const price = prices.get(b.typeId) ?? 0
                 const buildable = recipes.has(b.typeId)
                 return (
-                  <div key={b.typeId} style={{ ...rowWrap, opacity: complete ? 0.5 : 1 }}>
-                    <input type="checkbox" checked={!!complete} onChange={e => setBuy(b.typeId, { done: e.target.checked })} style={{ width: 16, height: 16 }} />
+                  <div key={b.typeId} style={{ ...rowWrap, opacity: covered ? 0.5 : 1 }}>
+                    <input type="checkbox" checked={!!covered} onChange={e => setBuy(b.typeId, { done: e.target.checked })} style={{ width: 16, height: 16 }} />
                     <EveImage category="types" id={b.typeId} variation="icon" size={32} px={26} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(b.typeId)}</div>
-                      <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
-                        {fmtNum(b.qty)} nodig{price > 0 && <> · ~{fmtISK(price * b.qty)} ISK</>}
+                      <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {b.net > 0 ? <span>{fmtNum(b.net)} kopen{price > 0 && <> · ~{fmtISK(price * b.net)} ISK</>}</span> : <span style={{ color: '#3ecf6e' }}>✓ in voorraad</span>}
+                        <span>({fmtNum(b.needed)} nodig)</span>
+                        {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                       </div>
                     </div>
                     <input type="number" min={0} placeholder="0" value={bought || ''} onChange={e => setBuy(b.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })}
-                      style={{ ...input, width: 90 }} title="Aantal gekocht" />
+                      style={{ ...input, width: 90 }} title="Aantal handmatig gekocht (bovenop voorraad)" />
                     {buildable && (
                       <button onClick={() => toggleBuyOverride(b.typeId)} style={{ ...pill, borderColor: active.buyOverrides[b.typeId] ? 'var(--gold)' : 'var(--border)', color: active.buyOverrides[b.typeId] ? 'var(--gold)' : 'var(--text-dim)' }}
                         title="Dit onderdeel zelf bouwen i.p.v. kopen">{active.buyOverrides[b.typeId] ? 'kopen ✓' : 'bouwen?'}</button>
@@ -409,5 +477,6 @@ const rowBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap
 const btnPrimary: React.CSSProperties = { width: '100%', padding: '0.55rem', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }
 const btnGhost: React.CSSProperties = { background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }
 const pill: React.CSSProperties = { padding: '3px 9px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 12, fontSize: '0.64rem', cursor: 'pointer', whiteSpace: 'nowrap' }
+const badge: React.CSSProperties = { color: 'var(--text-dim)', whiteSpace: 'nowrap' }
 const input: React.CSSProperties = { background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', padding: '0.32rem 0.5rem', fontSize: '0.74rem' }
 const lbl: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3, fontSize: '0.66rem', color: 'var(--text-dim)' }
