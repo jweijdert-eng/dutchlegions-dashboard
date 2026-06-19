@@ -3,7 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
-import { getAssets, getIndustryJobs } from '../api/esi'
+import { getAssets, getIndustryJobs, getStructureInfo, resolveNames } from '../api/esi'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type JobState = 'todo' | 'running' | 'done'
@@ -153,8 +153,10 @@ export default function BuildProject() {
   usePageLoading(loading)
   const [prices, setPrices] = useState<Map<number, number>>(new Map())
 
-  // Voorraad (assets) + lopende productie (industry jobs)
-  const [ownedMap, setOwnedMap] = useState<Map<number, number>>(new Map())
+  // Voorraad (assets) per locatie + lopende productie (industry jobs, globaal)
+  const [ownedByLoc, setOwnedByLoc] = useState<Map<number, Map<number, number>>>(new Map())
+  const [locLabels, setLocLabels] = useState<Map<number, string>>(new Map())
+  const [locFilter, setLocFilter] = useState<number | 'all'>('all')
   const [jobOutputMap, setJobOutputMap] = useState<Map<number, number>>(new Map())
   const [jobActive, setJobActive] = useState<Set<number>>(new Set())
   const [invLoading, setInvLoading] = useState(false)
@@ -183,30 +185,80 @@ export default function BuildProject() {
     if (activeTokens.length === 0 || recipes.size === 0) return
     setInvLoading(true)
     try {
-      const owned = new Map<number, number>()
+      type Raw = { item_id: number; type_id: number; location_id: number; location_type: string; location_flag: string; quantity: number; owner: number }
+      const allRaw: Raw[] = []
       const jobOut = new Map<number, number>()
-      const active = new Set<number>()
+      const jobAct = new Set<number>()
       await Promise.all(activeTokens.map(async t => {
         const [assets, jobs] = await Promise.all([
           getAssets(t.characterId, t.accessToken).catch(() => []),
           getIndustryJobs(t.characterId, t.accessToken).catch(() => []),
         ])
-        for (const a of assets) owned.set(a.type_id, (owned.get(a.type_id) ?? 0) + a.quantity)
+        for (const a of assets) allRaw.push({ ...a, owner: t.characterId } as Raw)
         for (const j of jobs) {
           if (j.activity_id !== 1 || !j.product_type_id) continue            // alleen manufacturing
           if (j.status !== 'active' && j.status !== 'ready' && j.status !== 'paused') continue
           const perRun = recipes.get(j.product_type_id)?.perRun ?? 1
           jobOut.set(j.product_type_id, (jobOut.get(j.product_type_id) ?? 0) + j.runs * perRun)
-          active.add(j.product_type_id)
+          jobAct.add(j.product_type_id)
         }
       }))
-      setOwnedMap(owned); setJobOutputMap(jobOut); setJobActive(active)
+
+      // Wortel-locatie per asset bepalen door de container-/schip-boom omhoog te lopen
+      const byItem = new Map(allRaw.map(a => [`${a.owner}:${a.item_id}`, a]))
+      const rootType = new Map<number, 'station' | 'structure' | 'solar_system' | 'other'>()
+      const rootLoc = (a: Raw, guard = 0): number => {
+        if (a.location_type !== 'item' || guard > 12) {
+          const id = a.location_id
+          rootType.set(id, a.location_type === 'station' ? 'station'
+            : a.location_type === 'solar_system' ? 'solar_system'
+            : id >= 1_000_000_000 ? 'structure' : 'station')
+          return id
+        }
+        const parent = byItem.get(`${a.owner}:${a.location_id}`)
+        if (!parent) { const id = a.location_id; rootType.set(id, id >= 1_000_000_000 ? 'structure' : 'other'); return id }
+        return rootLoc(parent, guard + 1)
+      }
+
+      const byLoc = new Map<number, Map<number, number>>()
+      for (const a of allRaw) {
+        if (/Slot/i.test(a.location_flag)) continue   // gefitte modules tellen niet als voorraad
+        const locId = rootLoc(a)
+        let m = byLoc.get(locId); if (!m) { m = new Map(); byLoc.set(locId, m) }
+        m.set(a.type_id, (m.get(a.type_id) ?? 0) + a.quantity)
+      }
+
+      // Locatienamen: SDE/ESI voor stations & systemen, getStructureInfo voor citadels
+      const ids = [...byLoc.keys()]
+      const nameMap = await resolveNames(ids).catch(() => new Map<number, string>())
+      await Promise.all(ids.filter(id => !nameMap.get(id) && rootType.get(id) === 'structure')
+        .map(async id => { const info = await getStructureInfo(id, activeTokens).catch(() => null); if (info?.name) nameMap.set(id, info.name) }))
+
+      setOwnedByLoc(byLoc)
+      setLocLabels(new Map(ids.map(id => [id, nameMap.get(id) ?? `Locatie ${id}`])))
+      setJobOutputMap(jobOut); setJobActive(jobAct)
     } finally { setInvLoading(false) }
   }, [activeTokens.map(t => t.characterId).join(','), recipes])
 
   useEffect(() => { refreshInventory() }, [refreshInventory])
 
   const active = projects.find(p => p.id === activeId) ?? null
+
+  // Voorraad op de gekozen locatie (of alles opgeteld)
+  const ownedMap = useMemo(() => {
+    if (locFilter === 'all') {
+      const m = new Map<number, number>()
+      for (const loc of ownedByLoc.values()) for (const [id, q] of loc) m.set(id, (m.get(id) ?? 0) + q)
+      return m
+    }
+    return ownedByLoc.get(locFilter) ?? new Map<number, number>()
+  }, [ownedByLoc, locFilter])
+
+  const locOptions = useMemo(() =>
+    [...ownedByLoc.keys()]
+      .map(id => ({ id, label: locLabels.get(id) ?? `Locatie ${id}`, count: ownedByLoc.get(id)!.size }))
+      .sort((a, b) => b.count - a.count),
+  [ownedByLoc, locLabels])
 
   // Voorraad + in-productie als beschikbare 'supply' voor de netto-berekening
   const supply = useMemo(() => {
@@ -321,6 +373,15 @@ export default function BuildProject() {
           <button onClick={refreshInventory} disabled={invLoading} style={{ ...btnGhost, fontSize: '0.66rem', padding: '2px 2px' }}>
             {invLoading ? '⏳ voorraad laden…' : '↻ Voorraad verversen'}
           </button>
+          {useSupply && locOptions.length > 0 && (
+            <select value={locFilter === 'all' ? 'all' : String(locFilter)}
+              onChange={e => setLocFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              title="Tel alleen voorraad op deze locatie mee (jobs blijven globaal)"
+              style={{ ...input, width: '100%', marginTop: 6 }}>
+              <option value="all">📍 Alle locaties</option>
+              {locOptions.map(o => <option key={o.id} value={o.id}>{o.label} ({o.count})</option>)}
+            </select>
+          )}
           <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {projects.length === 0 && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Nog geen projecten.</div>}
             {projects.map(p => (
