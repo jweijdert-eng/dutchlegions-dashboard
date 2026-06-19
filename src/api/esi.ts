@@ -184,6 +184,24 @@ export interface Medal {
 }
 export const getMedals = (id: number, token: string) => esiGet<Medal[]>(`/characters/${id}/medals/`, token)
 
+// ── Wars (publiek) ──────────────────────────────────────────────────────────
+export interface WarParty { corporation_id?: number; alliance_id?: number; isk_destroyed: number; ships_killed: number }
+export interface WarAlly { corporation_id?: number; alliance_id?: number }
+export interface War {
+  id: number
+  declared: string
+  started?: string
+  finished?: string
+  mutual: boolean
+  open_for_allies: boolean
+  aggressor: WarParty
+  defender: WarParty
+  allies?: WarAlly[]
+}
+// Lijst van war-id's, nieuwste eerst (max 2000); max_war_id voor oudere pagina's.
+export const getWarIds = (maxWarId?: number) => esiGet<number[]>(`/wars/${maxWarId ? `?max_war_id=${maxWarId}` : ''}`)
+export const getWar = (id: number) => esiGet<War>(`/wars/${id}/`)
+
 export interface CorporationInfo {
   name: string
   ticker: string

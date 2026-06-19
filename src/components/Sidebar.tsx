@@ -62,6 +62,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Contracts',    path: '/contracts',  icon: '◧', badge: null },
   { label: 'Hauling',      path: '/hauling',    icon: '⇶', badge: null },
   { label: 'Killboard',    path: '/kills',      icon: '◉', badge: null },
+  { label: 'Wars',         path: '/wars',       icon: '⚔', badge: null },
   { label: 'Fleet',        path: '/fleet',      icon: '⚑', badge: null },
   { label: 'Ratting',      path: '/ratting',    icon: '⦿', badge: null },
   { label: 'Industry',     path: '/industry',   icon: '◫', badge: 'jobs' },
