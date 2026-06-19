@@ -3,7 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
-import { getAssets, getIndustryJobs, getStructureInfo, resolveNames } from '../api/esi'
+import { getAssets, getBlueprints, getIndustryJobs, getStructureInfo, resolveNames } from '../api/esi'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type JobState = 'todo' | 'running' | 'done'
@@ -22,7 +22,7 @@ interface Project {
 }
 
 interface CompactBp { m: [number, number][]; p: [number, number] }
-interface Recipe { perRun: number; materials: [number, number][] }
+interface Recipe { perRun: number; materials: [number, number][]; bpId: number }
 
 // ── SDE-data (eenmalig laden, gedeeld) ──────────────────────────────────────
 let _namesInflight: Promise<Record<string, string>> | null = null
@@ -37,9 +37,9 @@ function loadRecipes(): Promise<Map<number, Recipe>> {
     .then(r => r.json() as Promise<Record<string, CompactBp>>)
     .then(bps => {
       const byProduct = new Map<number, Recipe>()
-      for (const bp of Object.values(bps)) {
+      for (const [bid, bp] of Object.entries(bps)) {
         const [prodId, perRun] = bp.p
-        if (!byProduct.has(prodId)) byProduct.set(prodId, { perRun, materials: bp.m })
+        if (!byProduct.has(prodId)) byProduct.set(prodId, { perRun, materials: bp.m, bpId: Number(bid) })
       }
       return byProduct
     })
@@ -159,6 +159,7 @@ export default function BuildProject() {
   const [locFilter, setLocFilter] = useState<number | 'all'>('all')
   const [jobOutputMap, setJobOutputMap] = useState<Map<number, number>>(new Map())
   const [jobActive, setJobActive] = useState<Set<number>>(new Set())
+  const [bpOwned, setBpOwned] = useState<Map<number, { bpo: boolean; me: number }>>(new Map())  // key = blueprint-type-id
   const [invLoading, setInvLoading] = useState(false)
   const [useSupply, setUseSupply] = useState(true)
 
@@ -189,10 +190,12 @@ export default function BuildProject() {
       const allRaw: Raw[] = []
       const jobOut = new Map<number, number>()
       const jobAct = new Set<number>()
+      const bpById = new Map<number, { bpo: boolean; me: number }>()
       await Promise.all(activeTokens.map(async t => {
-        const [assets, jobs] = await Promise.all([
+        const [assets, jobs, blueprints] = await Promise.all([
           getAssets(t.characterId, t.accessToken).catch(() => []),
           getIndustryJobs(t.characterId, t.accessToken).catch(() => []),
+          getBlueprints(t.characterId, t.accessToken).catch(() => []),
         ])
         for (const a of assets) allRaw.push({ ...a, owner: t.characterId } as Raw)
         for (const j of jobs) {
@@ -201,6 +204,12 @@ export default function BuildProject() {
           const perRun = recipes.get(j.product_type_id)?.perRun ?? 1
           jobOut.set(j.product_type_id, (jobOut.get(j.product_type_id) ?? 0) + j.runs * perRun)
           jobAct.add(j.product_type_id)
+        }
+        for (const bp of blueprints) {
+          const bpo = bp.quantity === -1
+          const cur = bpById.get(bp.type_id)
+          // beste exemplaar onthouden: BPO heeft voorrang, anders de hoogste ME
+          if (!cur || (bpo && !cur.bpo) || bp.material_efficiency > cur.me) bpById.set(bp.type_id, { bpo, me: bp.material_efficiency })
         }
       }))
 
@@ -236,7 +245,7 @@ export default function BuildProject() {
 
       setOwnedByLoc(byLoc)
       setLocLabels(new Map(ids.map(id => [id, nameMap.get(id) ?? `Locatie ${id}`])))
-      setJobOutputMap(jobOut); setJobActive(jobAct)
+      setJobOutputMap(jobOut); setJobActive(jobAct); setBpOwned(bpById)
     } finally { setInvLoading(false) }
   }, [activeTokens.map(t => t.characterId).join(','), recipes])
 
@@ -381,6 +390,17 @@ export default function BuildProject() {
   }
   const targetVerdict = active ? verdict(active.targetTypeId) : null
 
+  // Heb je de blueprint om dit te bouwen? (alleen tonen als we je BP's hebben opgehaald)
+  const bpBadge = (typeId: number) => {
+    if (bpOwned.size === 0) return null
+    const r = recipes.get(typeId)
+    if (!r) return null
+    const bp = bpOwned.get(r.bpId)
+    return bp
+      ? <span style={{ ...badge, color: '#7fd1ff' }} title={`Blueprint in bezit · ME ${bp.me}`}>📘 {bp.bpo ? 'BPO' : 'BPC'} ME{bp.me}</span>
+      : <span style={{ ...badge, color: 'var(--red)' }} title="Je hebt deze blueprint (nog) niet">⚠ geen BP</span>
+  }
+
   if (!charId) return <Layout header={<PageHeader title="Bouwproject" />}><div style={{ padding: '2rem', color: 'var(--text-dim)' }}>Log in om bouwprojecten te beheren.</div></Layout>
 
   return (
@@ -502,6 +522,7 @@ export default function BuildProject() {
                         <span style={{ color: 'var(--text-dim)' }}>({fmtNum(b.needed)} nodig)</span>
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                         {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
+                        {bpBadge(b.typeId)}
                       </div>
                       {(() => { const v = verdict(b.typeId); return v ? (
                         <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: 1 }}>
@@ -537,6 +558,7 @@ export default function BuildProject() {
                         {(() => { const v = buildable ? verdict(b.typeId) : null; return v && v.cheaper === 'build' && v.savePct >= 2
                           ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen −{v.savePct}%</span>
                           : null })()}
+                        {buildable && bpBadge(b.typeId)}
                       </div>
                     </div>
                     <input type="number" min={0} placeholder="0" value={bought || ''} onChange={e => setBuy(b.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })}
