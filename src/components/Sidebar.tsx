@@ -115,13 +115,14 @@ const rowStyle = (isActive: boolean, collapsed: boolean, nested: boolean): React
 })
 
 // Eén navigeerbaar item (zowel top-level als genest in een groep)
-function LeafRow({ item, badgeCount, collapsed, nested }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; nested?: boolean }) {
+function LeafRow({ item, badgeCount, collapsed, nested, label }: { item: NavItem; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; nested?: boolean; label?: string }) {
   const count = badgeCount(item.badge)
+  const name = label ?? item.label
   return (
-    <NavLink to={item.path} end={item.path === '/'} title={collapsed ? item.label : undefined}
+    <NavLink to={item.path} end={item.path === '/'} title={collapsed ? name : undefined}
       style={({ isActive }) => rowStyle(isActive, !!collapsed, !!nested)}>
       <span style={{ fontSize: nested ? 12 : 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-      {!collapsed && <span style={{ fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{item.label}</span>}
+      {!collapsed && <span style={{ fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{name}</span>}
       {!collapsed && <Badge count={count} />}
       {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />}
     </NavLink>
@@ -129,7 +130,7 @@ function LeafRow({ item, badgeCount, collapsed, nested }: { item: NavItem; badge
 }
 
 // Uitklapbare groep (hoofd-item met genest lijstje)
-function GroupRow({ group, badgeCount, collapsed, open, onToggle }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void }) {
+function GroupRow({ group, badgeCount, collapsed, open, onToggle, labelOf }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void; labelOf: (p: string) => string }) {
   const location = useLocation()
   const childActive = group.children.includes(location.pathname)
   const totalBadge = group.children.reduce((s, p) => s + badgeCount(ITEM_BY_PATH[p]?.badge ?? null), 0)
@@ -150,7 +151,7 @@ function GroupRow({ group, badgeCount, collapsed, open, onToggle }: { group: Ext
       </div>
       {!collapsed && expanded && (
         <div style={{ marginLeft: '1.1rem', borderLeft: '1px solid var(--border)', paddingTop: 1, paddingBottom: 2 }}>
-          {group.children.map(p => ITEM_BY_PATH[p] && <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} nested />)}
+          {group.children.map(p => ITEM_BY_PATH[p] && <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} nested label={labelOf(p)} />)}
         </div>
       )}
     </div>
@@ -163,7 +164,7 @@ const eArrow: React.CSSProperties = { fontSize: '0.55rem', lineHeight: 1, backgr
 const eInput: React.CSSProperties = { background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid var(--border)', borderRadius: 3, padding: '2px 4px', fontSize: '0.7rem' }
 const eSelect: React.CSSProperties = { fontSize: '0.6rem', background: 'rgba(0,0,0,0.35)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 3, maxWidth: 90 }
 
-function NavEditor({ layout, onChange, onReset }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void }) {
+function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem }: { layout: LayoutEntry[]; onChange: (l: LayoutEntry[]) => void; onReset: () => void; labelOf: (p: string) => string; onRenameItem: (p: string, v: string) => void }) {
   const groups = layout.filter((e): e is Extract<LayoutEntry, { kind: 'group' }> => e.kind === 'group')
   const moveTop = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= layout.length) return; const n = [...layout];[n[i], n[j]] = [n[j], n[i]]; onChange(n) }
   const addGroup = () => onChange([...layout, { kind: 'group', id: 'grp-' + Date.now().toString(36), label: 'Nieuwe groep', icon: '▦', children: [] }])
@@ -208,7 +209,7 @@ function NavEditor({ layout, onChange, onReset }: { layout: LayoutEntry[]; onCha
               <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '1px 2px', fontSize: '0.7rem' }}>
                 <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveChild(e.id, ci, -1)} style={eArrow}>▲</button><button onClick={() => moveChild(e.id, ci, 1)} style={eArrow}>▼</button></span>
                 <span style={{ width: 14, textAlign: 'center' }}>{ITEM_BY_PATH[p].icon}</span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ITEM_BY_PATH[p].label}</span>
+                <input value={labelOf(p)} onChange={ev => onRenameItem(p, ev.target.value)} style={{ ...eInput, flex: 1, minWidth: 0 }} title="Naam aanpassen" />
                 {groupSelect(p, e.id)}
               </div>
             ))}
@@ -218,7 +219,7 @@ function NavEditor({ layout, onChange, onReset }: { layout: LayoutEntry[]; onCha
         <div key={e.path} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px', marginBottom: 2, fontSize: '0.7rem' }}>
           <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveTop(i, -1)} style={eArrow}>▲</button><button onClick={() => moveTop(i, 1)} style={eArrow}>▼</button></span>
           <span style={{ width: 14, textAlign: 'center' }}>{ITEM_BY_PATH[e.path].icon}</span>
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ITEM_BY_PATH[e.path].label}</span>
+          <input value={labelOf(e.path)} onChange={ev => onRenameItem(e.path, ev.target.value)} style={{ ...eInput, flex: 1, minWidth: 0 }} title="Naam aanpassen" />
           {groupSelect(e.path, '__top')}
         </div>
       ) : null)}
@@ -469,8 +470,16 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const member = useMemberSettings()
   const [layout, setLayout] = useState<LayoutEntry[]>(loadLayout)
   const applyLayout = (l: LayoutEntry[]) => { setLayout(l); saveLayout(l) }
-  const resetNav = () => { try { localStorage.removeItem('nav_layout_v1') } catch { /* ignore */ }; setLayout(loadLayout()) }
+  const resetNav = () => { try { localStorage.removeItem('nav_layout_v1'); localStorage.removeItem('nav_labels') } catch { /* ignore */ }; setLabels({}); setLayout(loadLayout()) }
   const [navEdit, setNavEdit] = useState(false)
+  // Eigen labels per pagina (overschrijft de standaardnaam)
+  const [labels, setLabels] = useState<Record<string, string>>(() => { try { return JSON.parse(localStorage.getItem('nav_labels') ?? '{}') || {} } catch { return {} } })
+  const labelOf = (path: string) => { const o = labels[path]; return o && o.trim() ? o : (ITEM_BY_PATH[path]?.label ?? path) }
+  const renameItem = (path: string, value: string) => setLabels(prev => {
+    const next = { ...prev, [path]: value.slice(0, 24) }
+    try { localStorage.setItem('nav_labels', JSON.stringify(next)) } catch { /* ignore */ }
+    return next
+  })
   const isHidden = (p: string) => member.hiddenTabs.includes(p)
   // welke groepen staan open (persistent per browser)
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
@@ -668,20 +677,20 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           </div>
         )}
         {navEdit && !collapsed
-          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} />
+          ? <NavEditor layout={layout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} />
           : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
           ? layout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
               .filter(p => ITEM_BY_PATH[p] && !isHidden(p))
-              .map(p => <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} collapsed />)
+              .map(p => <LeafRow key={p} item={ITEM_BY_PATH[p]} badgeCount={badgeCount} collapsed label={labelOf(p)} />)
           // Uitgeklapt: losse items + uitklapbare groepen
           : layout.map(e => {
               if (e.kind === 'item') return ITEM_BY_PATH[e.path] && !isHidden(e.path)
-                ? <LeafRow key={e.path} item={ITEM_BY_PATH[e.path]} badgeCount={badgeCount} />
+                ? <LeafRow key={e.path} item={ITEM_BY_PATH[e.path]} badgeCount={badgeCount} label={labelOf(e.path)} />
                 : null
               const visibleChildren = e.children.filter(p => !isHidden(p))
               if (visibleChildren.length === 0) return null
-              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={openGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} />
+              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={openGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} labelOf={labelOf} />
             })}
 
         {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
