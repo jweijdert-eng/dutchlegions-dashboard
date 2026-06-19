@@ -338,6 +338,14 @@ export default function BuildProject() {
   const [viewMode, setViewMode] = useState<'tree' | 'list'>('tree')
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const toggleCollapse = (typeId: number) => setCollapsed(prev => { const n = new Set(prev); n.has(typeId) ? n.delete(typeId) : n.add(typeId); return n })
+  // alle nodes met kinderen (= inklapbaar)
+  const allParents = useMemo(() => {
+    const s = new Set<number>()
+    if (tree) { const walk = (n: TreeNode) => { if (n.children.length) { s.add(n.typeId); n.children.forEach(walk) } }; walk(tree) }
+    return s
+  }, [tree])
+  const collapseAll = () => setCollapsed(new Set([...allParents].filter(id => id !== tree?.typeId)))  // eindproduct open laten
+  const expandAll = () => setCollapsed(new Set())
 
   // ISK-kosten per boom-node: blad = aantal × Jita-sell, bouw-node = som van de
   // kinderen (= materiaalkosten om die sub-assemblage zelf te bouwen)
@@ -578,7 +586,7 @@ export default function BuildProject() {
             </div>
 
             {/* Weergave-schakelaar */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               {([['tree', '🌳 Bouwschema'], ['list', '📋 Inkooplijst']] as const).map(([m, lbl2]) => (
                 <button key={m} onClick={() => setViewMode(m)} style={{
                   ...pill, padding: '4px 12px',
@@ -586,6 +594,12 @@ export default function BuildProject() {
                   color: viewMode === m ? '#fff' : 'var(--text-dim)',
                 }}>{lbl2}</button>
               ))}
+              {viewMode === 'tree' && allParents.size > 1 && (
+                <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                  <button onClick={collapseAll} style={{ ...pill, padding: '4px 10px' }} title="Alle sub-onderdelen inklappen">⊟ Alles inklappen</button>
+                  <button onClick={expandAll} style={{ ...pill, padding: '4px 10px' }} title="Alles uitklappen">⊞ Alles uitklappen</button>
+                </span>
+              )}
             </div>
 
             {/* Hiërarchisch bouwschema */}
