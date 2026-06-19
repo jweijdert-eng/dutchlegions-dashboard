@@ -275,11 +275,16 @@ export default function BuildProject() {
     return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides, supply)
   }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes, supply])
 
-  // Jita-prijzen voor de koop-lijst
+  // Jita-prijzen voor alle betrokken types (koop-materialen én bouwbare items,
+  // zodat we per onderdeel bouwen-vs-kopen kunnen vergelijken)
+  const priceTypeIds = useMemo(() => {
+    if (!bom) return [] as number[]
+    return [...new Set([...bom.builds.map(b => b.typeId), ...bom.buys.map(b => b.typeId)])]
+  }, [bom])
   useEffect(() => {
-    if (!bom || bom.buys.length === 0) return
-    fetchJitaSell(bom.buys.map(b => b.typeId)).then(setPrices)
-  }, [bom?.buys.map(b => b.typeId).join(',')])
+    if (priceTypeIds.length === 0) return
+    fetchJitaSell(priceTypeIds).then(setPrices)
+  }, [priceTypeIds.join(',')])
 
   // Debounced opslaan bij elke wijziging aan het actieve project
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -356,6 +361,25 @@ export default function BuildProject() {
     if (!bom) return 0
     return bom.buys.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.net, 0)
   }, [bom, prices])
+
+  // Bouwen-vs-kopen per eenheid: kosten om zelf te bouwen (directe materialen tegen
+  // Jita-sell, met ME) versus de marktprijs van het kant-en-klare item.
+  const me = active?.me ?? 0
+  const verdict = (typeId: number): { build: number; buy: number; cheaper: 'build' | 'buy'; savePct: number } | null => {
+    const r = recipes.get(typeId)
+    if (!r) return null
+    let build = 0
+    for (const [m, q] of r.materials) {
+      const p = prices.get(m) ?? 0
+      if (!p) return null                 // onbekende materiaalprijs → geen betrouwbaar advies
+      build += applyME(q, me) * p
+    }
+    build = build / r.perRun
+    const buy = prices.get(typeId) ?? 0
+    if (!buy) return null
+    return { build, buy, cheaper: build < buy ? 'build' : 'buy', savePct: buy > 0 ? Math.round(Math.abs(buy - build) / buy * 100) : 0 }
+  }
+  const targetVerdict = active ? verdict(active.targetTypeId) : null
 
   if (!charId) return <Layout header={<PageHeader title="Bouwproject" />}><div style={{ padding: '2rem', color: 'var(--text-dim)' }}>Log in om bouwprojecten te beheren.</div></Layout>
 
@@ -434,6 +458,14 @@ export default function BuildProject() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{active.targetName}</div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita sell){useSupply && ' · voorraad/jobs meegerekend'}</div>
+                  {targetVerdict && (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                      Eindproduct: zelf bouwen ~{fmtISK(targetVerdict.build)} vs kopen ~{fmtISK(targetVerdict.buy)} /st →{' '}
+                      <strong style={{ color: targetVerdict.cheaper === 'build' ? '#3ecf6e' : 'var(--gold)' }}>
+                        {targetVerdict.cheaper === 'build' ? `zelf bouwen ${targetVerdict.savePct}% goedkoper` : `kopen ${targetVerdict.savePct}% goedkoper`}
+                      </strong>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <label style={{ ...lbl, fontSize: '0.62rem' }}>Aantal<input type="number" min={1} value={active.targetQty} onChange={e => updateActive(p => ({ ...p, targetQty: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ ...input, width: 76 }} /></label>
@@ -471,6 +503,10 @@ export default function BuildProject() {
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                         {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                       </div>
+                      {(() => { const v = verdict(b.typeId); return v ? (
+                        <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: 1 }}>
+                          🔧 {fmtISK(v.build)} vs 🛒 {fmtISK(v.buy)} /st · <span style={{ color: v.cheaper === 'build' ? '#3ecf6e' : 'var(--gold)' }}>{v.cheaper === 'build' ? `bouwen −${v.savePct}%` : `kopen −${v.savePct}%`}</span>
+                        </div>) : null })()}
                     </div>
                     <button onClick={() => toggleBuild(b.typeId)} style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
                   </div>
@@ -498,6 +534,9 @@ export default function BuildProject() {
                         {b.net > 0 ? <span>{fmtNum(b.net)} kopen{price > 0 && <> · ~{fmtISK(price * b.net)} ISK</>}</span> : <span style={{ color: '#3ecf6e' }}>✓ in voorraad</span>}
                         <span>({fmtNum(b.needed)} nodig)</span>
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                        {(() => { const v = buildable ? verdict(b.typeId) : null; return v && v.cheaper === 'build' && v.savePct >= 2
+                          ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen −{v.savePct}%</span>
+                          : null })()}
                       </div>
                     </div>
                     <input type="number" min={0} placeholder="0" value={bought || ''} onChange={e => setBuy(b.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })}
