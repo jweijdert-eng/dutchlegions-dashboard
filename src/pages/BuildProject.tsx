@@ -395,8 +395,10 @@ export default function BuildProject() {
                 const owned = useSupply ? (ownedMap.get(b.typeId) ?? 0) : 0
                 const inJob = useSupply ? (jobOutputMap.get(b.typeId) ?? 0) : 0
                 const covered = buildCovered(b)
+                const inMaking = useSupply && jobActive.has(b.typeId)
                 return (
-                  <div key={b.typeId} style={{ ...rowWrap, opacity: covered ? 0.5 : 1 }}>
+                  <div key={b.typeId} style={{ ...rowWrap, opacity: covered && !inMaking ? 0.5 : 1 }}>
+                    <StatusGlyph kind={inMaking ? 'job' : covered ? 'have' : null} />
                     <EveImage category="types" id={b.typeId} variation="icon" size={32} px={26} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -409,7 +411,6 @@ export default function BuildProject() {
                         {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                       </div>
                     </div>
-                    {jobActive.has(b.typeId) && useSupply && <span style={{ ...pill, color: 'var(--gold)', borderColor: 'var(--gold)' }} title="Er draait een job voor dit onderdeel">in productie</span>}
                     <button onClick={() => toggleBuild(b.typeId)} style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
                   </div>
                 )
@@ -428,6 +429,7 @@ export default function BuildProject() {
                 return (
                   <div key={b.typeId} style={{ ...rowWrap, opacity: covered ? 0.5 : 1 }}>
                     <input type="checkbox" checked={!!covered} onChange={e => setBuy(b.typeId, { done: e.target.checked })} style={{ width: 16, height: 16 }} />
+                    <StatusGlyph kind={covered ? 'have' : null} />
                     <EveImage category="types" id={b.typeId} variation="icon" size={32} px={26} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(b.typeId)}</div>
@@ -459,6 +461,14 @@ export default function BuildProject() {
       </div>
     </Layout>
   )
+}
+
+// Statusicoon vooraan een regel: groen vinkje = gedekt/op voorraad, oranje
+// zandloper = er draait een job (in de maak).
+function StatusGlyph({ kind }: { kind: 'have' | 'job' | null }) {
+  if (kind === 'have') return <span title="Gedekt / op voorraad" style={{ color: '#3ecf6e', fontSize: '0.95rem', width: 16, textAlign: 'center', flexShrink: 0 }}>✓</span>
+  if (kind === 'job') return <span title="In de maak (job draait)" style={{ color: 'var(--gold)', fontSize: '0.9rem', width: 16, textAlign: 'center', flexShrink: 0 }}>⏳</span>
+  return <span style={{ width: 16, flexShrink: 0 }} />
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
