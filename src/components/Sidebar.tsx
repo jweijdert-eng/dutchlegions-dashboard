@@ -572,13 +572,14 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   }
   const isHidden = (p: string) => member.hiddenTabs.includes(p)
   // welke groepen staan open (persistent per browser)
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    try { const s = JSON.parse(localStorage.getItem('nav_open_groups') ?? 'null'); if (Array.isArray(s)) return new Set(s) } catch { /* default */ }
-    return new Set(loadLayout().filter((e): e is Extract<LayoutEntry, { kind: 'group' }> => e.kind === 'group').map(e => e.id))
+  // Groepen staan standaard OPEN; we onthouden welke je dichtklapt (zo zijn nieuwe groepen meteen zichtbaar).
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
+    try { const s = JSON.parse(localStorage.getItem('nav_closed_groups') ?? 'null'); if (Array.isArray(s)) return new Set(s) } catch { /* default */ }
+    return new Set()
   })
-  const toggleGroup = (id: string) => setOpenGroups(prev => {
+  const toggleGroup = (id: string) => setClosedGroups(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id)
-    try { localStorage.setItem('nav_open_groups', JSON.stringify([...n])) } catch { /* ignore */ }
+    try { localStorage.setItem('nav_closed_groups', JSON.stringify([...n])) } catch { /* ignore */ }
     return n
   })
 
@@ -778,7 +779,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
               if (e.kind === 'item') return knownKey(e.path) && !isHidden(e.path) ? renderEntry(e.path, false) : null
               const visibleChildren = e.children.filter(p => knownKey(p) && !isHidden(p))
               if (visibleChildren.length === 0) return null
-              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={openGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} renderChild={k => renderEntry(k, true)} />
+              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={!closedGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} renderChild={k => renderEntry(k, true)} />
             })}
 
         {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
