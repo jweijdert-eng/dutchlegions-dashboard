@@ -324,6 +324,22 @@ export default function BuildProject() {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const toggleCollapse = (typeId: number) => setCollapsed(prev => { const n = new Set(prev); n.has(typeId) ? n.delete(typeId) : n.add(typeId); return n })
 
+  // ISK-kosten per boom-node: blad = aantal × Jita-sell, bouw-node = som van de
+  // kinderen (= materiaalkosten om die sub-assemblage zelf te bouwen)
+  const nodeCost = useMemo(() => {
+    const m = new Map<TreeNode, number>()
+    if (!tree) return m
+    const calc = (n: TreeNode): number => {
+      const c = n.children.length === 0
+        ? n.qty * (prices.get(n.typeId) ?? 0)
+        : n.children.reduce((s, ch) => s + calc(ch), 0)
+      m.set(n, c)
+      return c
+    }
+    calc(tree)
+    return m
+  }, [tree, prices])
+
   // Jita-prijzen voor alle betrokken types (koop-materialen én bouwbare items,
   // zodat we per onderdeel bouwen-vs-kopen kunnen vergelijken)
   const priceTypeIds = useMemo(() => {
@@ -579,6 +595,11 @@ export default function BuildProject() {
                         </div>
                         <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <span>{fmtNum(n.qty)} {isB ? 'te bouwen' : 'nodig'}{isB && n.runs > 0 ? ` · ${n.runs} run${n.runs !== 1 ? 's' : ''}` : ''}</span>
+                          {(() => { const c = nodeCost.get(n) ?? 0; if (c <= 0) return null
+                            const buy = isB ? (prices.get(n.typeId) ?? 0) * n.qty : 0
+                            return <span style={{ color: isB ? '#7fd1ff' : 'var(--text-dim)' }} title={isB ? 'Materiaalkosten om deze sub-assemblage zelf te bouwen' : 'Aankoopkosten (Jita sell)'}>
+                              {isB ? '🔧 ' : '🛒 '}~{fmtISK(c)} ISK{buy > 0 ? <span style={{ color: c < buy ? '#3ecf6e' : 'var(--gold)' }}> (kopen ~{fmtISK(buy)})</span> : null}
+                            </span> })()}
                           {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                           {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                           {bpBadge(n.typeId)}
