@@ -204,6 +204,16 @@ export const getWar = (id: number) => esiGet<War>(`/wars/${id}/`)
 export const getWarKillmails = (warId: number, page = 1) =>
   esiGet<{ killmail_id: number; killmail_hash: string }[]>(`/wars/${warId}/killmails/?page=${page}`)
 
+// ── In-game UI-vensters openen (scope esi-ui.open_window.v1) ────────────────
+async function uiOpenWindow(path: string, token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}${path}&datasource=tranquility`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+    return res.ok
+  } catch { return false }
+}
+export const openMarketWindow = (typeId: number, token: string) => uiOpenWindow(`/ui/openwindow/marketdetails/?type_id=${typeId}`, token)
+export const openContractWindow = (contractId: number, token: string) => uiOpenWindow(`/ui/openwindow/contract/?contract_id=${contractId}`, token)
+
 export interface CorporationInfo {
   name: string
   ticker: string

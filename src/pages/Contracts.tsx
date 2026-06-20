@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
-  getContracts, getContractItems, getContractBids, getStructureName, resolveNames,
+  getContracts, getContractItems, getContractBids, getStructureName, resolveNames, openContractWindow,
   type Contract, type ContractItem, type ContractBid,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
@@ -168,6 +168,11 @@ function ItemsPanel({ charId, contractId, token, type }: { charId: number; contr
       )}
     </div>
   )
+}
+
+async function openContract(id: number, token: string) {
+  const ok = await openContractWindow(id, token)
+  if (!ok) alert('Kon het contract niet openen. Log één keer opnieuw in (voor de nieuwe rechten) en zorg dat EVE draait.')
 }
 
 export default function Contracts() {
@@ -345,6 +350,8 @@ export default function Contracts() {
                         <span style={{ fontSize: '0.55rem', fontWeight: 700, color: 'var(--blue)', background: 'rgba(0,180,216,0.1)', border: '1px solid rgba(0,180,216,0.3)', borderRadius: 2, padding: '0.05rem 0.25rem', flexShrink: 0 }}>CORP</span>
                       )}
                       <span style={{ fontSize: '0.55rem', color: 'var(--text-dim)', flexShrink: 0 }}>{AVAIL_LABEL[c.availability] ?? c.availability}</span>
+                      <button onClick={e => { e.stopPropagation(); openContract(c.contract_id, c.accessToken) }} title="Open contract in de EVE-client"
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.78rem', padding: 0, lineHeight: 1, flexShrink: 0 }}>⧉</button>
                     </div>
                     <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {c.issuerName}

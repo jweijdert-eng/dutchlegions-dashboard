@@ -27,6 +27,7 @@ const SCOPES = [
   'esi-fleets.read_fleet.v1',
   'esi-fleets.write_fleet.v1',
   'esi-ui.write_waypoint.v1',
+  'esi-ui.open_window.v1',
   'esi-mail.send_mail.v1',
   'esi-characters.read_medals.v1',
   'esi-characters.read_contacts.v1',

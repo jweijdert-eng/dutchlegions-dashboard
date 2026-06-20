@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import type { TokenData } from '../auth/sso'
 import {
   getMarketOrders, getMarketHistory, getTransactions,
-  getStructureName, resolveNames,
+  getStructureName, resolveNames, openMarketWindow,
   type MarketOrder, type WalletTransaction,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
@@ -254,6 +254,13 @@ export default function Market() {
   const [filterLoc,  setFilterLoc]  = useState('')
 
   const [historyModal, setHistoryModal] = useState<{ typeId: number; name: string } | null>(null)
+
+  // Markt-details openen in de EVE-client (scope esi-ui.open_window.v1)
+  const openInEve = async (typeId: number) => {
+    const t = tokens[0]; if (!t) return
+    const ok = await openMarketWindow(typeId, t.accessToken)
+    if (!ok) alert('Kon het markt-venster niet openen. Log één keer opnieuw in (voor de nieuwe rechten) en zorg dat EVE draait.')
+  }
 
   const [jitaPrices, setJitaPrices] = useState<Map<number, { sell: number | null; buy: number | null }>>(new Map())
   const [jitaLoading, setJitaLoading] = useState(false)
@@ -611,6 +618,8 @@ export default function Market() {
                             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                           />
                           <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{o.itemName}</span>
+                          <button onClick={() => openInEve(o.type_id)} title="Open market details in de EVE-client"
+                            style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.85rem', padding: 0, lineHeight: 1, flexShrink: 0 }}>⧉</button>
                         </div>
                       </td>
                       <td style={TD}>
@@ -712,6 +721,8 @@ export default function Market() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <img src={`https://images.evetech.net/types/${o.type_id}/icon?size=32`} alt="" style={{ width: 28, height: 28, borderRadius: 3, background: '#0b0b1a', flexShrink: 0 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                           <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{o.itemName}</span>
+                          <button onClick={() => openInEve(o.type_id)} title="Open market details in de EVE-client"
+                            style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.85rem', padding: 0, lineHeight: 1, flexShrink: 0 }}>⧉</button>
                         </div>
                       </td>
                       <td style={TD}>
