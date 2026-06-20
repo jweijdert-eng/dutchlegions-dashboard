@@ -258,15 +258,11 @@ function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveTop(i, -1)} style={eArrow}>▲</button><button onClick={() => moveTop(i, 1)} style={eArrow}>▼</button></span>
             <input value={e.icon} onChange={ev => setIcon(e.id, ev.target.value.slice(0, 2))} style={{ ...eInput, width: 26, textAlign: 'center' }} title="Icoon" />
-            <input value={e.label} onChange={ev => renameGroup(e.id, ev.target.value)} style={{ ...eInput, flex: 1, fontWeight: 700 }} />
+            <input value={e.label} onChange={ev => renameGroup(e.id, ev.target.value)} style={{ ...eInput, flex: 1, minWidth: 0, fontWeight: 700 }} />
             <button onClick={() => setAdminOnly(e.id, !e.adminOnly)}
               title={e.adminOnly ? 'Alleen zichtbaar voor admin — klik om voor iedereen te tonen' : 'Voor iedereen zichtbaar — klik om alleen-admin te maken'}
-              style={{ fontSize: '0.58rem', fontWeight: 600, lineHeight: 1, cursor: 'pointer', whiteSpace: 'nowrap', padding: '3px 6px', borderRadius: 8, flexShrink: 0,
-                border: `1px solid ${e.adminOnly ? 'var(--gold)' : 'var(--text-dim)'}`,
-                background: e.adminOnly ? 'rgba(240,160,48,0.12)' : 'transparent',
-                color: e.adminOnly ? 'var(--gold)' : 'var(--text-dim)' }}>
-              {e.adminOnly ? '🔒 admin' : '🔒 iedereen'}
-            </button>
+              style={{ fontSize: '0.78rem', lineHeight: 1, cursor: 'pointer', flexShrink: 0, border: 'none', borderRadius: 4, padding: '2px 3px',
+                background: e.adminOnly ? 'rgba(240,160,48,0.3)' : 'transparent', opacity: e.adminOnly ? 1 : 0.4 }}>🔒</button>
             <button onClick={() => deleteGroup(e.id)} title="Groep opheffen (items worden los)" style={{ ...eArrow, color: 'var(--red)', fontSize: '0.7rem' }}>✕</button>
           </div>
           <div style={{ marginLeft: 6, marginTop: 3 }}>
