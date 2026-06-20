@@ -24,6 +24,7 @@ import { getKills, getLosses, type ZkillEntry } from '../api/zkillboard'
 import Layout, { PageHeader } from '../components/Layout'
 import WalletChart from '../components/WalletChart'
 import RattingWidget from '../components/RattingWidget'
+import MiningWidget from '../components/MiningWidget'
 import KillsTable, { type KillEntry } from '../components/KillsTable'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
@@ -1032,9 +1033,10 @@ export default function Dashboard() {
       </div>
 
       {/* Charts */}
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: GAP, marginBottom: GAP }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: GAP, marginBottom: GAP }}>
         <WalletChart journal={primaryData?.journal ?? []} loading={phase1Loading} />
         <RattingWidget journal={allJournal} loading={phase1Loading} />
+        <MiningWidget />
       </div>
 
       {/* Kills */}
