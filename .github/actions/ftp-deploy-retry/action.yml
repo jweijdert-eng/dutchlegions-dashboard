@@ -73,4 +73,6 @@ runs:
     - name: Fail if FTP upload keeps timing out
       if: steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
       shell: bash
-      run: exit 1
+      run: |
+        echo "FTP upload failed twice after retrying. Check FTP server availability and credentials."
+        exit 1
