@@ -79,7 +79,7 @@ const ITEM_BY_PATH: Record<string, NavItem> = Object.fromEntries(NAV_ITEMS.map(i
 // Menu-boom: een geordende lijst van losse items of uitklapbare groepen.
 export type LayoutEntry =
   | { kind: 'item'; path: string }
-  | { kind: 'group'; id: string; label: string; icon: string; children: string[] }
+  | { kind: 'group'; id: string; label: string; icon: string; children: string[]; adminOnly?: boolean }
 
 const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'item', path: '/' },
@@ -179,7 +179,7 @@ function LinkRow({ url, label, color, collapsed, nested }: { url: string; label:
 }
 
 // Uitklapbare groep (hoofd-item met genest lijstje); kinderen worden via renderChild gerenderd
-function GroupRow({ group, badgeCount, collapsed, open, onToggle, renderChild }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void; renderChild: (key: string) => React.ReactNode }) {
+function GroupRow({ group, badgeCount, collapsed, open, onToggle, renderChild, adminOnly }: { group: Extract<LayoutEntry, { kind: 'group' }>; badgeCount: (b: NavItem['badge']) => number; collapsed?: boolean; open: boolean; onToggle: () => void; renderChild: (key: string) => React.ReactNode; adminOnly?: boolean }) {
   const location = useLocation()
   const childActive = group.children.includes(location.pathname)
   const totalBadge = group.children.reduce((s, p) => s + badgeCount(ITEM_BY_PATH[p]?.badge ?? null), 0)
@@ -194,7 +194,7 @@ function GroupRow({ group, badgeCount, collapsed, open, onToggle, renderChild }:
           borderLeft: `2px solid ${childActive && !expanded ? 'var(--blue)' : 'transparent'}`,
         }}>
         <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{group.icon}</span>
-        {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1, textTransform: 'uppercase' }}>{group.label}</span>}
+        {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', flex: 1, textTransform: 'uppercase' }}>{group.label}{adminOnly ? <span title="Alleen zichtbaar voor admin" style={{ marginLeft: 5, opacity: 0.8 }}>🔒</span> : ''}</span>}
         {!collapsed && totalBadge > 0 && !expanded && <Badge count={totalBadge} />}
         {!collapsed && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>{expanded ? '▾' : '▸'}</span>}
       </div>
@@ -219,6 +219,7 @@ function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish
   const addGroup = () => onChange([...layout, { kind: 'group', id: 'grp-' + Date.now().toString(36), label: 'Nieuwe groep', icon: '▦', children: [] }])
   const renameGroup = (id: string, label: string) => onChange(layout.map(e => e.kind === 'group' && e.id === id ? { ...e, label } : e))
   const setIcon = (id: string, icon: string) => onChange(layout.map(e => e.kind === 'group' && e.id === id ? { ...e, icon: icon || '▦' } : e))
+  const setAdminOnly = (id: string, v: boolean) => onChange(layout.map(e => e.kind === 'group' && e.id === id ? { ...e, adminOnly: v } : e))
   const deleteGroup = (id: string) => { const n: LayoutEntry[] = []; for (const e of layout) { if (e.kind === 'group' && e.id === id) e.children.forEach(p => n.push({ kind: 'item', path: p })); else n.push(e) } onChange(n) }
   const moveChild = (gid: string, idx: number, dir: -1 | 1) => onChange(layout.map(e => {
     if (e.kind !== 'group' || e.id !== gid) return e
@@ -258,6 +259,7 @@ function NavEditor({ layout, onChange, onReset, labelOf, onRenameItem, onPublish
             <span style={{ display: 'flex', flexDirection: 'column' }}><button onClick={() => moveTop(i, -1)} style={eArrow}>▲</button><button onClick={() => moveTop(i, 1)} style={eArrow}>▼</button></span>
             <input value={e.icon} onChange={ev => setIcon(e.id, ev.target.value.slice(0, 2))} style={{ ...eInput, width: 26, textAlign: 'center' }} title="Icoon" />
             <input value={e.label} onChange={ev => renameGroup(e.id, ev.target.value)} style={{ ...eInput, flex: 1, fontWeight: 700 }} />
+            <button onClick={() => setAdminOnly(e.id, !e.adminOnly)} title={e.adminOnly ? 'Alleen admin — klik om voor iedereen zichtbaar te maken' : 'Voor iedereen zichtbaar — klik om alleen-admin te maken'} style={{ ...eArrow, fontSize: '0.72rem' }}>{e.adminOnly ? '🔒' : '🌐'}</button>
             <button onClick={() => deleteGroup(e.id)} title="Groep opheffen (items worden los)" style={{ ...eArrow, color: 'var(--red)', fontSize: '0.7rem' }}>✕</button>
           </div>
           <div style={{ marginLeft: 6, marginTop: 3 }}>
@@ -773,15 +775,16 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           ? <NavEditor layout={displayLayout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} iconFor={iconFor} known={knownKey} />
           : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
-          ? displayLayout.flatMap(e => e.kind === 'group' ? e.children : [e.path])
+          ? displayLayout.flatMap(e => e.kind === 'group' ? (e.adminOnly && !isAdminChar ? [] : e.children) : [e.path])
               .filter(p => knownKey(p) && !isHidden(p))
               .map(p => renderEntry(p, false, true))
           // Uitgeklapt: losse items + uitklapbare groepen
           : displayLayout.map(e => {
               if (e.kind === 'item') return knownKey(e.path) && !isHidden(e.path) ? renderEntry(e.path, false) : null
+              if (e.adminOnly && !isAdminChar) return null   // alleen-admin groep: verberg voor members
               const visibleChildren = e.children.filter(p => knownKey(p) && !isHidden(p))
               if (visibleChildren.length === 0) return null
-              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={!closedGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} renderChild={k => renderEntry(k, true)} />
+              return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={!closedGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} renderChild={k => renderEntry(k, true)} adminOnly={e.adminOnly} />
             })}
 
         {/* Local Chat — zichtbaar voor members als de admin het aan heeft staan (default aan) */}
