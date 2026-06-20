@@ -172,6 +172,7 @@ export default function Admin() {
   const [links, setLinks] = useState<CorpLink[]>([])
   const [bridges, setBridges] = useState<JumpBridge[]>([])
   const [bridgePaste, setBridgePaste] = useState('')
+  const [bridgesOpen, setBridgesOpen] = useState(false)
   const [intelChannels, setIntelChannels] = useState<IntelChannel[]>([])
   const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
@@ -1081,8 +1082,12 @@ export default function Admin() {
 
             {/* Jump bridges (fleet-kaart) */}
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>🌉 Jump bridges (fleet-kaart)</div>
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>Ansiblex-verbindingen staan niet in de SDE — voer ze hier in als paar systeem-namen (bv. <code>BKG-Q2</code> ↔ <code>9F-7PZ</code>). Ze worden op de fleet-kaart als blauwe lijn getekend.</div>
+              <div onClick={() => setBridgesOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>🌉 Jump bridges (fleet-kaart) <span style={{ fontSize: '0.66rem', fontWeight: 400, color: 'var(--text-dim)' }}>({bridges.length})</span></div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{bridgesOpen ? '▲' : '▼'}</span>
+              </div>
+              {bridgesOpen && (<>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.5rem', marginBottom: '0.7rem' }}>Ansiblex-verbindingen staan niet in de SDE — voer ze hier in als paar systeem-namen (bv. <code>BKG-Q2</code> ↔ <code>9F-7PZ</code>). Ze worden op de fleet-kaart als blauwe lijn getekend.</div>
 
               {/* Bulk-plakken: alle bridges in één keer */}
               <div style={{ marginBottom: '0.8rem' }}>
@@ -1134,6 +1139,7 @@ export default function Admin() {
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
+              </>)}
             </div>
 
             {/* Intel-kanalen (Intel-pagina + fleet-kaart) */}
