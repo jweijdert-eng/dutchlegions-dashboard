@@ -91,6 +91,21 @@ function fmtDT(s: string | null | undefined): string {
   const d = new Date(s)
   return isNaN(d.getTime()) ? String(s) : d.toLocaleString('nl', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+// Relatieve "X geleden" voor de laatst-gezien-weergave in de ledenlijst.
+function fmtAgo(s: string | null | undefined): string {
+  if (!s) return 'nooit'
+  const ms = Date.now() - new Date(s).getTime()
+  if (isNaN(ms)) return '—'
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return 'net nu'
+  if (min < 60) return `${min}m geleden`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}u geleden`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d geleden`
+  const mo = Math.floor(d / 30)
+  return mo < 12 ? `${mo}mnd geleden` : `${Math.floor(mo / 12)}j geleden`
+}
 function ageYears(birthday?: string): string {
   if (!birthday) return '—'
   const y = (Date.now() - new Date(birthday).getTime()) / (365.25 * 86400000)
@@ -802,9 +817,10 @@ export default function Admin() {
                       {!blocked && m.allowed === 1 && (
                         <span title="Op de allowlist — mag inloggen ongeacht corp/alliance" style={{ fontSize: '0.6rem', color: 'var(--gold)', fontWeight: 700, letterSpacing: '0.06em' }}>✓ ALLOWLIST</span>
                       )}
-                      {!blocked && m.allowed !== 1 && (
-                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: online ? 'var(--green)' : 'var(--text-dim)' }}>
-                          {online ? 'Online' : 'Offline'}
+                      {!blocked && (
+                        <span title={m.last_seen ? `Laatst gezien: ${fmtDT(m.last_seen)}` : 'Nog nooit ingelogd'}
+                          style={{ fontSize: '0.65rem', fontWeight: 600, color: online ? 'var(--green)' : 'var(--text-dim)', whiteSpace: 'nowrap', textAlign: 'right', minWidth: 78 }}>
+                          {online ? '● Online' : fmtAgo(m.last_seen)}
                         </span>
                       )}
                       {m.character_id !== ADMIN_CHAR_ID && (
