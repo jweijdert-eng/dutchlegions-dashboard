@@ -142,7 +142,7 @@ const rowStyle = (isActive: boolean, collapsed: boolean, nested: boolean): React
   position: 'relative', textDecoration: 'none',
   background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
   borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-  color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+  color: isActive ? 'var(--blue)' : nested ? 'var(--text-dim)' : 'var(--text)',
   userSelect: 'none',
   fontSize: nested ? '0.72rem' : '0.75rem',
   marginLeft: nested ? -1 : undefined,
@@ -795,11 +795,11 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
               textDecoration: 'none',
               background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
               borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-              color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+              color: isActive ? 'var(--blue)' : 'var(--text)',
             })}
           >
             <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⌁</span>
-            {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Local Chat</span>}
+            {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Local Chat</span>}
           </NavLink>
         )}
 
@@ -814,11 +814,11 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
             textDecoration: 'none',
             background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
             borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-            color: isActive ? 'var(--blue)' : 'var(--text-dim)',
+            color: isActive ? 'var(--blue)' : 'var(--text)',
           })}
         >
           <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⚙</span>
-          {!collapsed && <span style={{ fontSize: '0.75rem', fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>Instellingen</span>}
+          {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Instellingen</span>}
         </NavLink>
 
         {/* Admin — alleen het admin-character, niet in preview */}
