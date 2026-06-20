@@ -156,7 +156,9 @@ function LeafRow({ item, badgeCount, collapsed, nested, label }: { item: NavItem
     <NavLink to={item.path} end={item.path === '/'} title={collapsed ? name : undefined}
       style={({ isActive }) => rowStyle(isActive, !!collapsed, !!nested)}>
       <span style={{ fontSize: nested ? 12 : 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-      {!collapsed && <span style={{ fontWeight: 400, letterSpacing: '0.03em', flex: 1 }}>{name}</span>}
+      {!collapsed && <span style={nested
+        ? { fontWeight: 400, letterSpacing: '0.03em', flex: 1 }
+        : { fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>{name}</span>}
       {!collapsed && <Badge count={count} />}
       {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />}
     </NavLink>
