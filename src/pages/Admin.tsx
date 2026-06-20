@@ -174,6 +174,7 @@ export default function Admin() {
   const [bridgePaste, setBridgePaste] = useState('')
   const [bridgesOpen, setBridgesOpen] = useState(false)
   const [intelChannels, setIntelChannels] = useState<IntelChannel[]>([])
+  const [intelOpen, setIntelOpen] = useState(false)
   const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
@@ -1144,8 +1145,12 @@ export default function Admin() {
 
             {/* Intel-kanalen (Intel-pagina + fleet-kaart) */}
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }}>📡 Intel-kanalen</div>
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.7rem' }}>
+              <div onClick={() => setIntelOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>📡 Intel-kanalen <span style={{ fontSize: '0.66rem', fontWeight: 400, color: 'var(--text-dim)' }}>({intelChannels.length})</span></div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{intelOpen ? '▲' : '▼'}</span>
+              </div>
+              {intelOpen && (<>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.5rem', marginBottom: '0.7rem' }}>
                 De chat-kanalen die de Intel-pagina én de fleet-kaart uitlezen. <code>Prefix</code> = begin van de chatlog-bestandsnaam (bv. <code>wc.Dek+Fa+PB</code>), <code>label</code> is voor de weergave. Leeg = standaard ({DEFAULT_INTEL_CHANNELS.map(c => c.label).join(', ')}).
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
@@ -1187,6 +1192,7 @@ export default function Admin() {
                   style={{ marginLeft: 'auto', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
+              </>)}
             </div>
 
             {/* Toggle-secties */}
