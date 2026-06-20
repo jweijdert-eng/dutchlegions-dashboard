@@ -1020,6 +1020,28 @@ export function getManufacturingCostIndices(): Promise<Map<number, number>> {
   return _costIdxInflight
 }
 
+// Volledige cost-indices per systeem (alle activiteiten) — voor de industrie-kostenpagina.
+let _ciFullCache: Map<number, Record<string, number>> | null = null
+let _ciFullInflight: Promise<Map<number, Record<string, number>>> | null = null
+export function getIndustryCostIndices(): Promise<Map<number, Record<string, number>>> {
+  if (_ciFullCache) return Promise.resolve(_ciFullCache)
+  if (!_ciFullInflight) {
+    _ciFullInflight = esiGet<Array<{ solar_system_id: number; cost_indices: Array<{ activity: string; cost_index: number }> }>>('/industry/systems/')
+      .then(rows => {
+        const m = new Map<number, Record<string, number>>()
+        for (const r of rows) {
+          const o: Record<string, number> = {}
+          for (const c of r.cost_indices) o[c.activity] = c.cost_index
+          m.set(r.solar_system_id, o)
+        }
+        _ciFullCache = m
+        return m
+      })
+      .catch(() => new Map<number, Record<string, number>>())
+  }
+  return _ciFullInflight
+}
+
 export const getRoute = (originSystemId: number, destinationSystemId: number, flag = 'shortest') =>
   esiGet<number[]>(`/route/${originSystemId}/${destinationSystemId}/?flag=${flag}`)
 

@@ -34,7 +34,7 @@ function Sparkline({ values }: { values: number[] }) {
 }
 
 
-type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' }
+type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts'; wip?: boolean }
 
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
@@ -73,6 +73,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Blueprints',   path: '/blueprints', icon: '⬡', badge: null },
   { label: 'Build vs Buy', path: '/buildvsbuy', icon: '⚙', badge: null },
   { label: 'Bouwproject',  path: '/build',      icon: '⊞', badge: null },
+  { label: 'Industrie-kosten', path: '/industry-cost', icon: '◰', badge: null, wip: true },
 ]
 const ITEM_BY_PATH: Record<string, NavItem> = Object.fromEntries(NAV_ITEMS.map(i => [i.path, i]))
 
@@ -103,7 +104,18 @@ function cleanLayout(layout: LayoutEntry[]): LayoutEntry[] {
       present.add(e.path); clean.push(e)
     }
   }
-  for (const i of NAV_ITEMS) if (!present.has(i.path)) clean.push({ kind: 'item', path: i.path })
+  // Nieuwe pagina's die nog nergens staan: gewone items bovenaan; WIP-items in de
+  // 'Ontwikkeling'-groep (bestaande hergebruikt, anders nieuw + admin-only).
+  const missingTop: string[] = []
+  const missingWip: string[] = []
+  for (const i of NAV_ITEMS) if (!present.has(i.path)) (i.wip ? missingWip : missingTop).push(i.path)
+  for (const p of missingTop) clean.push({ kind: 'item', path: p })
+  if (missingWip.length) {
+    const gi = clean.findIndex(e => e.kind === 'group' && /^ontwikkeling$/i.test(e.label))
+    const g = gi >= 0 ? clean[gi] : null
+    if (g && g.kind === 'group') clean[gi] = { ...g, children: [...g.children, ...missingWip] }
+    else clean.push({ kind: 'group', id: 'grp-ontwikkeling', label: 'Ontwikkeling', icon: '🚧', children: missingWip, adminOnly: true })
+  }
   return clean
 }
 export function loadLayout(): LayoutEntry[] {
