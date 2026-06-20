@@ -3,7 +3,6 @@ import Layout, { PageHeader } from '../components/Layout'
 import { NAV_ITEMS } from '../components/Sidebar'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { applyAccent, useSiteConfig } from '../hooks/useSiteConfig'
-import { useAuth } from '../auth/AuthContext'
 import AccountsPanel from '../components/AccountsPanel'
 
 const ACCENTS = [
@@ -69,8 +68,6 @@ function idbHas(dbName: string, version: number, store: string, key: string): Pr
 export default function Settings() {
   const settings = useMemberSettings()
   const site = useSiteConfig()
-  const { tokens } = useAuth()
-  const isAdmin = tokens.some(t => t.characterId === 1831618559)
   const [chatStatus, setChatStatus] = useState<'unknown' | 'linked' | 'none'>('unknown')
   const [busy, setBusy] = useState(false)
   const [accountsOpen, setAccountsOpen] = useState(true)
@@ -194,15 +191,6 @@ export default function Settings() {
             </div>
             <Toggle on={settings.notifJobs} onChange={v => setMemberSettings({ notifJobs: v })} />
           </div>
-          {isAdmin && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid rgba(28,28,53,0.5)' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Recruiter-chat</div>
-                <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Melding bij een nieuw bericht in de recruiter-chat.</div>
-              </div>
-              <Toggle on={settings.notifRecruiter} onChange={v => setMemberSettings({ notifRecruiter: v })} />
-            </div>
-          )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0' }}>
             <div>
               <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Geluidswaarschuwing (intel)</div>

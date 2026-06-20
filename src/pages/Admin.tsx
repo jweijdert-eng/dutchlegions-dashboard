@@ -6,6 +6,7 @@ import { useLayoutMode } from '../context/LayoutModeContext'
 import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
 import EveImage from '../components/EveImage'
 import { fetchSiteConfig, applyAccent, type CorpLink, type JumpBridge } from '../hooks/useSiteConfig'
+import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { DEFAULT_INTEL_CHANNELS, type IntelChannel } from '../utils/intelChannels'
 
 const ADMIN_CHAR_ID = 1831618559
@@ -143,6 +144,7 @@ export default function Admin() {
   const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
   const [tab, setTab] = useState<'stats' | 'members' | 'settings' | 'sde' | 'chat'>('stats')
   const [chatThreads, setChatThreads] = useState<{ thread: string; name: string; last_at: string; staff_unread: number; last_msg: string | null }[]>([])
+  const member = useMemberSettings()
   const [activeThread, setActiveThread] = useState<string | null>(null)
   const [threadMsgs, setThreadMsgs] = useState<{ id: number; sender: string; staff_name?: string; message: string; created_at: string }[]>([])
   const [replyText, setReplyText] = useState('')
@@ -1237,8 +1239,21 @@ export default function Admin() {
         {/* Recruiter Chat — privé 1-op-1 gesprekken vanaf de login-pagina */}
         {tab === 'chat' && (
           <div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
-              {chatThreads.length} GESPREK{chatThreads.length === 1 ? '' : 'KEN'} — privéchats van bezoekers op de login-pagina
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.08em' }}>
+                {chatThreads.length} GESPREK{chatThreads.length === 1 ? '' : 'KEN'} — privéchats van bezoekers op de login-pagina
+              </div>
+              <button
+                onClick={() => { const v = !member.notifRecruiter; if (v && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); setMemberSettings({ notifRecruiter: v }) }}
+                title="Desktop-melding wanneer een bezoeker een nieuw bericht stuurt (per browser)"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600,
+                  border: `1px solid ${member.notifRecruiter ? 'var(--green)' : 'var(--border)'}`, borderRadius: 3, padding: '0.3rem 0.7rem',
+                  background: member.notifRecruiter ? 'rgba(62,207,110,0.1)' : 'transparent',
+                  color: member.notifRecruiter ? 'var(--green)' : 'var(--text-dim)',
+                }}>
+                {member.notifRecruiter ? '🔔 Meldingen aan' : '🔕 Meldingen uit'}
+              </button>
             </div>
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
               {/* Gesprekkenlijst */}
