@@ -48,49 +48,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
     }
     try {
-        $accent = strtolower(trim((string)($data['accent'] ?? '')));
-        if (!valid_hex($accent)) $accent = '';
-
-        // Links saneren: max 12, alleen label + http(s)-url.
-        $links = [];
-        foreach ((array)($data['links'] ?? []) as $l) {
-            $label = trim((string)($l['label'] ?? ''));
-            $url   = trim((string)($l['url'] ?? ''));
-            if ($label === '' || !preg_match('#^https?://#i', $url)) continue;
-            $links[] = ['label' => mb_substr($label, 0, 40), 'url' => mb_substr($url, 0, 300)];
-            if (count($links) >= 12) break;
-        }
-
-        // Jump bridges saneren: paren van twee systeem-namen, max 100.
-        $bridges = [];
-        foreach ((array)($data['bridges'] ?? []) as $b) {
-            if (!is_array($b) || count($b) < 2) continue;
-            $a = strtoupper(trim((string)$b[0]));
-            $c = strtoupper(trim((string)$b[1]));
-            if ($a === '' || $c === '') continue;
-            $bridges[] = [mb_substr($a, 0, 32), mb_substr($c, 0, 32)];
-            if (count($bridges) >= 100) break;
-        }
-
-        // Intel-kanalen saneren: { prefix, label }, prefix verplicht, max 30.
-        $intelChannels = [];
-        foreach ((array)($data['intelChannels'] ?? []) as $c) {
-            $prefix = trim((string)($c['prefix'] ?? ''));
-            $label  = trim((string)($c['label'] ?? ''));
-            if ($prefix === '') continue;
-            $intelChannels[] = ['prefix' => mb_substr($prefix, 0, 64), 'label' => mb_substr($label, 0, 40)];
-            if (count($intelChannels) >= 30) break;
-        }
-
+        // MERGE: werk uitsluitend de keys bij die in de request zitten, zodat een
+        // gedeeltelijke save (bv. alleen accent of links) de bridges/intel niet wist.
         $stmt = $pdo->prepare('INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?');
-        $stmt->execute(['theme_accent', $accent, $accent]);
-        $json = json_encode($links);
-        $stmt->execute(['corp_links', $json, $json]);
-        $bjson = json_encode($bridges);
-        $stmt->execute(['jump_bridges', $bjson, $bjson]);
-        $cjson = json_encode($intelChannels);
-        $stmt->execute(['intel_channels', $cjson, $cjson]);
-        echo json_encode(['ok' => true, 'accent' => $accent, 'links' => $links, 'bridges' => $bridges, 'intelChannels' => $intelChannels]);
+
+        if (array_key_exists('accent', $data)) {
+            $accent = strtolower(trim((string)$data['accent']));
+            if (!valid_hex($accent)) $accent = '';
+            $stmt->execute(['theme_accent', $accent, $accent]);
+        }
+
+        if (array_key_exists('links', $data)) {
+            $links = [];
+            foreach ((array)$data['links'] as $l) {
+                $label = trim((string)($l['label'] ?? ''));
+                $url   = trim((string)($l['url'] ?? ''));
+                if ($label === '' || !preg_match('#^https?://#i', $url)) continue;
+                $links[] = ['label' => mb_substr($label, 0, 40), 'url' => mb_substr($url, 0, 300)];
+                if (count($links) >= 12) break;
+            }
+            $json = json_encode($links);
+            $stmt->execute(['corp_links', $json, $json]);
+        }
+
+        if (array_key_exists('bridges', $data)) {
+            $bridges = [];
+            foreach ((array)$data['bridges'] as $b) {
+                if (!is_array($b) || count($b) < 2) continue;
+                $a = strtoupper(trim((string)$b[0]));
+                $c = strtoupper(trim((string)$b[1]));
+                if ($a === '' || $c === '') continue;
+                $bridges[] = [mb_substr($a, 0, 32), mb_substr($c, 0, 32)];
+                if (count($bridges) >= 100) break;
+            }
+            $bjson = json_encode($bridges);
+            $stmt->execute(['jump_bridges', $bjson, $bjson]);
+        }
+
+        if (array_key_exists('intelChannels', $data)) {
+            $intelChannels = [];
+            foreach ((array)$data['intelChannels'] as $c) {
+                $prefix = trim((string)($c['prefix'] ?? ''));
+                $label  = trim((string)($c['label'] ?? ''));
+                if ($prefix === '') continue;
+                $intelChannels[] = ['prefix' => mb_substr($prefix, 0, 64), 'label' => mb_substr($label, 0, 40)];
+                if (count($intelChannels) >= 30) break;
+            }
+            $cjson = json_encode($intelChannels);
+            $stmt->execute(['intel_channels', $cjson, $cjson]);
+        }
+
+        echo json_encode(['ok' => true]);
     } catch (Exception $e) {
         http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
     }

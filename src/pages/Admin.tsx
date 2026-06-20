@@ -272,16 +272,20 @@ export default function Admin() {
     } catch { /* ignore */ }
   }
 
-  async function saveSiteConfig(nextAccent: string, nextLinks: CorpLink[], nextBridges: JumpBridge[] = bridges, nextIntel: IntelChannel[] = intelChannels) {
+  // Sla alleen de meegegeven onderdelen op (partial). De server werkt enkel de
+  // aanwezige keys bij, zodat een accent-/links-save nooit de bridges/intel wist.
+  async function saveSiteConfig(patch: Partial<{ accent: string; links: CorpLink[]; bridges: JumpBridge[]; intelChannels: IntelChannel[] }>) {
     if (!adminToken) return
-    const cleanLinks = nextLinks.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
-    const cleanBridges = nextBridges.filter(b => b[0]?.trim() && b[1]?.trim())
-    const cleanIntel = nextIntel.filter(c => c.prefix.trim()).map(c => ({ prefix: c.prefix.trim(), label: c.label.trim() }))
+    const body: Record<string, unknown> = { characterId: adminToken.characterId }
+    if (patch.accent !== undefined) body.accent = patch.accent
+    if (patch.links !== undefined) body.links = patch.links.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
+    if (patch.bridges !== undefined) body.bridges = patch.bridges.filter(b => b[0]?.trim() && b[1]?.trim())
+    if (patch.intelChannels !== undefined) body.intelChannels = patch.intelChannels.filter(c => c.prefix.trim()).map(c => ({ prefix: c.prefix.trim(), label: c.label.trim() }))
     await fetch('/api/siteconfig.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, accent: nextAccent, links: cleanLinks, bridges: cleanBridges, intelChannels: cleanIntel }),
+      body: JSON.stringify(body),
     }).catch(() => {})
-    applyAccent(nextAccent)        // direct site-breed toepassen
+    if (patch.accent !== undefined) applyAccent(patch.accent)   // direct site-breed toepassen
     fetchSiteConfig(true)          // module-cache verversen voor de rest van de app
     setCfgSaved(true); setTimeout(() => setCfgSaved(false), 2000)
   }
@@ -289,7 +293,7 @@ export default function Admin() {
   function pickAccent(hex: string) {
     setAccent(hex)
     applyAccent(hex)               // live preview
-    saveSiteConfig(hex, links)
+    saveSiteConfig({ accent: hex })
   }
 
   // Bulk-plak: één bridge per regel. Scheider tussen de twee systemen mag »/›/→/↔/->/|/,/;/tab
@@ -325,7 +329,7 @@ export default function Admin() {
     }
     setBridges(merged)
     setBridgePaste('')
-    saveSiteConfig(accent, links, merged)
+    saveSiteConfig({ bridges: merged })
   }
 
   async function fetchBpInfo() {
@@ -1069,7 +1073,7 @@ export default function Admin() {
                   style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
                 >+ Link toevoegen</button>
                 <button
-                  onClick={() => saveSiteConfig(accent, links)}
+                  onClick={() => saveSiteConfig({ links })}
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
@@ -1126,7 +1130,7 @@ export default function Admin() {
                   style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
                 >+ Bridge toevoegen</button>
                 <button
-                  onClick={() => saveSiteConfig(accent, links, bridges)}
+                  onClick={() => saveSiteConfig({ bridges })}
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
@@ -1173,7 +1177,7 @@ export default function Admin() {
                   >Standaardkanalen invullen</button>
                 )}
                 <button
-                  onClick={() => saveSiteConfig(accent, links, bridges, intelChannels)}
+                  onClick={() => saveSiteConfig({ intelChannels })}
                   style={{ marginLeft: 'auto', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
