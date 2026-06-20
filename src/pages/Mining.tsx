@@ -11,6 +11,7 @@ interface ResolvedEntry {
   typeId: number
   system: string
   quantity: number
+  charName: string
 }
 
 function fmtQty(v: number) {
@@ -52,7 +53,9 @@ export default function Mining() {
   const [loading, setLoading] = useState(true)
   usePageLoading(loading)
   const [view, setView]       = useState<'date' | 'ore'>('date')
+  const [range, setRange]     = useState<'7' | '30' | 'all'>('all')
   const [orePrices, setOrePrices] = useState<Map<number, number>>(new Map())
+  const [volMap, setVolMap]   = useState<Map<number, number>>(new Map())   // m³ per erts-unit
   // Reprocessing-recept per erts: { oreTypeId: { portion, mats:[[matId,qty],...] } }
   const [refineMap, setRefineMap] = useState<Map<number, { portion: number; mats: Array<[number, number]> }>>(new Map())
   const fetchId = useRef(0)
@@ -63,10 +66,11 @@ export default function Mining() {
     setLoading(true); setEntries([])
 
     async function load() {
-      const allRaw: MiningEntry[] = []
+      const allRaw: (MiningEntry & { _name: string })[] = []
       await Promise.all(tokens.map(async t => {
         const m = await getMining(t.characterId, t.accessToken).catch(() => [] as MiningEntry[])
-        allRaw.push(...m)
+        const name = t.characterName ?? `#${t.characterId}`
+        allRaw.push(...m.map(e => ({ ...e, _name: name })))
       }))
 
       if (myId !== fetchId.current) return
@@ -83,6 +87,7 @@ export default function Mining() {
         typeId:   e.type_id,
         system:   nameMap.get(e.solar_system_id) ?? `System ${e.solar_system_id}`,
         quantity: e.quantity,
+        charName: e._name,
       }))
 
       const sorted = resolved.sort((a, b) => b.date.localeCompare(a.date))
@@ -92,16 +97,19 @@ export default function Mining() {
       // Reprocessing-recepten uit de SDE-bundel → mineralen + portionSize per erts.
       const repBundle = await getReprocessBundle()
       const refine = new Map<number, { portion: number; mats: Array<[number, number]> }>()
+      const vol = new Map<number, number>()
       const mineralIds = new Set<number>()
       await Promise.all(typeIds.map(async tid => {
+        const info = await getTypeInfo(tid)
+        if (info?.volume) vol.set(tid, info.volume)
         const mats = repBundle[String(tid)]
         if (!mats || mats.length === 0) return
-        const info = await getTypeInfo(tid)
         refine.set(tid, { portion: info?.portionSize || 100, mats })
         mats.forEach(([mid]) => mineralIds.add(mid))
       }))
       if (myId !== fetchId.current) return
       setRefineMap(refine)
+      setVolMap(vol)
 
       // Jita-buy-prijzen voor zowel het ruwe erts als de gerefinede mineralen.
       fetchOrePrices([...new Set([...typeIds, ...mineralIds])]).then(prices => {
@@ -113,29 +121,29 @@ export default function Mining() {
     load()
   }, [tokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
 
-  // Daily totals for chart (last 14 days)
+  // Tijdsbereik-filter (7 / 30 dagen / alles)
+  const cutoff = range === 'all' ? '' : new Date(Date.now() - (range === '7' ? 7 : 30) * 864e5).toISOString().slice(0, 10)
+  const filtered = range === 'all' ? entries : entries.filter(e => e.date >= cutoff)
+  const volOf = (typeId: number) => volMap.get(typeId) ?? 0
+
+  // Dagelijkse totalen voor de grafiek
+  const chartDays = range === '7' ? 7 : 30
   const dailyMap = new Map<string, number>()
-  for (const e of entries) {
-    dailyMap.set(e.date, (dailyMap.get(e.date) ?? 0) + e.quantity)
-  }
+  for (const e of filtered) dailyMap.set(e.date, (dailyMap.get(e.date) ?? 0) + e.quantity)
   const today = new Date()
-  const chartData = Array.from({ length: 14 }, (_, i) => {
+  const chartData = Array.from({ length: chartDays }, (_, i) => {
     const d = new Date(today)
-    d.setDate(d.getDate() - (13 - i))
+    d.setDate(d.getDate() - (chartDays - 1 - i))
     const date = d.toISOString().slice(0, 10)
-    const label = i === 13 ? 'Today' : d.toLocaleDateString('nl', { weekday: 'short', day: 'numeric' })
+    const label = i === chartDays - 1 ? 'Vandaag' : d.toLocaleDateString('nl', { day: 'numeric', month: 'short' })
     return { date, label, quantity: dailyMap.get(date) ?? 0 }
   })
 
-  const totalQty = entries.reduce((s, e) => s + e.quantity, 0)
+  const totalQty = filtered.reduce((s, e) => s + e.quantity, 0)
+  const totalM3  = filtered.reduce((s, e) => s + e.quantity * volOf(e.typeId), 0)
   const todayQty = dailyMap.get(today.toISOString().slice(0, 10)) ?? 0
+  const activeDays = dailyMap.size || 1
 
-  // Ore breakdown
-  const oreMap = new Map<string, { typeId: number; quantity: number }>()
-  for (const e of entries) {
-    const cur = oreMap.get(e.oreName) ?? { typeId: e.typeId, quantity: 0 }
-    oreMap.set(e.oreName, { ...cur, quantity: cur.quantity + e.quantity })
-  }
   // Gerefinede waarde: (aantal / portionSize) × Σ(mineraalAantal × Jita-buy).
   function refinedIsk(typeId: number, quantity: number): number {
     const r = refineMap.get(typeId)
@@ -144,16 +152,41 @@ export default function Mining() {
     return (quantity / r.portion) * perPortion
   }
 
+  // Erts-verdeling
+  const oreMap = new Map<string, { typeId: number; quantity: number }>()
+  for (const e of filtered) {
+    const cur = oreMap.get(e.oreName) ?? { typeId: e.typeId, quantity: 0 }
+    oreMap.set(e.oreName, { ...cur, quantity: cur.quantity + e.quantity })
+  }
   const oreList = [...oreMap.entries()]
-    .map(([name, v]) => ({ name, ...v, isk: (orePrices.get(v.typeId) ?? 0) * v.quantity, refIsk: refinedIsk(v.typeId, v.quantity) }))
+    .map(([name, v]) => ({ name, ...v, m3: v.quantity * volOf(v.typeId), isk: (orePrices.get(v.typeId) ?? 0) * v.quantity, refIsk: refinedIsk(v.typeId, v.quantity) }))
     .sort((a, b) => b.quantity - a.quantity)
 
   const totalISK    = oreList.reduce((s, o) => s + o.isk, 0)
   const totalRefISK = oreList.reduce((s, o) => s + o.refIsk, 0)
+  const bestISK     = Math.max(totalISK, totalRefISK)
 
-  // Group table rows
+  // Per systeem
+  const sysMap = new Map<string, { quantity: number; isk: number }>()
+  for (const e of filtered) {
+    const cur = sysMap.get(e.system) ?? { quantity: 0, isk: 0 }
+    cur.quantity += e.quantity; cur.isk += (orePrices.get(e.typeId) ?? 0) * e.quantity
+    sysMap.set(e.system, cur)
+  }
+  const sysList = [...sysMap.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.quantity - a.quantity)
+
+  // Per piloot (alleen relevant bij meerdere characters)
+  const pilotMap = new Map<string, { quantity: number; isk: number }>()
+  for (const e of filtered) {
+    const cur = pilotMap.get(e.charName) ?? { quantity: 0, isk: 0 }
+    cur.quantity += e.quantity; cur.isk += (orePrices.get(e.typeId) ?? 0) * e.quantity
+    pilotMap.set(e.charName, cur)
+  }
+  const pilotList = [...pilotMap.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.quantity - a.quantity)
+
+  // Tabel-groepering
   const groupMap = new Map<string, ResolvedEntry[]>()
-  for (const e of entries) {
+  for (const e of filtered) {
     const key = view === 'date' ? e.date : e.oreName
     const g = groupMap.get(key) ?? []
     g.push(e)
@@ -171,9 +204,13 @@ export default function Mining() {
     <Layout header={
       <PageHeader
         title="Mining"
-        sub={loading ? 'Laden...' : `${fmtQty(totalQty)} units${totalISK > 0 ? ` · erts ~${fmtISK(totalISK)} ISK` : ''}${totalRefISK > 0 ? ` · gerefined ~${fmtISK(totalRefISK)} ISK` : ''} · ${fmtQty(todayQty)} vandaag`}
+        sub={loading ? 'Laden...' : `${fmtQty(totalQty)} units · ${fmtQty(totalM3)} m³${totalISK > 0 ? ` · erts ~${fmtISK(totalISK)}` : ''}${totalRefISK > 0 ? ` · gerefined ~${fmtISK(totalRefISK)}` : ''}${bestISK > 0 ? ` · ~${fmtISK(bestISK / activeDays)}/dag` : ''} · ${fmtQty(todayQty)} vandaag`}
         right={
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <button onClick={() => setRange('7')}   style={btnStyle(range === '7')}>7d</button>
+            <button onClick={() => setRange('30')}  style={btnStyle(range === '30')}>30d</button>
+            <button onClick={() => setRange('all')} style={btnStyle(range === 'all')}>Alles</button>
+            <span style={{ width: 1, background: 'var(--border)', margin: '2px 2px' }} />
             <button onClick={() => setView('date')} style={btnStyle(view === 'date')}>Per datum</button>
             <button onClick={() => setView('ore')}  style={btnStyle(view === 'ore')}>Per erts</button>
           </div>
@@ -209,7 +246,7 @@ export default function Mining() {
                           <span style={{ fontSize: '0.72rem' }}>{ore.name}</span>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{fmtQty(ore.quantity)}</div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{fmtQty(ore.quantity)}{ore.m3 > 0 ? ` · ${fmtQty(ore.m3)} m³` : ''}</div>
                           {ore.isk > 0 && <div style={{ fontSize: '0.6rem', color: 'var(--gold)' }}>{fmtISK(ore.isk)} ISK</div>}
                           {ore.refIsk > 0 && (
                             <div style={{ fontSize: '0.58rem', color: ore.refIsk >= ore.isk ? 'var(--green)' : 'var(--text-dim)' }} title="Geschatte waarde na reprocessing (Jita buy)">
@@ -251,9 +288,50 @@ export default function Mining() {
             </div>
           </div>
 
+          {/* Systemen + piloten */}
+          <div style={{ display: 'grid', gridTemplateColumns: pilotList.length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.875rem' }}>
+              <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.18em', marginBottom: '0.75rem' }}>TOP SYSTEMEN</div>
+              {sysList.length === 0 && <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>—</div>}
+              {sysList.slice(0, 6).map((s, i) => {
+                const pct = sysList[0]?.quantity ? (s.quantity / sysList[0].quantity) * 100 : 0
+                return (
+                  <div key={s.name} style={{ marginBottom: '0.45rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.15rem', gap: 8 }}>
+                      <span style={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⬡ {s.name}</span>
+                      <span style={{ fontSize: '0.66rem', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{fmtQty(s.quantity)}{s.isk > 0 ? ` · ${fmtISK(s.isk)}` : ''}</span>
+                    </div>
+                    <div style={{ height: 3, background: 'var(--border)', borderRadius: 2 }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: COLORS[i % COLORS.length], borderRadius: 2 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {pilotList.length > 1 && (
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.875rem' }}>
+                <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.18em', marginBottom: '0.75rem' }}>PER PILOOT</div>
+                {pilotList.map((p, i) => {
+                  const pct = pilotList[0]?.quantity ? (p.quantity / pilotList[0].quantity) * 100 : 0
+                  return (
+                    <div key={p.name} style={{ marginBottom: '0.45rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.15rem', gap: 8 }}>
+                        <span style={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                        <span style={{ fontSize: '0.66rem', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{fmtQty(p.quantity)}{p.isk > 0 ? ` · ${fmtISK(p.isk)}` : ''}</span>
+                      </div>
+                      <div style={{ height: 3, background: 'var(--border)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: COLORS[(i + 3) % COLORS.length], borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Table */}
-          {entries.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Geen mining data gevonden</div>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Geen mining data in dit bereik</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {[...groupMap.entries()].map(([groupKey, rows]) => {
