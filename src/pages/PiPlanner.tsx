@@ -51,6 +51,25 @@ const CC_BUDGET = [
 ]
 const facForTier = (t: number): keyof typeof FAC => t >= 4 ? 'hitech' : t >= 2 ? 'advanced' : 'basic'
 
+// P0-grondstof → planeet-types waar je het kunt winnen (vaste EVE-data).
+const P0_PLANETS: Record<string, string[]> = {
+  'Aqueous Liquids':   ['Barren', 'Gas', 'Ice', 'Oceanic', 'Storm', 'Temperate'],
+  'Autotrophs':        ['Temperate'],
+  'Base Metals':       ['Barren', 'Lava', 'Plasma'],
+  'Carbon Compounds':  ['Barren', 'Oceanic', 'Temperate'],
+  'Complex Organisms': ['Oceanic', 'Temperate'],
+  'Felsic Magma':      ['Lava'],
+  'Heavy Metals':      ['Lava', 'Plasma'],
+  'Ionic Solutions':   ['Gas', 'Storm'],
+  'Microorganisms':    ['Barren', 'Gas', 'Oceanic', 'Temperate'],
+  'Noble Gas':         ['Gas', 'Ice', 'Storm'],
+  'Noble Metals':      ['Barren', 'Plasma'],
+  'Non-CS Crystals':   ['Plasma'],
+  'Planktic Colonies': ['Ice', 'Oceanic'],
+  'Reactive Gas':      ['Gas', 'Storm'],
+  'Suspended Plasma':  ['Lava', 'Plasma', 'Storm'],
+}
+
 // Reken de keten uit: hoeveel fabrieken per tussenproduct + P0-grondstoffen/uur,
 // om `n` eindfabrieken van het doel te voeden.
 function computeSetup(outId: number, n: number, producedBy: Map<number, { outQty: number; inputs: Pin[]; cycle: number }>) {
@@ -248,13 +267,30 @@ export default function PiPlanner() {
                       <div style={{ marginTop: 4 }}>
                         Fabrieken samen: <strong style={{ color: '#fff' }}>~{Math.round(cpu).toLocaleString('nl-NL')} CPU · {Math.round(pg).toLocaleString('nl-NL')} PG</strong> →{' '}
                         {lvl === -1
-                          ? <span style={{ color: 'var(--gold)' }}>past niet op één planeet — splits de keten over meerdere planeten</span>
+                          ? <span style={{ color: 'var(--gold)' }}>past niet op één planeet</span>
                           : <span style={{ color: '#3ecf6e' }}>Command Center Upgrade min. Level {lvl}</span>}
                       </div>
+                      {(() => {
+                        const factoryPlanets = Math.max(1, Math.ceil(cpu / CC_BUDGET[5].cpu), Math.ceil(pg / CC_BUDGET[5].pg))
+                        const extractorPlanets = raw.size
+                        return (
+                          <div style={{ marginTop: 4, color: '#fff' }}>
+                            🌍 Planeten (schatting): <strong>~{factoryPlanets + extractorPlanets}</strong>
+                            <span style={{ color: 'var(--text-dim)' }}> = {factoryPlanets} fabriek + {extractorPlanets} extractor</span>
+                            <span style={{ fontSize: '0.56rem', color: 'var(--text-dim)', opacity: 0.8 }}> (max 6 per character)</span>
+                          </div>
+                        )
+                      })()}
                       {raw.size > 0 && (
                         <div style={{ marginTop: 4, color: 'var(--text-dim)' }}>
-                          P0-grondstoffen nodig: {[...raw.entries()].map(([id, q]) => `${Math.ceil(q).toLocaleString('nl-NL')}/u ${nameOf(id)}`).join(' · ')}
-                          <span style={{ display: 'block', fontSize: '0.56rem', opacity: 0.8 }}>(extractors apart — aantal heads hangt af van de planeet-rijkdom; CPU/PG hierboven is alleen voor de fabrieken)</span>
+                          <div style={{ marginBottom: 2 }}>P0-grondstoffen nodig (uur · planeet-types):</div>
+                          {[...raw.entries()].map(([id, q]) => (
+                            <div key={id} style={{ paddingLeft: 6 }}>
+                              {Math.ceil(q).toLocaleString('nl-NL')}/u <span style={{ color: '#fff' }}>{nameOf(id)}</span>
+                              <span style={{ color: TIER_COLOR[1] }}> → {(P0_PLANETS[nameOf(id)] ?? ['?']).join(' / ')}</span>
+                            </div>
+                          ))}
+                          <span style={{ display: 'block', fontSize: '0.56rem', opacity: 0.8, marginTop: 2 }}>(extractor-heads hangen af van de planeet-rijkdom; CPU/PG hierboven is alleen voor de fabrieken)</span>
                         </div>
                       )}
                     </div>
