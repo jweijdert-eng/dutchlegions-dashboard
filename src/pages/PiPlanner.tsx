@@ -37,6 +37,40 @@ function fmtISK(v: number) {
 }
 const TIER_COLOR = ['#888', '#3ecf6e', '#00b4d8', '#a78bfa', '#f0a030']  // P0..P4
 
+// PI-facility CPU/Power (PG) + command center-budget per upgrade-level (standaard EVE-waarden).
+const FAC = {
+  basic:     { name: 'Basic Industry Facility',     cpu: 200,  pg: 800 },
+  advanced:  { name: 'Advanced Industry Facility',  cpu: 500,  pg: 700 },
+  hitech:    { name: 'High-Tech Industry Facility', cpu: 1100, pg: 400 },
+  launchpad: { name: 'Launchpad',                   cpu: 3600, pg: 700 },
+  storage:   { name: 'Storage Facility',            cpu: 500,  pg: 700 },
+} as const
+const CC_BUDGET = [
+  { cpu: 1675, pg: 6000 }, { cpu: 7057, pg: 9000 }, { cpu: 12136, pg: 12000 },
+  { cpu: 17215, pg: 15000 }, { cpu: 21315, pg: 17700 }, { cpu: 25415, pg: 19000 },
+]
+const facForTier = (t: number): keyof typeof FAC => t >= 4 ? 'hitech' : t >= 2 ? 'advanced' : 'basic'
+
+// Reken de keten uit: hoeveel fabrieken per tussenproduct + P0-grondstoffen/uur,
+// om `n` eindfabrieken van het doel te voeden.
+function computeSetup(outId: number, n: number, producedBy: Map<number, { outQty: number; inputs: Pin[]; cycle: number }>) {
+  const fac = new Map<number, number>()
+  const raw = new Map<number, number>()
+  const visit = (p: number, f: number, depth = 0) => {
+    const r = producedBy.get(p)
+    if (!r || depth > 12) return
+    fac.set(p, (fac.get(p) ?? 0) + f)
+    for (const inp of r.inputs) {
+      const demand = f * inp.quantity * 3600 / r.cycle   // units/uur van deze input
+      const ri = producedBy.get(inp.type_id)
+      if (ri) visit(inp.type_id, demand / (ri.outQty * 3600 / ri.cycle), depth + 1)
+      else raw.set(inp.type_id, (raw.get(inp.type_id) ?? 0) + demand)
+    }
+  }
+  visit(outId, n)
+  return { fac, raw }
+}
+
 export default function PiPlanner() {
   const [sch, setSch] = useState<Record<string, Schem>>({})
   const [names, setNames] = useState<Record<string, string>>({})
@@ -191,6 +225,41 @@ export default function PiPlanner() {
                   <span>Inputs kopen: <strong style={{ color: r.perDay > 0 ? '#3ecf6e' : 'var(--red)' }}>{fmtISK(r.perDay * factories)}/dag</strong></span>
                   <span title="Maak alle PI-inputs zelf, koop alleen de P0-grondstoffen">Volledige keten (alleen P0 kopen): <strong style={{ color: r.chainDay > 0 ? '#3ecf6e' : 'var(--red)' }}>{fmtISK(r.chainDay * factories)}/dag</strong></span>
                 </div>
+
+                {/* Planeet-opstelling (volledige keten zelf maken) */}
+                {(() => {
+                  const { fac, raw } = computeSetup(r.outId, factories, producedBy)
+                  let cpu = FAC.launchpad.cpu + FAC.storage.cpu, pg = FAC.launchpad.pg + FAC.storage.pg
+                  const lines = [...fac.entries()].map(([pid, cnt]) => {
+                    const c = Math.ceil(cnt), f = FAC[facForTier(tierOf(pid))]
+                    cpu += c * f.cpu; pg += c * f.pg
+                    return { pid, c, fname: f.name, tier: tierOf(pid) }
+                  }).sort((a, b) => b.tier - a.tier)
+                  const lvl = CC_BUDGET.findIndex(bk => bk.cpu >= cpu && bk.pg >= pg)
+                  return (
+                    <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                      <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>📋 Planeet-opstelling (volledige keten · {factories} eindfabriek{factories !== 1 ? 'en' : ''})</div>
+                      {lines.map(l => (
+                        <div key={l.pid} style={{ color: 'var(--text-dim)' }}>
+                          <strong style={{ color: '#fff' }}>{l.c}×</strong> {l.fname} <span style={{ color: TIER_COLOR[l.tier] }}>→ {nameOf(l.pid)} (P{l.tier})</span>
+                        </div>
+                      ))}
+                      <div style={{ color: 'var(--text-dim)' }}>+ 1× Launchpad · 1× Storage Facility</div>
+                      <div style={{ marginTop: 4 }}>
+                        Fabrieken samen: <strong style={{ color: '#fff' }}>~{Math.round(cpu).toLocaleString('nl-NL')} CPU · {Math.round(pg).toLocaleString('nl-NL')} PG</strong> →{' '}
+                        {lvl === -1
+                          ? <span style={{ color: 'var(--gold)' }}>past niet op één planeet — splits de keten over meerdere planeten</span>
+                          : <span style={{ color: '#3ecf6e' }}>Command Center Upgrade min. Level {lvl}</span>}
+                      </div>
+                      {raw.size > 0 && (
+                        <div style={{ marginTop: 4, color: 'var(--text-dim)' }}>
+                          P0-grondstoffen nodig: {[...raw.entries()].map(([id, q]) => `${Math.ceil(q).toLocaleString('nl-NL')}/u ${nameOf(id)}`).join(' · ')}
+                          <span style={{ display: 'block', fontSize: '0.56rem', opacity: 0.8 }}>(extractors apart — aantal heads hangt af van de planeet-rijkdom; CPU/PG hierboven is alleen voor de fabrieken)</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )}
           </div>
