@@ -9,6 +9,7 @@ import { AlertsProvider } from './context/AlertsContext'
 import { LoadingProvider } from './context/LoadingContext'
 import { LayoutModeProvider, useLayoutMode } from './context/LayoutModeContext'
 import { useSiteSettings } from './hooks/useSiteSettings'
+import { getMemberSettings } from './utils/memberSettings'
 
 const lz = <T extends React.ComponentType>(f: () => Promise<{ default: T }>) =>
   lazy(() => f().catch(() => { window.location.reload(); return new Promise<never>(() => {}) }))
@@ -185,7 +186,7 @@ function AppRoutes() {
         const j = await r.json()
         if (cancelled || !Array.isArray(j)) return
         const total = j.reduce((s: number, t: { staff_unread?: number }) => s + (Number(t.staff_unread) || 0), 0)
-        if (prevUnread.current !== null && total > prevUnread.current && Notification.permission === 'granted') {
+        if (prevUnread.current !== null && total > prevUnread.current && Notification.permission === 'granted' && getMemberSettings().notifRecruiter !== false) {
           new Notification('Recruiter-chat', {
             body: `${total} ongelezen bericht${total !== 1 ? 'en' : ''} in de recruiter-chat`,
             icon: '/favicon.ico',

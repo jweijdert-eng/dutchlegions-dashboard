@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 export interface MemberSettings {
   hiddenTabs: string[]      // paths die in de zijbalk verborgen zijn
   notifications: boolean    // desktop-notificatie bij Local-mention
+  notifJobs: boolean        // desktop-notificatie als een industry-job klaar is
+  notifRecruiter: boolean   // desktop-notificatie bij nieuw recruiter-chatbericht (admin)
   sound: boolean            // geluidswaarschuwing (intel/local)
   localWidget: boolean      // Local Chat-widget op het dashboard tonen
   accent: string            // persoonlijke accentkleur (#rrggbb), leeg = site-accent
@@ -13,7 +15,7 @@ export interface MemberSettings {
 }
 
 const KEY = 'eve_member_settings'
-const DEFAULTS: MemberSettings = { hiddenTabs: [], notifications: true, sound: true, localWidget: true, accent: '', translate: false, translateLang: 'en' }
+const DEFAULTS: MemberSettings = { hiddenTabs: [], notifications: true, notifJobs: true, notifRecruiter: true, sound: true, localWidget: true, accent: '', translate: false, translateLang: 'en' }
 const EVENT = 'membersettings'
 
 export function getMemberSettings(): MemberSettings {
@@ -22,6 +24,8 @@ export function getMemberSettings(): MemberSettings {
     return {
       hiddenTabs: Array.isArray(raw.hiddenTabs) ? raw.hiddenTabs : [],
       notifications: raw.notifications !== false,
+      notifJobs: raw.notifJobs !== false,
+      notifRecruiter: raw.notifRecruiter !== false,
       sound: raw.sound !== false,
       localWidget: raw.localWidget !== false,
       accent: /^#[0-9a-fA-F]{6}$/.test(raw.accent) ? raw.accent : '',

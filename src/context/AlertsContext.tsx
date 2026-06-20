@@ -1,6 +1,7 @@
 import { createContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { getMail, getIndustryJobs, getLocation, getShip, resolveNames } from '../api/esi'
+import { getMemberSettings } from '../utils/memberSettings'
 
 export interface CharLocation {
   system: string
@@ -79,7 +80,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         locations.set(r.charId, { system, systemId, shipName, shipTypeId, shipTypeName })
       }
 
-      if (readyJobs > prevReadyJobs.current && prevReadyJobs.current >= 0 && Notification.permission === 'granted') {
+      if (readyJobs > prevReadyJobs.current && prevReadyJobs.current >= 0 && Notification.permission === 'granted' && getMemberSettings().notifJobs !== false) {
         new Notification('EVE Industry', {
           body: `${readyJobs} job${readyJobs !== 1 ? 's' : ''} klaar om op te halen!`,
           icon: '/favicon.ico',

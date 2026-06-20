@@ -3,6 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import { NAV_ITEMS } from '../components/Sidebar'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { applyAccent, useSiteConfig } from '../hooks/useSiteConfig'
+import { useAuth } from '../auth/AuthContext'
 import AccountsPanel from '../components/AccountsPanel'
 
 const ACCENTS = [
@@ -24,6 +25,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem', marginBottom: '0.9rem' }
 const cardTitle: React.CSSProperties = { fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.2rem' }
 const cardSub: React.CSSProperties = { fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.8rem' }
+const smallBtn: React.CSSProperties = { background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.3rem 0.7rem', cursor: 'pointer' }
 
 // Tabs die je niet kunt verbergen.
 const FIXED = new Set(['/'])
@@ -67,9 +69,33 @@ function idbHas(dbName: string, version: number, store: string, key: string): Pr
 export default function Settings() {
   const settings = useMemberSettings()
   const site = useSiteConfig()
+  const { tokens } = useAuth()
+  const isAdmin = tokens.some(t => t.characterId === 1831618559)
   const [chatStatus, setChatStatus] = useState<'unknown' | 'linked' | 'none'>('unknown')
   const [busy, setBusy] = useState(false)
   const [accountsOpen, setAccountsOpen] = useState(true)
+
+  // Notificatie-permissie + test
+  const [perm, setPerm] = useState<NotificationPermission>(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+  const requestPerm = () => { if ('Notification' in window) Notification.requestPermission().then(setPerm) }
+  const testNotif = () => { if (Notification.permission === 'granted') new Notification('EVE Dashboard', { body: 'Notificaties werken! 🎉', icon: '/favicon.ico' }) }
+
+  // Instellingen exporteren/importeren (per-browser → meenemen naar ander apparaat)
+  const [importText, setImportText] = useState('')
+  const [ioMsg, setIoMsg] = useState('')
+  const flash = (m: string) => { setIoMsg(m); setTimeout(() => setIoMsg(''), 2500) }
+  const exportSettings = () => {
+    const code = 'EVE1:' + btoa(unescape(encodeURIComponent(JSON.stringify(settings))))
+    navigator.clipboard?.writeText(code).then(() => flash('✓ gekopieerd naar klembord')).catch(() => flash('✗ kopiëren mislukt'))
+  }
+  const importSettings = () => {
+    try {
+      const obj = JSON.parse(decodeURIComponent(escape(atob(importText.trim().replace(/^EVE1:/, '')))))
+      setMemberSettings(obj)
+      applyAccent(obj.accent || site.accent || '')
+      setImportText(''); flash('✓ instellingen geïmporteerd')
+    } catch { flash('✗ ongeldige code') }
+  }
 
   // Accentkleur live toepassen (persoonlijk wint van site; leeg = site-accent).
   function pickAccent(hex: string) {
@@ -161,12 +187,40 @@ export default function Settings() {
               setMemberSettings({ notifications: v })
             }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid rgba(28,28,53,0.5)' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Industry-job klaar</div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Desktop-melding als een job klaar is om op te halen.</div>
+            </div>
+            <Toggle on={settings.notifJobs} onChange={v => setMemberSettings({ notifJobs: v })} />
+          </div>
+          {isAdmin && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid rgba(28,28,53,0.5)' }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Recruiter-chat</div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Melding bij een nieuw bericht in de recruiter-chat.</div>
+              </div>
+              <Toggle on={settings.notifRecruiter} onChange={v => setMemberSettings({ notifRecruiter: v })} />
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0' }}>
             <div>
               <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Geluidswaarschuwing (intel)</div>
               <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Pieptoon bij een nieuwe threat in de Intel-feed.</div>
             </div>
             <Toggle on={settings.sound} onChange={v => setMemberSettings({ sound: v })} />
+          </div>
+          {/* Browser-permissie */}
+          <div style={{ marginTop: '0.5rem', paddingTop: '0.6rem', borderTop: '1px solid rgba(28,28,53,0.5)', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.7rem' }}>
+              Browser-toestemming:{' '}
+              <strong style={{ color: perm === 'granted' ? 'var(--green)' : perm === 'denied' ? 'var(--red)' : 'var(--gold)' }}>
+                {perm === 'granted' ? 'toegestaan' : perm === 'denied' ? 'geblokkeerd' : 'nog niet gevraagd'}
+              </strong>
+            </span>
+            {perm === 'default' && <button onClick={requestPerm} style={smallBtn}>Toestaan</button>}
+            {perm === 'granted' && <button onClick={testNotif} style={smallBtn}>Test melding</button>}
+            {perm === 'denied' && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>Zet meldingen aan via het 🔒 in de adresbalk.</span>}
           </div>
         </div>
 
@@ -225,6 +279,21 @@ export default function Settings() {
                 </div>
               )
             })}
+          </div>
+        </div>
+
+        {/* Instellingen meenemen (export/import) */}
+        <div style={card}>
+          <div style={cardTitle}>🔄 Instellingen meenemen</div>
+          <div style={cardSub}>Je voorkeuren staan per browser. Kopieer ze als code en plak op een ander apparaat of in een andere browser.</div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.6rem' }}>
+            <button onClick={exportSettings} style={smallBtn}>📋 Kopieer mijn instellingen</button>
+            {ioMsg && <span style={{ fontSize: '0.66rem', color: ioMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{ioMsg}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <input value={importText} onChange={e => setImportText(e.target.value)} placeholder="Plak hier een instellingen-code…"
+              style={{ flex: 1, minWidth: 0, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 3, color: '#fff', fontSize: '0.7rem', padding: '0.4rem 0.55rem' }} />
+            <button onClick={importSettings} disabled={!importText.trim()} style={{ ...smallBtn, opacity: importText.trim() ? 1 : 0.5 }}>Importeer</button>
           </div>
         </div>
 
