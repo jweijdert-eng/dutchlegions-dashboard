@@ -1,0 +1,76 @@
+name: Retry FTP deploy
+description: Retry the FTP deploy action once before failing
+
+inputs:
+  server:
+    description: FTP server
+    required: true
+  username:
+    description: FTP username
+    required: true
+  password:
+    description: FTP password
+    required: true
+  local-dir:
+    description: Directory to upload
+    required: false
+    default: ./dist/
+  server-dir:
+    description: Remote directory to upload into
+    required: false
+    default: /public_html/
+  protocol:
+    description: FTP protocol
+    required: false
+    default: ftp
+  port:
+    description: FTP port
+    required: false
+    default: "21"
+  dangerous-clean-slate:
+    description: Whether to wipe the remote directory before upload
+    required: false
+    default: "false"
+  timeout-ms:
+    description: FTP action timeout in milliseconds
+    required: false
+    default: "120000"
+
+runs:
+  using: composite
+  steps:
+    - name: Upload via FTP
+      id: upload_1
+      continue-on-error: true
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ inputs.server }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+        local-dir: ${{ inputs.local-dir }}
+        server-dir: ${{ inputs.server-dir }}
+        protocol: ${{ inputs.protocol }}
+        port: ${{ inputs.port }}
+        dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
+        timeout: ${{ inputs.timeout-ms }}
+
+    - name: Retry FTP upload
+      id: upload_2
+      if: steps.upload_1.outcome == 'failure'
+      continue-on-error: true
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ inputs.server }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+        local-dir: ${{ inputs.local-dir }}
+        server-dir: ${{ inputs.server-dir }}
+        protocol: ${{ inputs.protocol }}
+        port: ${{ inputs.port }}
+        dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
+        timeout: ${{ inputs.timeout-ms }}
+
+    - name: Fail if FTP upload keeps timing out
+      if: steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
+      shell: bash
+      run: exit 1
