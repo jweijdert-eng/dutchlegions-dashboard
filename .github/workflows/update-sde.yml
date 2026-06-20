@@ -11,6 +11,8 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      FTP_TIMEOUT_MS: 120000
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +73,7 @@ jobs:
           protocol: ftp
           port: 21
           dangerous-clean-slate: false
-          timeout: 120000
+          timeout: ${{ env.FTP_TIMEOUT_MS }}
 
       - name: Retry FTP upload
         id: upload_2
@@ -87,7 +89,7 @@ jobs:
           protocol: ftp
           port: 21
           dangerous-clean-slate: false
-          timeout: 120000
+          timeout: ${{ env.FTP_TIMEOUT_MS }}
 
       - name: Fail if FTP upload keeps timing out
         if: steps.diff.outputs.changed == 'true' && steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
