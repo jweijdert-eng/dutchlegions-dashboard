@@ -180,7 +180,7 @@ function GroupRow({ group, badgeCount, collapsed, open, onToggle, renderChild }:
   const location = useLocation()
   const childActive = group.children.includes(location.pathname)
   const totalBadge = group.children.reduce((s, p) => s + badgeCount(ITEM_BY_PATH[p]?.badge ?? null), 0)
-  const expanded = open || childActive
+  const expanded = open   // de in-/uitklap-keuze is leidend, ook als je op een subpagina staat
   return (
     <div>
       <div onClick={onToggle} title={collapsed ? group.label : undefined}
