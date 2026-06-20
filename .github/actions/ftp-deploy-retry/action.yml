@@ -74,5 +74,5 @@ runs:
       if: steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
       shell: bash
       run: |
-        echo "FTP upload failed on both the initial attempt and the retry. Check FTP server availability, network connectivity, or temporary server load."
+        echo "FTP upload failed on both the initial attempt and the retry."
         exit 1
