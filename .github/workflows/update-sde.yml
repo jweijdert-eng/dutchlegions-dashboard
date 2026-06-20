@@ -64,7 +64,7 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
+        with: &ftp_deploy_config
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
@@ -80,16 +80,7 @@ jobs:
         if: steps.diff.outputs.changed == 'true' && steps.upload_1.outcome == 'failure'
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: /public_html/
-          protocol: ftp
-          port: 21
-          dangerous-clean-slate: false
-          timeout: ${{ env.FTP_TIMEOUT_MS }}
+        with: *ftp_deploy_config
 
       - name: Fail if FTP upload keeps timing out
         if: steps.diff.outputs.changed == 'true' && steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
