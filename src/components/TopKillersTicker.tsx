@@ -10,6 +10,8 @@ interface Pos { top: number; left: number }
 // #1 goud, #2 zilver, #3 brons, rest gedimd.
 const rankColor = (r: number) => r === 1 ? '#f5c518' : r === 2 ? '#cbd5e1' : r === 3 ? '#cd7f32' : 'var(--text-dim)'
 
+const fmtNum = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}m` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n)
+
 function loadPos(): Pos | null {
   try { const p = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); return p && typeof p.top === 'number' ? p : null } catch { return null }
 }
@@ -18,6 +20,7 @@ function loadPos(): Pos | null {
 // floating=true → zwevend + versleepbaar (positie onthouden per browser).
 export default function TopKillersTicker({ floating = false }: { floating?: boolean }) {
   const [killers, setKillers] = useState<TopKiller[]>([])
+  const [corp, setCorp] = useState<{ kills: number; losses: number } | null>(null)
   const [upIds, setUpIds] = useState<Set<number>>(new Set())   // killers met een nieuwe kill
   const [pos, setPos] = useState<Pos | null>(floating ? loadPos() : null)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
@@ -26,8 +29,9 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
     let cancelled = false
     fetch(`/api/zkill.php?type=corporationID&id=${CORP_ID}`)
       .then(r => r.json())
-      .then((d: { topKillers?: TopKiller[] }) => {
+      .then((d: { topKillers?: TopKiller[]; corpKills?: number; corpLosses?: number }) => {
         if (cancelled) return
+        setCorp({ kills: d?.corpKills ?? 0, losses: d?.corpLosses ?? 0 })
         const list = (d?.topKillers ?? []).slice(0, 10)
         try {
           // Vergelijk met de vorige stand: meer kills dan toen → groen pijltje.
@@ -95,6 +99,12 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
           color: 'var(--gold)', borderRight: '1px solid var(--border)', background: 'rgba(240,160,48,0.08)', whiteSpace: 'nowrap',
           cursor: floating ? 'grab' : 'default', userSelect: 'none', touchAction: 'none',
         }}>{floating ? '⠿ ' : ''}⚔️ TOP KILLERS</span>
+      {corp && (corp.kills > 0 || corp.losses > 0) && (
+        <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '0 0.6rem', borderRight: '1px solid var(--border)', fontSize: '0.66rem', fontWeight: 700, whiteSpace: 'nowrap' }} title="Corp kills vs losses (zKillboard, all-time)">
+          <span style={{ color: '#3ecf6e' }}>▲ {fmtNum(corp.kills)}</span>
+          <span style={{ color: 'var(--red)' }}>▼ {fmtNum(corp.losses)}</span>
+        </span>
+      )}
       <div style={{ overflow: 'hidden', flex: 1 }}>
         <div className="tk-track" style={{ display: 'inline-flex', alignItems: 'center', animation: `tk-scroll ${dur}s linear infinite`, willChange: 'transform' }}>
           {loop.map((k, i) => {

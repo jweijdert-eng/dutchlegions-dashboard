@@ -42,8 +42,12 @@ $statsRaw = zfetch("https://zkillboard.com/api/stats/{$type}/{$id}/");
 $kills = $killsRaw ? json_decode($killsRaw, true) : null;
 
 $killers = [];
+$corpKills = 0;
+$corpLosses = 0;
 if ($statsRaw) {
     $j = json_decode($statsRaw, true);
+    $corpKills  = (int)($j['shipsDestroyed'] ?? 0);
+    $corpLosses = (int)($j['shipsLost'] ?? 0);
     foreach (($j['topLists'] ?? []) as $tl) {
         if (($tl['type'] ?? '') === 'character') {
             foreach (array_slice($tl['values'] ?? [], 0, 10) as $v) {
@@ -64,6 +68,11 @@ if ($kills === null && !$killers && is_file($cacheFile) && filesize($cacheFile) 
     exit;
 }
 
-$out = json_encode(['kills' => is_array($kills) ? $kills : [], 'topKillers' => $killers]);
+$out = json_encode([
+    'kills'      => is_array($kills) ? $kills : [],
+    'topKillers' => $killers,
+    'corpKills'  => $corpKills,
+    'corpLosses' => $corpLosses,
+]);
 @file_put_contents($cacheFile, $out);
 echo $out;
