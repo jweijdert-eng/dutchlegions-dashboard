@@ -29,6 +29,7 @@ import KillsTable, { type KillEntry } from '../components/KillsTable'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
 import LocalChatWidget from '../components/LocalChatWidget'
+import TopKillersTicker from '../components/TopKillersTicker'
 import Starfield from '../components/Starfield'
 import { useMemberSettings } from '../utils/memberSettings'
 
@@ -997,6 +998,7 @@ export default function Dashboard() {
 
       {member.localWidget && !previewMode && (
         <div style={{ marginBottom: GAP }}>
+          <TopKillersTicker />
           <LocalChatWidget />
         </div>
       )}
