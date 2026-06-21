@@ -708,11 +708,23 @@ export const getCorporation  = (id: number) => esiGet<CorporationInfo>(`/corpora
 export const getAlliance     = (id: number) => esiGet<AllianceInfo>(`/alliances/${id}/`)
 
 export async function getWalletJournal(id: number, token: string, pages = 3): Promise<WalletJournalEntry[]> {
-  const requests = Array.from({ length: pages }, (_, i) =>
-    esiGet<WalletJournalEntry[]>(`/characters/${id}/wallet/journal/?page=${i + 1}`, token).catch(() => [] as WalletJournalEntry[])
+  // Pagina 1 apart ophalen om X-Pages te lezen → daarna alleen bestaande pagina's
+  // (voorkomt 404-geprobeer op niet-bestaande pagina's in de console).
+  let res: Response
+  try {
+    res = await esiFetch(`${BASE}/characters/${id}/wallet/journal/?page=1&datasource=tranquility`, { headers: { Authorization: `Bearer ${token}` } })
+  } catch { return [] }
+  if (!res.ok) return []
+  const total = parseInt(res.headers.get('x-pages') ?? '1', 10) || 1
+  const first = (await res.json().catch(() => [])) as WalletJournalEntry[]
+  const last = Math.min(total, pages)
+  if (last <= 1) return first
+  const rest = await Promise.all(
+    Array.from({ length: last - 1 }, (_, i) =>
+      esiGet<WalletJournalEntry[]>(`/characters/${id}/wallet/journal/?page=${i + 2}`, token).catch(() => [] as WalletJournalEntry[])
+    )
   )
-  const results = await Promise.all(requests)
-  return results.flat()
+  return [first, ...rest].flat()
 }
 
 export async function getKillmailDetail(id: number, hash: string): Promise<Killmail | null> {
