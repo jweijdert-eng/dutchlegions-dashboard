@@ -107,14 +107,27 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [destMsg, setDestMsg]   = useState<{ text: string; ok: boolean } | null>(null)
   const [ctx, setCtx]           = useState<{ x: number; y: number; sid: number; name: string } | null>(null)
   const [originSid, setOriginSid] = useState<number | null>(null)   // jouw huidige systeem
+
+  // Welke scopes zitten in het huidige token? (JWT-payload → scp) → vooraf weten of
+  // Set Destination / route überhaupt kunnen, anders een duidelijke "log opnieuw in".
+  const tokenScp = useMemo(() => {
+    const tk = tokens[0]?.accessToken
+    if (!tk) return [] as string[]
+    try {
+      const p = JSON.parse(atob(tk.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+      return Array.isArray(p.scp) ? p.scp as string[] : p.scp ? [p.scp as string] : []
+    } catch { return [] }
+  }, [tokens])
+  const canWaypoint = tokenScp.includes('esi-ui.write_waypoint.v1')
+  const canLocation = tokenScp.includes('esi-location.read_location.v1')
   const [ctxRoute, setCtxRoute] = useState<number[] | null>(null)   // route voor het open menu (jumps)
   const [routePath, setRoutePath] = useState<number[] | null>(null) // op de kaart getekende route
 
   // Jouw huidige locatie ophalen (origin voor routes).
   useEffect(() => {
-    const t = tokens[0]; if (!t) return
+    const t = tokens[0]; if (!t || !canLocation) return
     getLocation(t.characterId, t.accessToken).then(loc => { if (loc?.solar_system_id) setOriginSid(loc.solar_system_id) }).catch(() => {})
-  }, [tokens])
+  }, [tokens, canLocation])
 
   // Bij openen van het menu: route origin → doel ophalen (voor "X jumps" + "Toon route").
   useEffect(() => {
@@ -127,6 +140,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 
   async function showRoute(destSid: number) {
     setCtx(null)
+    if (!canLocation) { setDestMsg({ text: 'Log opnieuw in — je login mist het locatie-recht', ok: false }); setTimeout(() => setDestMsg(null), 5000); return }
     if (!originSid) { setDestMsg({ text: 'Eigen locatie onbekend (in EVE ingelogd?)', ok: false }); setTimeout(() => setDestMsg(null), 3500); return }
     const r = ctxRoute ?? await getRoute(originSid, destSid).catch(() => null)
     if (r && r.length > 1) setRoutePath(r)
@@ -150,6 +164,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   async function doWaypoint(sid: number, name: string, mode: 'set' | 'add' | 'all') {
     setCtx(null)
     if (!Number.isFinite(sid) || sid <= 0) { setDestMsg({ text: `Onbekend systeem-ID voor ${name}`, ok: false }); setTimeout(() => setDestMsg(null), 4000); return }
+    if (!canWaypoint) { setDestMsg({ text: 'Log opnieuw in — je login mist het waypoint-recht', ok: false }); setTimeout(() => setDestMsg(null), 5000); return }
     const reason = (status: number) =>
       status === 403 ? 'geen waypoint-rechten — log opnieuw in (autoriseer de scope)'
       : status === 401 ? 'sessie verlopen — herlaad de pagina'
@@ -443,6 +458,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           background: destMsg.ok ? 'rgba(62,207,110,0.92)' : 'rgba(224,85,85,0.92)', color: '#05050e', fontWeight: 700,
           fontSize: '0.72rem', padding: '0.4rem 0.9rem', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 3px 14px rgba(0,0,0,0.5)',
         }}>📍 {destMsg.text}</div>
+      )}
+      {/* Ontbrekende scopes → duidelijke instructie (waypoint/route werken dan niet) */}
+      {tokens.length > 0 && (!canWaypoint || !canLocation) && (
+        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 9, maxWidth: 250, background: 'rgba(240,160,48,0.95)', color: '#05050e', fontSize: '0.62rem', fontWeight: 700, padding: '0.4rem 0.7rem', borderRadius: 6, lineHeight: 1.4 }}>
+          ⚠ Log opnieuw in om route/Set Destination te gebruiken — je huidige login mist {[!canWaypoint && 'waypoint', !canLocation && 'locatie'].filter(Boolean).join(' + ')}-rechten.
+        </div>
       )}
       {/* Route getekend → wis-knop + jumps */}
       {routePath && routePath.length > 1 && (
