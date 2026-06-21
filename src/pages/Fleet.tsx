@@ -105,15 +105,39 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [dscan, setDscan]       = useState<Record<string, DscanGroup[]>>({})   // dscan-url → schepen
   const { tokens } = useAuth()
   const [destMsg, setDestMsg]   = useState<{ text: string; ok: boolean } | null>(null)
+  const [ctx, setCtx]           = useState<{ x: number; y: number; sid: number; name: string } | null>(null)
 
-  // Klik op een systeem → zet het als in-game waypoint (autopilot) voor het hoofd-account.
-  async function setDest(sid: number, name: string) {
-    const token = tokens[0]?.accessToken
-    if (!token) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
-    setDestMsg({ text: `Route zetten → ${name}…`, ok: true })
-    const ok = await setWaypoint(sid, token, true)
-    setDestMsg({ text: ok ? `Route gezet → ${name}` : `Mislukt → ${name} (zit je character in EVE?)`, ok })
-    setTimeout(() => setDestMsg(null), ok ? 2500 : 4000)
+  // Rechtsklik op een systeem → in-game-stijl contextmenu (waypoint-acties + links).
+  function openCtx(e: React.MouseEvent, sid: number, name: string) {
+    e.preventDefault(); e.stopPropagation()
+    setCtx({ x: e.clientX, y: e.clientY, sid, name })
+  }
+  useEffect(() => {
+    if (!ctx) return
+    const close = () => setCtx(null)
+    window.addEventListener('click', close)
+    window.addEventListener('contextmenu', close)
+    return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close) }
+  }, [ctx])
+
+  // mode: 'set' = nieuwe route (clear others) · 'add' = waypoint toevoegen · 'all' = set op alle accounts
+  async function doWaypoint(sid: number, name: string, mode: 'set' | 'add' | 'all') {
+    setCtx(null)
+    if (mode === 'all') {
+      if (!tokens.length) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
+      setDestMsg({ text: `Route → ${name} op ${tokens.length} accounts…`, ok: true })
+      const res = await Promise.all(tokens.map(t => setWaypoint(sid, t.accessToken, true)))
+      const okN = res.filter(Boolean).length
+      setDestMsg({ text: `Route gezet op ${okN}/${tokens.length} accounts → ${name}`, ok: okN > 0 })
+    } else {
+      const token = tokens[0]?.accessToken
+      if (!token) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
+      const clear = mode === 'set'
+      setDestMsg({ text: `${clear ? 'Route' : 'Waypoint'} → ${name}…`, ok: true })
+      const ok = await setWaypoint(sid, token, clear)
+      setDestMsg({ text: ok ? `${clear ? 'Route gezet' : 'Waypoint toegevoegd'} → ${name}` : `Mislukt → ${name} (zit je character in EVE?)`, ok })
+    }
+    setTimeout(() => setDestMsg(null), 3000)
   }
   const dscanFetching           = useRef(new Set<string>())
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
@@ -367,6 +391,23 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           fontSize: '0.72rem', padding: '0.4rem 0.9rem', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 3px 14px rgba(0,0,0,0.5)',
         }}>📍 {destMsg.text}</div>
       )}
+      {/* Rechtsklik-contextmenu (in-game stijl) */}
+      {ctx && (
+        <div onClick={e => e.stopPropagation()} onContextMenu={e => { e.preventDefault(); e.stopPropagation() }}
+          style={{
+            position: 'fixed', left: Math.min(ctx.x, window.innerWidth - 200), top: Math.min(ctx.y, window.innerHeight - 230),
+            zIndex: 1000, minWidth: 184, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4,
+            boxShadow: '0 8px 28px rgba(0,0,0,0.6)', overflow: 'hidden', fontSize: '0.72rem',
+          }}>
+          <div style={{ padding: '0.4rem 0.7rem', borderBottom: '1px solid var(--border)', color: 'var(--gold)', fontWeight: 700, whiteSpace: 'nowrap' }}>{ctx.name}</div>
+          <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'set')}>▶ Set Destination</CtxItem>
+          <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'add')}>＋ Add Waypoint</CtxItem>
+          {tokens.length > 1 && <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'all')}>⧉ Alle accounts ({tokens.length})</CtxItem>}
+          <div style={{ borderTop: '1px solid var(--border)' }} />
+          <CtxLink href={`https://evemaps.dotlan.net/system/${encodeURIComponent(ctx.name.replace(/ /g, '_'))}`}>🗺 Dotlan</CtxLink>
+          <CtxLink href={`https://zkillboard.com/system/${ctx.sid}/`}>💀 zKillboard</CtxLink>
+        </div>
+      )}
       {/* SPIKE-waarschuwing — groot, pulserend rood/oranje */}
       {intelMarkers.some(m => m.spike) && (
         <div style={{
@@ -393,7 +434,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
           const name = sysMeta[sid]?.[0]; if (!name) return null
           return <text key={sid} x={x + sysFont * 0.5} y={y - sysFont * 0.4} fontSize={sysFont} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={sysFont * 0.07} paintOrder="stroke"
-            style={{ cursor: 'pointer', pointerEvents: 'auto' }} onClick={() => setDest(+sid, name)}><title>Klik: zet als route</title>{name}</text>
+            style={{ cursor: 'context-menu', pointerEvents: 'auto' }} onContextMenu={e => openCtx(e, +sid, name)}><title>Rechtsklik voor route-menu</title>{name}</text>
         })}
         {/* Fleet-leden — groene ring + aantal (zoals de in-game map) */}
         {memberNodes.map(n => {
@@ -402,8 +443,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const [x, y] = screen(c[0], c[1])
           const r = 3 + (n.members.length / maxCount) * 4
           return (
-            <g key={n.sid} style={{ cursor: 'pointer', pointerEvents: 'auto' }} onClick={() => setDest(n.sid, n.name)}>
-              <title>Klik: zet {n.name} als route</title>
+            <g key={n.sid} style={{ cursor: 'context-menu', pointerEvents: 'auto' }} onContextMenu={e => openCtx(e, n.sid, n.name)}>
+              <title>Rechtsklik {n.name} voor route-menu</title>
               <circle cx={x} cy={y} r={r + 4} fill="#3ecf6e" fillOpacity={0.12} />
               <circle cx={x} cy={y} r={r + 1.5} fill="none" stroke="#3ecf6e" strokeWidth={1.4} />
               {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1} strokeDasharray="3 2" />}
@@ -430,8 +471,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const ir = Math.max(5, markerFont * 0.7)
           const col = threat ? '#e05555' : '#f0a030'
           return (
-            <g key={`intel-${sys}`} style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onClick={() => setDest(+sys, sysMeta[sys]?.[0] ?? `Systeem ${sys}`)}
+            <g key={`intel-${sys}`} style={{ pointerEvents: 'auto', cursor: 'context-menu' }}
+              onContextMenu={e => openCtx(e, +sys, sysMeta[sys]?.[0] ?? `Systeem ${sys}`)}
               onMouseEnter={() => setHoverSys(sys)} onMouseLeave={() => setHoverSys(h => h === sys ? null : h)}>
               {/* Onzichtbaar hover-vlak (ruimer dan het icoon) */}
               <circle cx={x} cy={y} r={Math.max(ir * 1.8, 10)} fill="transparent" />
@@ -1247,5 +1288,22 @@ export default function Fleet() {
         </div>
       )}
     </Layout>
+  )
+}
+
+// ── Contextmenu-onderdelen (rechtsklik op de kaart) ──
+const ctxRow: React.CSSProperties = { padding: '0.4rem 0.7rem', cursor: 'pointer', color: 'var(--text)', whiteSpace: 'nowrap' }
+function CtxItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <div onClick={onClick} style={ctxRow}
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,180,216,0.12)' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}>{children}</div>
+  )
+}
+function CtxLink({ children, href }: { children: React.ReactNode; href: string }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" style={{ ...ctxRow, display: 'block', textDecoration: 'none' }}
+      onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(0,180,216,0.12)' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'transparent' }}>{children}</a>
   )
 }
