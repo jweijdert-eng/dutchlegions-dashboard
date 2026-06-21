@@ -4,7 +4,7 @@ import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
   resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterIds,
   createFleetWing, renameFleetWing, deleteFleetWing, createFleetSquad, renameFleetSquad, deleteFleetSquad,
-  getSystems, getRegions, getSystemCoords, getSystemJumps,
+  getSystems, getRegions, getSystemCoords, getSystemJumps, setWaypoint,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
@@ -103,6 +103,18 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [allyNames, setAllyNames] = useState<Record<number, string>>({}) // allianceId → naam (lazy)
   const [structTypes, setStructTypes] = useState<Record<string, number>>({})  // structuur-naam → type-id (ESS, Skyhook…)
   const [dscan, setDscan]       = useState<Record<string, DscanGroup[]>>({})   // dscan-url → schepen
+  const { tokens } = useAuth()
+  const [destMsg, setDestMsg]   = useState<{ text: string; ok: boolean } | null>(null)
+
+  // Klik op een systeem → zet het als in-game waypoint (autopilot) voor het hoofd-account.
+  async function setDest(sid: number, name: string) {
+    const token = tokens[0]?.accessToken
+    if (!token) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
+    setDestMsg({ text: `Route zetten → ${name}…`, ok: true })
+    const ok = await setWaypoint(sid, token, true)
+    setDestMsg({ text: ok ? `Route gezet → ${name}` : `Mislukt → ${name} (zit je character in EVE?)`, ok })
+    setTimeout(() => setDestMsg(null), ok ? 2500 : 4000)
+  }
   const dscanFetching           = useRef(new Set<string>())
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const didAuto = useRef(false)
@@ -347,6 +359,14 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
       <style>{`@keyframes spikePulse {0%,100%{box-shadow:0 0 0 0 rgba(240,160,48,0.6);background:rgba(224,85,85,0.92)}50%{box-shadow:0 0 18px 5px rgba(240,160,48,0.9);background:rgba(240,160,48,0.95)}}`}</style>
+      {/* Waypoint-feedback bij klik op een systeem */}
+      {destMsg && (
+        <div style={{
+          position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 9, pointerEvents: 'none',
+          background: destMsg.ok ? 'rgba(62,207,110,0.92)' : 'rgba(224,85,85,0.92)', color: '#05050e', fontWeight: 700,
+          fontSize: '0.72rem', padding: '0.4rem 0.9rem', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 3px 14px rgba(0,0,0,0.5)',
+        }}>📍 {destMsg.text}</div>
+      )}
       {/* SPIKE-waarschuwing — groot, pulserend rood/oranje */}
       {intelMarkers.some(m => m.spike) && (
         <div style={{
@@ -372,7 +392,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const [x, y] = screen(c[0], c[1])
           if (x < 4 || x > W - 4 || y < 8 || y > H - 2) return null
           const name = sysMeta[sid]?.[0]; if (!name) return null
-          return <text key={sid} x={x + sysFont * 0.5} y={y - sysFont * 0.4} fontSize={sysFont} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={sysFont * 0.07} paintOrder="stroke">{name}</text>
+          return <text key={sid} x={x + sysFont * 0.5} y={y - sysFont * 0.4} fontSize={sysFont} fill="rgba(225,228,240,0.8)" stroke="#05050e" strokeWidth={sysFont * 0.07} paintOrder="stroke"
+            style={{ cursor: 'pointer', pointerEvents: 'auto' }} onClick={() => setDest(+sid, name)}><title>Klik: zet als route</title>{name}</text>
         })}
         {/* Fleet-leden — groene ring + aantal (zoals de in-game map) */}
         {memberNodes.map(n => {
@@ -381,7 +402,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const [x, y] = screen(c[0], c[1])
           const r = 3 + (n.members.length / maxCount) * 4
           return (
-            <g key={n.sid}>
+            <g key={n.sid} style={{ cursor: 'pointer', pointerEvents: 'auto' }} onClick={() => setDest(n.sid, n.name)}>
+              <title>Klik: zet {n.name} als route</title>
               <circle cx={x} cy={y} r={r + 4} fill="#3ecf6e" fillOpacity={0.12} />
               <circle cx={x} cy={y} r={r + 1.5} fill="none" stroke="#3ecf6e" strokeWidth={1.4} />
               {n.isFc && <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1} strokeDasharray="3 2" />}
@@ -408,7 +430,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           const ir = Math.max(5, markerFont * 0.7)
           const col = threat ? '#e05555' : '#f0a030'
           return (
-            <g key={`intel-${sys}`} style={{ pointerEvents: 'auto', cursor: 'help' }}
+            <g key={`intel-${sys}`} style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+              onClick={() => setDest(+sys, sysMeta[sys]?.[0] ?? `Systeem ${sys}`)}
               onMouseEnter={() => setHoverSys(sys)} onMouseLeave={() => setHoverSys(h => h === sys ? null : h)}>
               {/* Onzichtbaar hover-vlak (ruimer dan het icoon) */}
               <circle cx={x} cy={y} r={Math.max(ir * 1.8, 10)} fill="transparent" />
