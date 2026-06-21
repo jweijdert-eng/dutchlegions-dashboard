@@ -2,9 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 
 const CORP_ID = 98652891   // Dutch Legions
 const POS_KEY = 'tk_ticker_pos'
+const SNAP_KEY = 'tk_kills_snapshot'   // vorige kill-stand per character → "nieuwe kill"-pijltje
 
 interface TopKiller { characterID: number; characterName: string; kills: number }
 interface Pos { top: number; left: number }
+
+// #1 goud, #2 zilver, #3 brons, rest gedimd.
+const rankColor = (r: number) => r === 1 ? '#f5c518' : r === 2 ? '#cbd5e1' : r === 3 ? '#cd7f32' : 'var(--text-dim)'
 
 function loadPos(): Pos | null {
   try { const p = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); return p && typeof p.top === 'number' ? p : null } catch { return null }
@@ -14,6 +18,7 @@ function loadPos(): Pos | null {
 // floating=true → zwevend + versleepbaar (positie onthouden per browser).
 export default function TopKillersTicker({ floating = false }: { floating?: boolean }) {
   const [killers, setKillers] = useState<TopKiller[]>([])
+  const [upIds, setUpIds] = useState<Set<number>>(new Set())   // killers met een nieuwe kill
   const [pos, setPos] = useState<Pos | null>(floating ? loadPos() : null)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
 
@@ -21,7 +26,21 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
     let cancelled = false
     fetch(`/api/zkill.php?type=corporationID&id=${CORP_ID}`)
       .then(r => r.json())
-      .then((d: { topKillers?: TopKiller[] }) => { if (!cancelled) setKillers((d?.topKillers ?? []).slice(0, 10)) })
+      .then((d: { topKillers?: TopKiller[] }) => {
+        if (cancelled) return
+        const list = (d?.topKillers ?? []).slice(0, 10)
+        try {
+          // Vergelijk met de vorige stand: meer kills dan toen → groen pijltje.
+          const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || '{}') as Record<string, number>
+          const ups = new Set<number>()
+          for (const k of list) { const prev = snap[k.characterID]; if (prev != null && k.kills > prev) ups.add(k.characterID) }
+          setUpIds(ups)
+          const next: Record<string, number> = {}
+          for (const k of list) next[k.characterID] = k.kills
+          localStorage.setItem(SNAP_KEY, JSON.stringify(next))
+        } catch { /* ignore */ }
+        setKillers(list)
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -83,10 +102,11 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
             return (
               <a key={i} href={`https://zkillboard.com/character/${k.characterID}/`} target="_blank" rel="noreferrer"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0.25rem 0.85rem', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                <span style={{ fontSize: '0.66rem', fontWeight: 800, color: rank === 1 ? 'var(--gold)' : 'var(--text-dim)' }}>#{rank}</span>
+                <span style={{ fontSize: '0.66rem', fontWeight: 800, color: rankColor(rank) }}>#{rank}</span>
                 <img src={`https://images.evetech.net/characters/${k.characterID}/portrait?size=32`} width={20} height={20} style={{ borderRadius: '50%' }} alt="" />
                 <span style={{ fontSize: '0.72rem', color: '#fff' }}>{k.characterName}</span>
                 <span style={{ fontSize: '0.64rem', color: '#3ecf6e', fontWeight: 700 }}>{k.kills}</span>
+                {upIds.has(k.characterID) && <span title="nieuwe kill sinds je vorige bezoek" style={{ fontSize: '0.6rem', color: '#3ecf6e' }}>▲</span>}
                 <span style={{ color: 'var(--border)', marginLeft: 4 }}>·</span>
               </a>
             )
