@@ -142,6 +142,28 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   }, [bridges, nameToId])
   const routeOpts = bridgeConnections || undefined
 
+  // Set van bridge-paren (beide richtingen) → om JB-segmenten in de route te herkennen.
+  const bridgePairSet = useMemo(() => {
+    const s = new Set<string>()
+    for (const [a, b] of bridges) {
+      const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
+      if (ia && ib) { s.add(`${ia}-${ib}`); s.add(`${ib}-${ia}`) }
+    }
+    return s
+  }, [bridges, nameToId])
+
+  // Route wissen: kaart-lijn weg + autopilot in-game leegmaken (waypoint = huidige systeem).
+  async function clearRoute() {
+    setCtx(null)
+    setRoutePath(null)
+    if (canWaypoint && originSid && mainTok) {
+      setDestMsg({ text: 'Autopilot wissen…', ok: true })
+      const r = await setWaypoint(originSid, mainTok.accessToken, true)
+      setDestMsg({ text: r.ok ? 'Route gewist' : 'Kaart-route gewist (in-game niet)', ok: r.ok })
+      setTimeout(() => setDestMsg(null), 2500)
+    }
+  }
+
   // Locatie van je HOOFD-character ophalen (origin voor routes).
   useEffect(() => {
     const t = mainTok; if (!t || !canLocation) return
@@ -467,7 +489,9 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   return (
     <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag} onContextMenu={onMapContext}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
-      <style>{`@keyframes spikePulse {0%,100%{box-shadow:0 0 0 0 rgba(240,160,48,0.6);background:rgba(224,85,85,0.92)}50%{box-shadow:0 0 18px 5px rgba(240,160,48,0.9);background:rgba(240,160,48,0.95)}}`}</style>
+      <style>{`@keyframes spikePulse {0%,100%{box-shadow:0 0 0 0 rgba(240,160,48,0.6);background:rgba(224,85,85,0.92)}50%{box-shadow:0 0 18px 5px rgba(240,160,48,0.9);background:rgba(240,160,48,0.95)}}
+        @keyframes routeFlow { to { stroke-dashoffset: -100 } }
+        .route-flow { animation: routeFlow 3s linear infinite }`}</style>
       {/* Waypoint-feedback bij klik op een systeem */}
       {destMsg && (
         <div style={{
@@ -506,6 +530,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'set')}>▶ Set Destination</CtxItem>
           <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'add')}>＋ Add Waypoint</CtxItem>
           <CtxItem onClick={() => showRoute(ctx.sid)}>🛣 Toon route op kaart</CtxItem>
+          <CtxItem onClick={clearRoute}>🧹 Clear route (autopilot)</CtxItem>
           {tokens.length > 1 && <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'all')}>⧉ Alle accounts ({tokens.length})</CtxItem>}
           <div style={{ borderTop: '1px solid var(--border)' }} />
           <CtxLink href={`https://evemaps.dotlan.net/system/${encodeURIComponent(ctx.name.replace(/ /g, '_'))}`}>🗺 Dotlan</CtxLink>
@@ -525,14 +550,29 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       )}
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        {/* Route-lijn (origin → doel) over de echte sprongen */}
+        {/* Route (origin → doel): per segment — gewone sprong (cyaan) of jump bridge (goud, gebogen) */}
         {routePath && routePath.length > 1 && (() => {
-          const pts = routePath.map(s => coords[String(s)]).filter(Boolean).map(c => { const [x, y] = screen(c![0], c![1]); return [x, y] as [number, number] })
+          const pts = routePath.map(s => { const c = coords[String(s)]; return c ? { s, p: screen(c[0], c[1]) } : null }).filter(Boolean) as { s: number; p: [number, number] }[]
           if (pts.length < 2) return null
+          const segs = pts.slice(1).map((pt, i) => {
+            const a = pts[i].p, b = pt.p
+            const jb = bridgePairSet.has(`${pts[i].s}-${pt.s}`)
+            if (jb) {
+              const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2
+              const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1
+              const off = Math.min(len * 0.22, 40)
+              return { jb, d: `M ${a[0]} ${a[1]} Q ${mx - dy / len * off} ${my + dx / len * off} ${b[0]} ${b[1]}` }
+            }
+            return { jb, d: `M ${a[0]} ${a[1]} L ${b[0]} ${b[1]}` }
+          })
           return (
             <g style={{ pointerEvents: 'none' }}>
-              <polyline points={pts.map(p => `${p[0]},${p[1]}`).join(' ')} fill="none" stroke="#00b4d8" strokeWidth={2} strokeOpacity={0.85} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 3" />
-              {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={i === 0 || i === pts.length - 1 ? 2.6 : 1.4} fill={i === pts.length - 1 ? '#f0c040' : '#00b4d8'} />)}
+              {/* glow-onderlaag */}
+              {segs.map((s, i) => <path key={`g${i}`} d={s.d} fill="none" stroke={s.jb ? '#f0c040' : '#00b4d8'} strokeWidth={6} strokeOpacity={0.18} strokeLinecap="round" />)}
+              {/* hoofdlijn met stroming */}
+              {segs.map((s, i) => <path key={`l${i}`} className="route-flow" d={s.d} fill="none" stroke={s.jb ? '#ffd864' : '#22d3ee'} strokeWidth={s.jb ? 2.2 : 1.8} strokeOpacity={0.95} strokeLinecap="round" strokeDasharray={s.jb ? '1 5' : '6 4'} />)}
+              {/* knooppunten + start/eind */}
+              {pts.map((pt, i) => <circle key={i} cx={pt.p[0]} cy={pt.p[1]} r={i === 0 ? 3.4 : i === pts.length - 1 ? 3.6 : 1.5} fill={i === 0 ? '#3ecf6e' : i === pts.length - 1 ? '#f0c040' : '#22d3ee'} stroke="#05050e" strokeWidth={i === 0 || i === pts.length - 1 ? 1 : 0} />)}
             </g>
           )
         })()}
