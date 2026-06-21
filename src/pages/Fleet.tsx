@@ -184,6 +184,10 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       setDestMsg({ text: `${clear ? 'Route' : 'Waypoint'} → ${name}…`, ok: true })
       const r = await setWaypoint(sid, token, clear)
       setDestMsg({ text: r.ok ? `${clear ? 'Route gezet' : 'Waypoint toegevoegd'} → ${name}` : `Mislukt → ${name}: ${reason(r.status)}`, ok: r.ok })
+      // Bij succes ook de route-lijn op de kaart tekenen (zelfde route als in-game).
+      if (r.ok && canLocation && originSid && originSid !== sid) {
+        getRoute(originSid, sid).then(rt => { if (Array.isArray(rt) && rt.length > 1) setRoutePath(rt) }).catch(() => {})
+      }
     }
     setTimeout(() => setDestMsg(null), 5000)
   }
