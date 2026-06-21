@@ -4,13 +4,11 @@ const CORP_ID = 98652891   // Dutch Legions
 const POS_KEY = 'tk_ticker_pos'
 const SNAP_KEY = 'tk_kills_snapshot'   // vorige kill-stand per character → "nieuwe kill"-pijltje
 
-interface TopKiller { characterID: number; characterName: string; kills: number }
+interface TopKiller { characterID: number; characterName: string; kills: number; losses?: number }
 interface Pos { top: number; left: number }
 
 // #1 goud, #2 zilver, #3 brons, rest gedimd.
 const rankColor = (r: number) => r === 1 ? '#f5c518' : r === 2 ? '#cbd5e1' : r === 3 ? '#cd7f32' : 'var(--text-dim)'
-
-const fmtNum = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}m` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n)
 
 function loadPos(): Pos | null {
   try { const p = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); return p && typeof p.top === 'number' ? p : null } catch { return null }
@@ -20,7 +18,6 @@ function loadPos(): Pos | null {
 // floating=true → zwevend + versleepbaar (positie onthouden per browser).
 export default function TopKillersTicker({ floating = false }: { floating?: boolean }) {
   const [killers, setKillers] = useState<TopKiller[]>([])
-  const [corp, setCorp] = useState<{ kills: number; losses: number } | null>(null)
   const [upIds, setUpIds] = useState<Set<number>>(new Set())   // killers met een nieuwe kill
   const [pos, setPos] = useState<Pos | null>(floating ? loadPos() : null)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
@@ -29,9 +26,8 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
     let cancelled = false
     fetch(`/api/zkill.php?type=corporationID&id=${CORP_ID}`)
       .then(r => r.json())
-      .then((d: { topKillers?: TopKiller[]; corpKills?: number; corpLosses?: number }) => {
+      .then((d: { topKillers?: TopKiller[] }) => {
         if (cancelled) return
-        setCorp({ kills: d?.corpKills ?? 0, losses: d?.corpLosses ?? 0 })
         const list = (d?.topKillers ?? []).slice(0, 10)
         try {
           // Vergelijk met de vorige stand: meer kills dan toen → groen pijltje.
@@ -99,12 +95,6 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
           color: 'var(--gold)', borderRight: '1px solid var(--border)', background: 'rgba(240,160,48,0.08)', whiteSpace: 'nowrap',
           cursor: floating ? 'grab' : 'default', userSelect: 'none', touchAction: 'none',
         }}>{floating ? '⠿ ' : ''}⚔️ TOP KILLERS</span>
-      {corp && (corp.kills > 0 || corp.losses > 0) && (
-        <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '0 0.6rem', borderRight: '1px solid var(--border)', fontSize: '0.66rem', fontWeight: 700, whiteSpace: 'nowrap' }} title="Corp kills vs losses (zKillboard, all-time)">
-          <span style={{ color: '#3ecf6e' }}>▲ {fmtNum(corp.kills)}</span>
-          <span style={{ color: 'var(--red)' }}>▼ {fmtNum(corp.losses)}</span>
-        </span>
-      )}
       <div style={{ overflow: 'hidden', flex: 1 }}>
         <div className="tk-track" style={{ display: 'inline-flex', alignItems: 'center', animation: `tk-scroll ${dur}s linear infinite`, willChange: 'transform' }}>
           {loop.map((k, i) => {
@@ -115,8 +105,9 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
                 <span style={{ fontSize: '0.66rem', fontWeight: 800, color: rankColor(rank) }}>#{rank}</span>
                 <img src={`https://images.evetech.net/characters/${k.characterID}/portrait?size=32`} width={20} height={20} style={{ borderRadius: '50%' }} alt="" />
                 <span style={{ fontSize: '0.72rem', color: '#fff' }}>{k.characterName}</span>
-                <span style={{ fontSize: '0.64rem', color: '#3ecf6e', fontWeight: 700 }}>{k.kills}</span>
-                {upIds.has(k.characterID) && <span title="nieuwe kill sinds je vorige bezoek" style={{ fontSize: '0.6rem', color: '#3ecf6e' }}>▲</span>}
+                <span title="kills" style={{ fontSize: '0.64rem', color: '#3ecf6e', fontWeight: 700 }}>▲{k.kills}</span>
+                {upIds.has(k.characterID) && <span title="nieuwe kill sinds je vorige bezoek" style={{ fontSize: '0.6rem', color: '#3ecf6e' }}>↑</span>}
+                {k.losses != null && <span title="losses (totaal)" style={{ fontSize: '0.64rem', color: 'var(--red)', fontWeight: 700 }}>▼{k.losses}</span>}
                 <span style={{ color: 'var(--border)', marginLeft: 4 }}>·</span>
               </a>
             )

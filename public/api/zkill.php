@@ -42,12 +42,8 @@ $statsRaw = zfetch("https://zkillboard.com/api/stats/{$type}/{$id}/");
 $kills = $killsRaw ? json_decode($killsRaw, true) : null;
 
 $killers = [];
-$corpKills = 0;
-$corpLosses = 0;
 if ($statsRaw) {
     $j = json_decode($statsRaw, true);
-    $corpKills  = (int)($j['shipsDestroyed'] ?? 0);
-    $corpLosses = (int)($j['shipsLost'] ?? 0);
     foreach (($j['topLists'] ?? []) as $tl) {
         if (($tl['type'] ?? '') === 'character') {
             foreach (array_slice($tl['values'] ?? [], 0, 10) as $v) {
@@ -55,11 +51,43 @@ if ($statsRaw) {
                     'characterID'   => (int)($v['characterID'] ?? 0),
                     'characterName' => (string)($v['characterName'] ?? ''),
                     'kills'         => (int)($v['kills'] ?? 0),
+                    'losses'        => 0,
                 ];
             }
             break;
         }
     }
+}
+
+// Per-pilot losses: haal voor elke top-killer z'n eigen character-stats op (parallel,
+// curl_multi) en pak shipsLost. zKill-stats per corp bevat geen per-pilot losses.
+if ($killers) {
+    $mh = curl_multi_init();
+    $handles = [];
+    foreach ($killers as $i => $k) {
+        $ch = curl_init("https://zkillboard.com/api/stats/characterID/{$k['characterID']}/");
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 12,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTPHEADER     => [
+                'Accept: application/json',
+                'User-Agent: DutchLegionsDashboard/1.0 (j.weijdert@gmail.com)',
+            ],
+        ]);
+        curl_multi_add_handle($mh, $ch);
+        $handles[$i] = $ch;
+    }
+    do { $st = curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 1.0); } while ($running > 0 && $st === CURLM_OK);
+    foreach ($handles as $i => $ch) {
+        if (curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) {
+            $cj = json_decode(curl_multi_getcontent($ch), true);
+            if (is_array($cj)) $killers[$i]['losses'] = (int)($cj['shipsLost'] ?? 0);
+        }
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+    curl_multi_close($mh);
 }
 
 // Bij volledige zKill-storing terugvallen op (verlopen) cache.
@@ -71,8 +99,6 @@ if ($kills === null && !$killers && is_file($cacheFile) && filesize($cacheFile) 
 $out = json_encode([
     'kills'      => is_array($kills) ? $kills : [],
     'topKillers' => $killers,
-    'corpKills'  => $corpKills,
-    'corpLosses' => $corpLosses,
 ]);
 @file_put_contents($cacheFile, $out);
 echo $out;
