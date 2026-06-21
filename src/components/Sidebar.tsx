@@ -75,6 +75,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Bouwproject',  path: '/build',      icon: '⊞', badge: null },
   { label: 'Industrie-kosten', path: '/industry-cost', icon: '◰', badge: null, wip: true },
   { label: 'Recruitment',  path: '/recruit-funnel', icon: '◴', badge: null, wip: true },
+  { label: 'Courier-calc', path: '/courier-calc', icon: '⇶', badge: null, wip: true },
 ]
 const ITEM_BY_PATH: Record<string, NavItem> = Object.fromEntries(NAV_ITEMS.map(i => [i.path, i]))
 
