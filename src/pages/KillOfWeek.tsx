@@ -42,18 +42,14 @@ export default function KillOfWeek() {
     const type = scope === 'corp' ? 'corporationID' : 'allianceID'
     const id = scope === 'corp' ? CORP_ID : ALLIANCE_ID
 
-    // Top killers via zKill-stats — de proxy reduceert server-side tot { topKillers }.
-    fetch(`/api/zkill.php?stats=1&type=${type}&id=${id}`)
-      .then(r => r.json())
-      .then((s: { topKillers?: TopKiller[] }) => {
-        if (cancelled) return
-        setKillers((s?.topKillers ?? []).slice(0, 10))
-      })
-      .catch(() => {})
-
+    // Eén schone request: de proxy levert kills én topKillers samen (een aparte
+    // ?stats-call werd op sommige machines client-side geblokkeerd).
     fetch(`/api/zkill.php?type=${type}&id=${id}`)
       .then(r => r.json())
-      .then(async (list: ZkbKill[]) => {
+      .then(async (data: { kills?: ZkbKill[]; topKillers?: TopKiller[] }) => {
+        if (cancelled) return
+        setKillers((data?.topKillers ?? []).slice(0, 10))
+        const list = data?.kills
         if (!Array.isArray(list)) { setErr('zKillboard gaf geen lijst terug.'); setLoading(false); return }
         // sorteer op waarde, verrijk de top met ESI-killmaildetails
         const top = list.filter(k => k.zkb?.hash).sort((a, b) => (b.zkb!.totalValue ?? 0) - (a.zkb!.totalValue ?? 0)).slice(0, 14)
