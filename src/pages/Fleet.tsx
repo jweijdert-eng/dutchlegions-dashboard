@@ -123,6 +123,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   // mode: 'set' = nieuwe route (clear others) · 'add' = waypoint toevoegen · 'all' = set op alle accounts
   async function doWaypoint(sid: number, name: string, mode: 'set' | 'add' | 'all') {
     setCtx(null)
+    if (!Number.isFinite(sid) || sid <= 0) { setDestMsg({ text: `Onbekend systeem-ID voor ${name}`, ok: false }); setTimeout(() => setDestMsg(null), 4000); return }
     const reason = (status: number) =>
       status === 403 ? 'geen waypoint-rechten — log opnieuw in (autoriseer de scope)'
       : status === 401 ? 'sessie verlopen — herlaad de pagina'
@@ -220,13 +221,13 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 
   // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
-    const out: Array<{ c: [number, number]; sys: string; threat: boolean; spike: boolean; group: SystemIntelGroup }> = []
+    const out: Array<{ c: [number, number]; sys: string; sid: number; threat: boolean; spike: boolean; group: SystemIntelGroup }> = []
     for (const [sys, group] of Object.entries(intel)) {
       if (group.threat === 'clear') continue
       const id = nameToId.get(sys)
       const c = id && coords[id]
       const spike = group.entries.some(e => /\bspike\b/i.test(e.message))
-      if (c) out.push({ c, sys, threat: group.threat === 'threat', spike, group })
+      if (c && id) out.push({ c, sys, sid: +id, threat: group.threat === 'threat', spike, group })
     }
     return out
   }, [intel, nameToId, coords])
@@ -491,14 +492,14 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           )
         })}
         {/* Intel — rood !-icoon bij threat, oranje bij onbekende sighting (uit de intel-chats) */}
-        {intelMarkers.map(({ c, sys, threat, spike, group }) => {
+        {intelMarkers.map(({ c, sys, sid, threat, spike, group }) => {
           const [x, y] = screen(c[0], c[1])
           if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return null
           const ir = Math.max(5, markerFont * 0.7)
           const col = threat ? '#e05555' : '#f0a030'
           return (
             <g key={`intel-${sys}`} style={{ pointerEvents: 'auto', cursor: 'context-menu' }}
-              onContextMenu={e => openCtx(e, +sys, sysMeta[sys]?.[0] ?? `Systeem ${sys}`)}
+              onContextMenu={e => openCtx(e, sid, sys)}
               onMouseEnter={() => setHoverSys(sys)} onMouseLeave={() => setHoverSys(h => h === sys ? null : h)}>
               {/* Onzichtbaar hover-vlak (ruimer dan het icoon) */}
               <circle cx={x} cy={y} r={Math.max(ir * 1.8, 10)} fill="transparent" />
