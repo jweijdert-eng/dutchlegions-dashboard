@@ -832,8 +832,8 @@ export default function Dashboard() {
       }
       mainStyle={{ padding: '0.875rem 1.25rem 1.5rem' }}
     >
-      {/* Zwevende, versleepbare top-killers ticker — zichtbaar voor iedereen */}
-      {!previewMode && <TopKillersTicker floating />}
+      {/* Top-killers ticker — in de lay-out bovenaan, zichtbaar voor iedereen */}
+      {!previewMode && <TopKillersTicker />}
 
       {/* Urgent alert banner */}
       {!phase1Loading && urgentAlerts > 0 && (
