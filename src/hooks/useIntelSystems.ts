@@ -132,7 +132,9 @@ async function resolveEnemies(message: string) {
 
 const MAX_AGE = 5 * 60 * 1000                     // ouder dan 5 min → van de kaart af
 
-const CLEAR_RE  = /\b(nv|nvt|clr|clear|safe)\b/i
+// LET OP: "nv"/"nvt" = No Visual (hostile niet zichtbaar, maar nog steeds intel!) → NIET clear.
+// Alleen expliciete clear-meldingen verbergen de marker.
+const CLEAR_RE  = /\b(clr|clear|safe)\b/i
 const THREAT_RE = /\b(\d{1,3}\+?|carrier|carriers|dread|dreads|super|supers|titan|titans|fax|faxes|cyno|rorqual|recon|recons|battleship|battleships|bs|bc|bcs|logi|logis|bomber|bombers|hic|hics|dic|dics|blops|sabre|flycatcher|heretic|eris|proteus|tengu|loki|legion|rapier|arazu|huginn|curse|pilgrim|stiletto|crow|malediction|interceptor|interdictor|bubble|bubbles|spike|neut|neuts)\b/i
 // Nullsec-systeemcode: 1–4 alfanumeriek, koppelteken, 1–4 alfanumeriek (bv. 6-AOLS,
 // BKG-Q2, J9-5MQ, 1DH-SX, 9-4RP2). Mag met een cijfer beginnen; moet een letter bevatten
