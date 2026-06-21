@@ -143,6 +143,11 @@ out_ti = {str(tid): [gid, vol, portion]
               'SELECT typeID, groupID, volume, portionSize FROM invTypes')}
 write('type-info.json', out_ti)
 
+# Boosters (combat-drugs): groep 303-producten die een manufacturing-recept hebben.
+booster_ids = sorted({ bp['p'][0] for bp in out_bp.values()
+                       if str(bp['p'][0]) in out_ti and out_ti[str(bp['p'][0])][0] == 303 })
+write('boosters.json', booster_ids)
+
 # Groepen: { groupId: [naam, categoryId] }
 out_grp = {str(gid): [name, cid]
            for gid, name, cid in con.execute('SELECT groupID, groupName, categoryID FROM invGroups')}
