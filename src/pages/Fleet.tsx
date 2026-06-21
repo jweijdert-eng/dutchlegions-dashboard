@@ -707,6 +707,26 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
                 <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{allyNames[sovAlly] ?? 'Sov-houder…'}</span>
               </div>
             )}
+            {/* Schip-compositie: tel dezelfde schepen over alle meldingen → "7× Loki" */}
+            {(() => {
+              const tally = new Map<number, { name: string; count: number }>()
+              for (const e of hm.group.entries) for (const s of e.ships) {
+                const cur = tally.get(s.typeId)
+                if (cur) cur.count++; else tally.set(s.typeId, { name: s.name, count: 1 })
+              }
+              const arr = [...tally.entries()].map(([tid, v]) => ({ tid, ...v })).sort((a, b) => b.count - a.count)
+              if (!arr.length) return null
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '0.4rem 0.55rem', borderBottom: `1px solid ${col}`, background: 'rgba(0,0,0,0.25)' }}>
+                  {arr.map(s => (
+                    <span key={s.tid} title={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.64rem', fontWeight: 700, color: '#fff', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.05rem 0.3rem' }}>
+                      <EveImage category="types" id={s.tid} variation="icon" size={32} px={16} style={{ borderRadius: 2 }} />
+                      {s.count > 1 && <span style={{ color: '#f0c040' }}>{s.count}×</span>} {s.name}
+                    </span>
+                  ))}
+                </div>
+              )
+            })()}
             {/* Rijen: [portret][corp][alliance] · naam + alliance-naam · schip eronder */}
             {hm.group.entries.map(e => {
               const en = e.enemies && e.enemies[0]
