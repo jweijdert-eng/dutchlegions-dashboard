@@ -94,7 +94,7 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
           flexShrink: 0, padding: '0.3rem 0.7rem', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.1em',
           color: 'var(--gold)', borderRight: '1px solid var(--border)', background: 'rgba(240,160,48,0.08)', whiteSpace: 'nowrap',
           cursor: floating ? 'grab' : 'default', userSelect: 'none', touchAction: 'none',
-        }}>{floating ? '⠿ ' : ''}⚔️ TOP KILLERS</span>
+        }}>{floating ? '⠿ ' : ''}⚔️ TOP KILLERS · DEZE MAAND</span>
       <div style={{ overflow: 'hidden', flex: 1 }}>
         <div className="tk-track" style={{ display: 'inline-flex', alignItems: 'center', animation: `tk-scroll ${dur}s linear infinite`, willChange: 'transform' }}>
           {loop.map((k, i) => {

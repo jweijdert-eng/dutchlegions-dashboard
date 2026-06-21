@@ -79,15 +79,23 @@ if ($killers) {
         $handles[$i] = $ch;
     }
     do { $st = curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 1.0); } while ($running > 0 && $st === CURLM_OK);
+    $ym = date('Ym');   // huidige maand, bv. "202606"
     foreach ($handles as $i => $ch) {
         if (curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) {
             $cj = json_decode(curl_multi_getcontent($ch), true);
-            if (is_array($cj)) $killers[$i]['losses'] = (int)($cj['shipsLost'] ?? 0);
+            if (is_array($cj)) {
+                // kills én losses van DEZE maand (consistente periode)
+                $mo = $cj['months'][$ym] ?? null;
+                $killers[$i]['kills']  = (int)($mo['shipsDestroyed'] ?? 0);
+                $killers[$i]['losses'] = (int)($mo['shipsLost'] ?? 0);
+            }
         }
         curl_multi_remove_handle($mh, $ch);
         curl_close($ch);
     }
     curl_multi_close($mh);
+    // Her-sorteren op de kills van deze maand (de corp-topList was een ander venster).
+    usort($killers, fn($a, $b) => $b['kills'] <=> $a['kills']);
 }
 
 // Bij volledige zKill-storing terugvallen op (verlopen) cache.
