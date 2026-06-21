@@ -1394,14 +1394,14 @@ export async function resolveNames(ids: number[]): Promise<Map<number, string>> 
 
 // ─── Write operations ────────────────────────────────────────────────────────
 
-export async function setWaypoint(systemId: number, token: string, clearOthers = false): Promise<boolean> {
+export async function setWaypoint(systemId: number, token: string, clearOthers = false): Promise<{ ok: boolean; status: number }> {
   try {
     const res = await fetch(
       `${BASE}/ui/autopilot/waypoint/?add_to_beginning=false&clear_other_waypoints=${clearOthers}&destination_id=${systemId}&datasource=tranquility`,
       { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
     )
-    return res.ok
-  } catch { return false }
+    return { ok: res.ok, status: res.status }
+  } catch { return { ok: false, status: 0 } }
 }
 
 export async function sendMail(

@@ -36,8 +36,8 @@ export default function SolarSystem({ name, systemId, fontSize = '0.7rem' }: Pro
     e.preventDefault()
     const token = tokens[0]?.accessToken
     if (!token || !systemId) return
-    const ok = await setWaypoint(systemId, token)
-    setWpState(ok ? 'ok' : 'err')
+    const r = await setWaypoint(systemId, token)
+    setWpState(r.ok ? 'ok' : 'err')
     setTimeout(() => setWpState('idle'), 2000)
   }
 

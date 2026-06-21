@@ -123,21 +123,27 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   // mode: 'set' = nieuwe route (clear others) · 'add' = waypoint toevoegen · 'all' = set op alle accounts
   async function doWaypoint(sid: number, name: string, mode: 'set' | 'add' | 'all') {
     setCtx(null)
+    const reason = (status: number) =>
+      status === 403 ? 'geen waypoint-rechten — log opnieuw in (autoriseer de scope)'
+      : status === 401 ? 'sessie verlopen — herlaad de pagina'
+      : status === 520 || status === 500 ? 'is je character in EVE ingelogd?'
+      : `ESI-fout ${status || 'netwerk'}`
     if (mode === 'all') {
       if (!tokens.length) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
       setDestMsg({ text: `Route → ${name} op ${tokens.length} accounts…`, ok: true })
       const res = await Promise.all(tokens.map(t => setWaypoint(sid, t.accessToken, true)))
-      const okN = res.filter(Boolean).length
-      setDestMsg({ text: `Route gezet op ${okN}/${tokens.length} accounts → ${name}`, ok: okN > 0 })
+      const okN = res.filter(r => r.ok).length
+      const firstErr = res.find(r => !r.ok)
+      setDestMsg({ text: okN > 0 ? `Route gezet op ${okN}/${tokens.length} accounts → ${name}` : `Mislukt — ${reason(firstErr?.status ?? 0)}`, ok: okN > 0 })
     } else {
       const token = tokens[0]?.accessToken
       if (!token) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
       const clear = mode === 'set'
       setDestMsg({ text: `${clear ? 'Route' : 'Waypoint'} → ${name}…`, ok: true })
-      const ok = await setWaypoint(sid, token, clear)
-      setDestMsg({ text: ok ? `${clear ? 'Route gezet' : 'Waypoint toegevoegd'} → ${name}` : `Mislukt → ${name} (zit je character in EVE?)`, ok })
+      const r = await setWaypoint(sid, token, clear)
+      setDestMsg({ text: r.ok ? `${clear ? 'Route gezet' : 'Waypoint toegevoegd'} → ${name}` : `Mislukt → ${name}: ${reason(r.status)}`, ok: r.ok })
     }
-    setTimeout(() => setDestMsg(null), 3000)
+    setTimeout(() => setDestMsg(null), 5000)
   }
   const dscanFetching           = useRef(new Set<string>())
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
@@ -159,6 +165,25 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const screen = (x: number, z: number): [number, number] => {
     const [bx, by] = base!(x, z)
     return [bx * tf.k + tf.x, by * tf.k + tf.y]
+  }
+
+  // Rechtsklik ergens op de kaart → pak het dichtstbijzijnde systeem (canvas-systemen
+  // zijn geen losse elementen). Zo werkt het route-menu op ELK systeem, niet alleen je eigen.
+  function onMapContext(e: React.MouseEvent) {
+    e.preventDefault()
+    const el = wrapRef.current; if (!el) return
+    const r = el.getBoundingClientRect()
+    const px = (e.clientX - r.left) / r.width * W
+    const py = (e.clientY - r.top) / r.height * H
+    let best: string | null = null, bestD = Infinity
+    for (const [sid, c] of Object.entries(coords)) {
+      const [sx, sy] = screen(c[0], c[1])
+      const d = (sx - px) ** 2 + (sy - py) ** 2
+      if (d < bestD) { bestD = d; best = sid }
+    }
+    if (best && bestD <= 26 * 26) {
+      setCtx({ x: e.clientX, y: e.clientY, sid: +best, name: sysMeta[best]?.[0] ?? `Systeem ${best}` })
+    }
   }
 
   // Regio-zwaartepunten (voor de namen).
@@ -360,7 +385,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   }
   const maxCount = Math.max(...memberNodes.map(n => n.members.length), 1)
 
-  const onDown = (e: React.MouseEvent) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: tf.x, oy: tf.y } }
+  const onDown = (e: React.MouseEvent) => { if (e.button !== 0) return; drag.current = { sx: e.clientX, sy: e.clientY, ox: tf.x, oy: tf.y } }
   const onMove = (e: React.MouseEvent) => {
     const d = drag.current
     if (!d) return
@@ -380,7 +405,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const memLine    = memFont * 1.18
 
   return (
-    <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag}
+    <div ref={wrapRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={endDrag} onContextMenu={onMapContext}
       style={{ position: 'relative', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', cursor: drag.current ? 'grabbing' : 'grab' }}>
       <style>{`@keyframes spikePulse {0%,100%{box-shadow:0 0 0 0 rgba(240,160,48,0.6);background:rgba(224,85,85,0.92)}50%{box-shadow:0 0 18px 5px rgba(240,160,48,0.9);background:rgba(240,160,48,0.95)}}`}</style>
       {/* Waypoint-feedback bij klik op een systeem */}
