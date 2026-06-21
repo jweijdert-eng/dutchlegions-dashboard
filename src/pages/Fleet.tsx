@@ -124,6 +124,13 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [ctxRoute, setCtxRoute] = useState<number[] | null>(null)   // route voor het open menu (jumps)
   const [routePath, setRoutePath] = useState<number[] | null>(null) // op de kaart getekende route
 
+  // Systeem-naam (hoofdletters) → systeem-id. Eerst declareren (bridgeConnections gebruikt 'm).
+  const nameToId = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const [id, meta] of Object.entries(sysMeta)) m.set(meta[0].toUpperCase(), id)
+    return m
+  }, [sysMeta])
+
   // Jump bridges als ESI-connections: "sidA%7CsidB,sidC%7CsidD" → kortste route via bridges.
   const bridgeConnections = useMemo(() => {
     const pairs: string[] = []
@@ -258,12 +265,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   }, [coords, sysMeta, regionMap])
 
   // Systeemnaam (hoofdletters) → systeem-id, voor het resolven van bridges en intel.
-  const nameToId = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const [id, meta] of Object.entries(sysMeta)) m.set(meta[0].toUpperCase(), id)
-    return m
-  }, [sysMeta])
-
   // Jump bridges → coördinaat-paren.
   const bridgeCoords = useMemo(() => {
     const out: Array<[[number, number], [number, number]]> = []
