@@ -1054,8 +1054,8 @@ export function getIndustryCostIndices(): Promise<Map<number, Record<string, num
   return _ciFullInflight
 }
 
-export const getRoute = (originSystemId: number, destinationSystemId: number, flag = 'shortest') =>
-  esiGet<number[]>(`/route/${originSystemId}/${destinationSystemId}/?flag=${flag}`)
+export const getRoute = (originSystemId: number, destinationSystemId: number, flag = 'shortest', connections?: string) =>
+  esiGet<number[]>(`/route/${originSystemId}/${destinationSystemId}/?flag=${flag}${connections ? `&connections=${connections}` : ''}`)
 
 const INT32_MAX = 2_147_483_647
 
@@ -1407,11 +1407,16 @@ export async function resolveNames(ids: number[]): Promise<Map<number, string>> 
 // ─── Write operations ────────────────────────────────────────────────────────
 
 export async function setWaypoint(systemId: number, token: string, clearOthers = false): Promise<{ ok: boolean; status: number }> {
+  // Via de eigen backend-proxy: een directe browser-POST naar ESI wordt op sommige
+  // machines door een ad-blocker/tracking-preventie geblokkeerd (nep-204), waardoor de
+  // route nooit echt bij ESI aankomt. Server-side heeft dat probleem niet.
   try {
-    const res = await fetch(
-      `${BASE}/ui/autopilot/waypoint/?add_to_beginning=false&clear_other_waypoints=${clearOthers}&destination_id=${systemId}&datasource=tranquility`,
-      { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
-    )
+    const res = await fetch('/api/waypoint.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, dest: systemId, clear: clearOthers }),
+    })
+    const j = await res.json().catch(() => null)
+    if (j && typeof j.ok === 'boolean') return { ok: j.ok, status: j.status ?? res.status }
     return { ok: res.ok, status: res.status }
   } catch { return { ok: false, status: 0 } }
 }

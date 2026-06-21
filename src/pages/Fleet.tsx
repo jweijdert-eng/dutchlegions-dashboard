@@ -103,7 +103,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [allyNames, setAllyNames] = useState<Record<number, string>>({}) // allianceId → naam (lazy)
   const [structTypes, setStructTypes] = useState<Record<string, number>>({})  // structuur-naam → type-id (ESS, Skyhook…)
   const [dscan, setDscan]       = useState<Record<string, DscanGroup[]>>({})   // dscan-url → schepen
-  const { tokens } = useAuth()
+  const { tokens, mainCharId } = useAuth()
+  const mainTok = useMemo(() => tokens.find(t => t.characterId === mainCharId) ?? tokens[0], [tokens, mainCharId])
   const [destMsg, setDestMsg]   = useState<{ text: string; ok: boolean } | null>(null)
   const [ctx, setCtx]           = useState<{ x: number; y: number; sid: number; name: string } | null>(null)
   const [originSid, setOriginSid] = useState<number | null>(null)   // jouw huidige systeem
@@ -111,38 +112,49 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   // Welke scopes zitten in het huidige token? (JWT-payload → scp) → vooraf weten of
   // Set Destination / route überhaupt kunnen, anders een duidelijke "log opnieuw in".
   const tokenScp = useMemo(() => {
-    const tk = tokens[0]?.accessToken
+    const tk = mainTok?.accessToken
     if (!tk) return [] as string[]
     try {
       const p = JSON.parse(atob(tk.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
       return Array.isArray(p.scp) ? p.scp as string[] : p.scp ? [p.scp as string] : []
     } catch { return [] }
-  }, [tokens])
+  }, [mainTok])
   const canWaypoint = tokenScp.includes('esi-ui.write_waypoint.v1')
   const canLocation = tokenScp.includes('esi-location.read_location.v1')
   const [ctxRoute, setCtxRoute] = useState<number[] | null>(null)   // route voor het open menu (jumps)
   const [routePath, setRoutePath] = useState<number[] | null>(null) // op de kaart getekende route
 
-  // Jouw huidige locatie ophalen (origin voor routes).
+  // Jump bridges als ESI-connections: "sidA%7CsidB,sidC%7CsidD" → kortste route via bridges.
+  const bridgeConnections = useMemo(() => {
+    const pairs: string[] = []
+    for (const [a, b] of bridges) {
+      const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
+      if (ia && ib) pairs.push(`${ia}%7C${ib}`)
+    }
+    return pairs.join(',')
+  }, [bridges, nameToId])
+  const routeOpts = bridgeConnections || undefined
+
+  // Locatie van je HOOFD-character ophalen (origin voor routes).
   useEffect(() => {
-    const t = tokens[0]; if (!t || !canLocation) return
+    const t = mainTok; if (!t || !canLocation) return
     getLocation(t.characterId, t.accessToken).then(loc => { if (loc?.solar_system_id) setOriginSid(loc.solar_system_id) }).catch(() => {})
-  }, [tokens, canLocation])
+  }, [mainTok, canLocation])
 
   // Bij openen van het menu: route origin → doel ophalen (voor "X jumps" + "Toon route").
   useEffect(() => {
     setCtxRoute(null)
     if (!ctx || !originSid || originSid === ctx.sid) return
     let cancelled = false
-    getRoute(originSid, ctx.sid).then(r => { if (!cancelled && Array.isArray(r)) setCtxRoute(r) }).catch(() => {})
+    getRoute(originSid, ctx.sid, 'shortest', routeOpts).then(r => { if (!cancelled && Array.isArray(r)) setCtxRoute(r) }).catch(() => {})
     return () => { cancelled = true }
-  }, [ctx, originSid])
+  }, [ctx, originSid, routeOpts])
 
   async function showRoute(destSid: number) {
     setCtx(null)
     if (!canLocation) { setDestMsg({ text: 'Log opnieuw in — je login mist het locatie-recht', ok: false }); setTimeout(() => setDestMsg(null), 5000); return }
     if (!originSid) { setDestMsg({ text: 'Eigen locatie onbekend (in EVE ingelogd?)', ok: false }); setTimeout(() => setDestMsg(null), 3500); return }
-    const r = ctxRoute ?? await getRoute(originSid, destSid).catch(() => null)
+    const r = ctxRoute ?? await getRoute(originSid, destSid, 'shortest', routeOpts).catch(() => null)
     if (r && r.length > 1) setRoutePath(r)
     else setDestMsg({ text: 'Geen route gevonden', ok: false })
   }
@@ -178,7 +190,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       const firstErr = res.find(r => !r.ok)
       setDestMsg({ text: okN > 0 ? `Route gezet op ${okN}/${tokens.length} accounts → ${name}` : `Mislukt — ${reason(firstErr?.status ?? 0)}`, ok: okN > 0 })
     } else {
-      const token = tokens[0]?.accessToken
+      const token = mainTok?.accessToken
       if (!token) { setDestMsg({ text: 'Geen account ingelogd', ok: false }); return }
       const clear = mode === 'set'
       setDestMsg({ text: `${clear ? 'Route' : 'Waypoint'} → ${name}…`, ok: true })
@@ -186,7 +198,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       setDestMsg({ text: r.ok ? `${clear ? 'Route gezet' : 'Waypoint toegevoegd'} → ${name}` : `Mislukt → ${name}: ${reason(r.status)}`, ok: r.ok })
       // Bij succes ook de route-lijn op de kaart tekenen (zelfde route als in-game).
       if (r.ok && canLocation && originSid && originSid !== sid) {
-        getRoute(originSid, sid).then(rt => { if (Array.isArray(rt) && rt.length > 1) setRoutePath(rt) }).catch(() => {})
+        getRoute(originSid, sid, 'shortest', routeOpts).then(rt => { if (Array.isArray(rt) && rt.length > 1) setRoutePath(rt) }).catch(() => {})
       }
     }
     setTimeout(() => setDestMsg(null), 5000)
