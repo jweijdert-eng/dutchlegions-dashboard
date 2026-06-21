@@ -14,6 +14,7 @@ import { fetchDscanItems, type DscanGroup } from '../utils/dscan'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
+import KillFeed from '../components/KillFeed'
 
 // Scopes uit het EVE access-token (JWT 'scp'-claim) lezen — om te waarschuwen als
 // de fleet-schrijfrechten ontbreken (token van vóór de scope-uitbreiding).
@@ -1361,6 +1362,10 @@ export default function Fleet() {
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
               <div style={{ flex: 1, minWidth: 320, maxWidth: 860 }}>
                 <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
+              </div>
+              {/* Recente kills & losses (in-game-stijl), naast de kaart */}
+              <div style={{ flexShrink: 0 }}>
+                <KillFeed systems={sysMeta} />
               </div>
             </div>
           ) : (

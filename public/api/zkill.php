@@ -13,6 +13,20 @@ $type = preg_match('/^(corporationID|allianceID)$/', $_GET['type'] ?? '') ? $_GE
 $id   = (int)($_GET['id'] ?? 0);
 if (!$id) { http_response_code(400); echo json_encode(['error' => 'no id']); exit; }
 
+// Feed-modus: gecombineerde recente killmails (kills ÉN losses) van de corp/alliance.
+// Geeft de ruwe zKill-lijst terug (killmail_id + zkb); de client verrijkt via ESI.
+if (isset($_GET['feed'])) {
+    $cacheFeed = sys_get_temp_dir() . "/zkill_feed_{$type}_{$id}.json";
+    if (is_file($cacheFeed) && filesize($cacheFeed) > 2 && (time() - filemtime($cacheFeed)) < 120) {
+        echo file_get_contents($cacheFeed); exit;
+    }
+    $raw = zfetch("https://zkillboard.com/api/{$type}/{$id}/");
+    if ($raw) { @file_put_contents($cacheFeed, $raw); echo $raw; }
+    elseif (is_file($cacheFeed)) { echo file_get_contents($cacheFeed); }
+    else { echo '[]'; }
+    exit;
+}
+
 $cacheFile = sys_get_temp_dir() . "/zkill_combo_{$type}_{$id}.json";
 if (is_file($cacheFile) && filesize($cacheFile) > 2 && (time() - filemtime($cacheFile)) < 300) {
     echo file_get_contents($cacheFile);
