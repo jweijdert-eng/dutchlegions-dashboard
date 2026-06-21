@@ -4,7 +4,7 @@ import {
   getCharacterFleet, getFleetInfo, getFleetMembers, getFleetWings,
   resolveNames, setFleetSettings, kickFleetMember, moveFleetMember, inviteFleetMember, resolveCharacterIds,
   createFleetWing, renameFleetWing, deleteFleetWing, createFleetSquad, renameFleetSquad, deleteFleetSquad,
-  getSystems, getRegions, getSystemCoords, getSystemJumps, setWaypoint,
+  getSystems, getRegions, getSystemCoords, getSystemJumps, setWaypoint, getRoute, getLocation,
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
@@ -106,6 +106,32 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const { tokens } = useAuth()
   const [destMsg, setDestMsg]   = useState<{ text: string; ok: boolean } | null>(null)
   const [ctx, setCtx]           = useState<{ x: number; y: number; sid: number; name: string } | null>(null)
+  const [originSid, setOriginSid] = useState<number | null>(null)   // jouw huidige systeem
+  const [ctxRoute, setCtxRoute] = useState<number[] | null>(null)   // route voor het open menu (jumps)
+  const [routePath, setRoutePath] = useState<number[] | null>(null) // op de kaart getekende route
+
+  // Jouw huidige locatie ophalen (origin voor routes).
+  useEffect(() => {
+    const t = tokens[0]; if (!t) return
+    getLocation(t.characterId, t.accessToken).then(loc => { if (loc?.solar_system_id) setOriginSid(loc.solar_system_id) }).catch(() => {})
+  }, [tokens])
+
+  // Bij openen van het menu: route origin → doel ophalen (voor "X jumps" + "Toon route").
+  useEffect(() => {
+    setCtxRoute(null)
+    if (!ctx || !originSid || originSid === ctx.sid) return
+    let cancelled = false
+    getRoute(originSid, ctx.sid).then(r => { if (!cancelled && Array.isArray(r)) setCtxRoute(r) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [ctx, originSid])
+
+  async function showRoute(destSid: number) {
+    setCtx(null)
+    if (!originSid) { setDestMsg({ text: 'Eigen locatie onbekend (in EVE ingelogd?)', ok: false }); setTimeout(() => setDestMsg(null), 3500); return }
+    const r = ctxRoute ?? await getRoute(originSid, destSid).catch(() => null)
+    if (r && r.length > 1) setRoutePath(r)
+    else setDestMsg({ text: 'Geen route gevonden', ok: false })
+  }
 
   // Rechtsklik op een systeem → in-game-stijl contextmenu (waypoint-acties + links).
   function openCtx(e: React.MouseEvent, sid: number, name: string) {
@@ -418,6 +444,13 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
           fontSize: '0.72rem', padding: '0.4rem 0.9rem', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 3px 14px rgba(0,0,0,0.5)',
         }}>📍 {destMsg.text}</div>
       )}
+      {/* Route getekend → wis-knop + jumps */}
+      {routePath && routePath.length > 1 && (
+        <button onClick={() => setRoutePath(null)}
+          style={{ position: 'absolute', top: 10, right: 10, zIndex: 9, background: 'rgba(0,180,216,0.16)', border: '1px solid var(--blue)', color: 'var(--blue)', borderRadius: 6, fontSize: '0.66rem', fontWeight: 700, padding: '0.3rem 0.7rem', cursor: 'pointer' }}>
+          🛣 Route: {routePath.length - 1}j · wissen ✕
+        </button>
+      )}
       {/* Rechtsklik-contextmenu (in-game stijl) */}
       {ctx && (
         <div onClick={e => e.stopPropagation()} onContextMenu={e => { e.preventDefault(); e.stopPropagation() }}
@@ -426,9 +459,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
             zIndex: 1000, minWidth: 184, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4,
             boxShadow: '0 8px 28px rgba(0,0,0,0.6)', overflow: 'hidden', fontSize: '0.72rem',
           }}>
-          <div style={{ padding: '0.4rem 0.7rem', borderBottom: '1px solid var(--border)', color: 'var(--gold)', fontWeight: 700, whiteSpace: 'nowrap' }}>{ctx.name}</div>
+          <div style={{ padding: '0.4rem 0.7rem', borderBottom: '1px solid var(--border)', color: 'var(--gold)', fontWeight: 700, whiteSpace: 'nowrap', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <span>{ctx.name}</span>
+            <span style={{ color: 'var(--text-dim)', fontWeight: 600 }}>
+              {originSid === ctx.sid ? 'hier' : ctxRoute ? `${ctxRoute.length - 1} j` : originSid ? '…' : ''}
+            </span>
+          </div>
           <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'set')}>▶ Set Destination</CtxItem>
           <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'add')}>＋ Add Waypoint</CtxItem>
+          <CtxItem onClick={() => showRoute(ctx.sid)}>🛣 Toon route op kaart</CtxItem>
           {tokens.length > 1 && <CtxItem onClick={() => doWaypoint(ctx.sid, ctx.name, 'all')}>⧉ Alle accounts ({tokens.length})</CtxItem>}
           <div style={{ borderTop: '1px solid var(--border)' }} />
           <CtxLink href={`https://evemaps.dotlan.net/system/${encodeURIComponent(ctx.name.replace(/ /g, '_'))}`}>🗺 Dotlan</CtxLink>
@@ -448,6 +487,17 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       )}
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        {/* Route-lijn (origin → doel) over de echte sprongen */}
+        {routePath && routePath.length > 1 && (() => {
+          const pts = routePath.map(s => coords[String(s)]).filter(Boolean).map(c => { const [x, y] = screen(c![0], c![1]); return [x, y] as [number, number] })
+          if (pts.length < 2) return null
+          return (
+            <g style={{ pointerEvents: 'none' }}>
+              <polyline points={pts.map(p => `${p[0]},${p[1]}`).join(' ')} fill="none" stroke="#00b4d8" strokeWidth={2} strokeOpacity={0.85} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 3" />
+              {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={i === 0 || i === pts.length - 1 ? 2.6 : 1.4} fill={i === pts.length - 1 ? '#f0c040' : '#00b4d8'} />)}
+            </g>
+          )
+        })()}
         {/* Regio-namen (alleen ver uitgezoomd; bij inzoomen storen ze) */}
         {tf.k < 5 && regions.map(rg => {
           const [x, y] = screen(rg.x, rg.z)
