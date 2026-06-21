@@ -42,13 +42,12 @@ export default function KillOfWeek() {
     const type = scope === 'corp' ? 'corporationID' : 'allianceID'
     const id = scope === 'corp' ? CORP_ID : ALLIANCE_ID
 
-    // Top killers via zKill-stats (topLists → character) — heeft naam + kills al ingebouwd.
+    // Top killers via zKill-stats — de proxy reduceert server-side tot { topKillers }.
     fetch(`/api/zkill.php?stats=1&type=${type}&id=${id}`)
       .then(r => r.json())
-      .then((s: { topLists?: { type: string; values: TopKiller[] }[] }) => {
+      .then((s: { topKillers?: TopKiller[] }) => {
         if (cancelled) return
-        const list = s?.topLists?.find(t => t.type === 'character')?.values ?? []
-        setKillers(list.slice(0, 10))
+        setKillers((s?.topKillers ?? []).slice(0, 10))
       })
       .catch(() => {})
 
