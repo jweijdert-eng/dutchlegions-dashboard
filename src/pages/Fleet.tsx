@@ -181,7 +181,8 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       const d = (sx - px) ** 2 + (sy - py) ** 2
       if (d < bestD) { bestD = d; best = sid }
     }
-    if (best && bestD <= 26 * 26) {
+    // Altijd het dichtstbijzijnde systeem (geen drempel) → werkt op elk systeem, ook ver ingezoomd.
+    if (best) {
       setCtx({ x: e.clientX, y: e.clientY, sid: +best, name: sysMeta[best]?.[0] ?? `Systeem ${best}` })
     }
   }

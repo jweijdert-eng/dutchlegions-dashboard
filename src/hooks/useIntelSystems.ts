@@ -241,13 +241,18 @@ export interface IntelResult {
 const MAX_ENTRIES = 10                            // max meldingen per systeem in de lijst
 
 // EVE-chatlogs zijn doorgaans UTF-16LE (met BOM). file.text() decodeert als UTF-8
-// → onleesbaar. Hier kijken we naar de BOM en decoderen we juist.
+// → onleesbaar. We bepalen de codering uit de BOM (kop) en lezen daarna alleen de
+// STAART (recente regels zitten achteraan; window is toch 5 min) → veel snellere load.
+const TAIL_BYTES = 512 * 1024
 async function decodeFile(file: File): Promise<string> {
-  const buf = await file.arrayBuffer()
-  const b = new Uint8Array(buf, 0, Math.min(2, buf.byteLength))
-  if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(buf)
-  if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(buf)
-  return new TextDecoder('utf-8').decode(buf)
+  const head = new Uint8Array(await file.slice(0, 2).arrayBuffer())
+  let enc: 'utf-16le' | 'utf-16be' | 'utf-8' = 'utf-8'
+  if (head[0] === 0xFF && head[1] === 0xFE) enc = 'utf-16le'
+  else if (head[0] === 0xFE && head[1] === 0xFF) enc = 'utf-16be'
+  let start = file.size > TAIL_BYTES ? file.size - TAIL_BYTES : 0
+  if (enc !== 'utf-8' && start % 2 !== 0) start++           // even uitlijnen voor UTF-16
+  const buf = await file.slice(start).arrayBuffer()
+  return new TextDecoder(enc).decode(buf)                   // 1e (deel)regel wordt door parseLine genegeerd
 }
 
 export function useIntelSystems(active: boolean): IntelResult {
