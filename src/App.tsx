@@ -40,6 +40,7 @@ const RecruitFunnel = lz(() => import('./pages/RecruitFunnel'))
 const CourierCalc  = lz(() => import('./pages/CourierCalc'))
 const BoosterCalc  = lz(() => import('./pages/BoosterCalc'))
 const StationTrading = lz(() => import('./pages/StationTrading'))
+const KillOfWeek   = lz(() => import('./pages/KillOfWeek'))
 const Ratting      = lz(() => import('./pages/Ratting'))
 const Hauling      = lz(() => import('./pages/Hauling'))
 const Assets       = lz(() => import('./pages/Assets'))
@@ -237,6 +238,7 @@ function AppRoutes() {
       <Route path="/courier-calc" element={<ProtectedRoute><CourierCalc /></ProtectedRoute>} />
       <Route path="/boosters"    element={<ProtectedRoute><BoosterCalc /></ProtectedRoute>} />
       <Route path="/trading-pnl" element={<ProtectedRoute><StationTrading /></ProtectedRoute>} />
+      <Route path="/kill-of-week" element={<ProtectedRoute><KillOfWeek /></ProtectedRoute>} />
       <Route path="/ratting"    element={<ProtectedRoute><Ratting /></ProtectedRoute>} />
       <Route path="/fleet"      element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
       <Route path="/settings"   element={<ProtectedRoute><Settings /></ProtectedRoute>} />
