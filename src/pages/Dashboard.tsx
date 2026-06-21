@@ -832,6 +832,9 @@ export default function Dashboard() {
       }
       mainStyle={{ padding: '0.875rem 1.25rem 1.5rem' }}
     >
+      {/* Zwevende, versleepbare top-killers ticker — zichtbaar voor iedereen */}
+      {!previewMode && <TopKillersTicker floating />}
+
       {/* Urgent alert banner */}
       {!phase1Loading && urgentAlerts > 0 && (
         <div
@@ -998,7 +1001,6 @@ export default function Dashboard() {
 
       {member.localWidget && !previewMode && (
         <div style={{ marginBottom: GAP }}>
-          <TopKillersTicker />
           <LocalChatWidget />
         </div>
       )}
