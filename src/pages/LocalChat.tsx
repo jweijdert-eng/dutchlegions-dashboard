@@ -6,6 +6,7 @@ import { getStandings, setStanding, type Standing } from '../utils/localStanding
 import { useLocalChat } from '../hooks/useLocalChat'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { useTranslate } from '../utils/translate'
+import TopKillersTicker from '../components/TopKillersTicker'
 
 const TD: React.CSSProperties = { padding: '0.28rem 0.6rem', verticalAlign: 'top' }
 
@@ -267,6 +268,8 @@ useEffect(() => {
           </div>
         )}
 
+        <TopKillersTicker />
+
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
           <input
             type="text"
@@ -335,7 +338,7 @@ useEffect(() => {
         <div
           ref={listRef}
           onScroll={onScroll}
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflowY: 'auto', height: 'calc(100vh - 175px)' }}
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflowY: 'auto', height: 'calc(100vh - 213px)' }}
         >
           {displayed.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem', padding: '3rem' }}>
