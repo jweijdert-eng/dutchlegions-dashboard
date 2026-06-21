@@ -215,9 +215,12 @@ function parseLine(line: string): Omit<SystemIntel, never> | null {
   const [datePart, timePart] = rawTime.split(' ')
   const time = new Date(`${datePart.replace(/\./g, '-')}T${timePart}Z`).getTime()
 
+  // Systeemcodes uit de melding strippen vóór tellen/threat — veel null-systemen beginnen
+  // met een cijfer (5-P1Y2, 9-F7PZ), anders telt 'ie dat cijfer als "aantal".
+  const rest = message.replace(SYSTEM_RE, ' ')
   const isClear  = CLEAR_RE.test(message)
-  const isThreat = !isClear && THREAT_RE.test(message)
-  const count    = Number(COUNT_RE.exec(message)?.[1] ?? 0)
+  const isThreat = !isClear && THREAT_RE.test(rest)
+  const count    = Number(COUNT_RE.exec(rest)?.[1] ?? 0)
 
   return {
     id: `${reporter}|${rawTime}|${message}`,
