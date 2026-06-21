@@ -9,6 +9,7 @@ const WEEK_MS = 7 * 24 * 3600 * 1000
 
 interface ZkbKill { killmail_id: number; zkb?: { hash: string; totalValue?: number } }
 interface Enriched { km: Killmail; value: number; hash: string }
+interface TopKiller { characterID: number; characterName: string; kills: number }
 
 function fmtISK(v: number) {
   if (v >= 1e9) return `${(v / 1e9).toFixed(2)} mrd`
@@ -26,6 +27,7 @@ function ago(iso: string) {
 export default function KillOfWeek() {
   const [scope, setScope] = useState<'corp' | 'alliance'>('corp')
   const [kills, setKills] = useState<Enriched[]>([])
+  const [killers, setKillers] = useState<TopKiller[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
   const [systems, setSystems] = useState<Record<string, [string, number, number]>>({})
   const [loading, setLoading] = useState(true)
@@ -36,9 +38,20 @@ export default function KillOfWeek() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true); setErr(''); setKills([])
+    setLoading(true); setErr(''); setKills([]); setKillers([])
     const type = scope === 'corp' ? 'corporationID' : 'allianceID'
     const id = scope === 'corp' ? CORP_ID : ALLIANCE_ID
+
+    // Top killers via zKill-stats (topLists → character) — heeft naam + kills al ingebouwd.
+    fetch(`/api/zkill.php?stats=1&type=${type}&id=${id}`)
+      .then(r => r.json())
+      .then((s: { topLists?: { type: string; values: TopKiller[] }[] }) => {
+        if (cancelled) return
+        const list = s?.topLists?.find(t => t.type === 'character')?.values ?? []
+        setKillers(list.slice(0, 10))
+      })
+      .catch(() => {})
+
     fetch(`/api/zkill.php?type=${type}&id=${id}`)
       .then(r => r.json())
       .then(async (list: ZkbKill[]) => {
@@ -83,6 +96,25 @@ export default function KillOfWeek() {
           <button key={s} onClick={() => setScope(s)} style={pill(scope === s)}>{s === 'corp' ? 'Corp' : 'Alliance'}</button>
         ))}
       </div>
+
+      {killers.length > 0 && (
+        <div style={{ ...card, marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.14em', marginBottom: '0.7rem' }}>⚔️ TOP KILLERS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.5rem' }}>
+            {killers.map((k, i) => (
+              <a key={k.characterID} href={`https://zkillboard.com/character/${k.characterID}/`} target="_blank" rel="noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', padding: '0.25rem' }}>
+                <span style={{ width: 16, textAlign: 'right', fontSize: '0.72rem', fontWeight: 800, color: i === 0 ? 'var(--gold)' : i < 3 ? '#fff' : 'var(--text-dim)', flexShrink: 0 }}>{i + 1}</span>
+                <img src={`https://images.evetech.net/characters/${k.characterID}/portrait?size=32`} width={26} height={26} style={{ borderRadius: '50%', flexShrink: 0 }} alt="" />
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: '0.7rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.characterName}</span>
+                  <span style={{ fontSize: '0.6rem', color: '#3ecf6e' }}>{k.kills} kills</span>
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {err && <div style={{ ...card, color: 'var(--red)' }}>{err}</div>}
       {!loading && !err && kills.length === 0 && <div style={card}>Geen kills gevonden voor {scope === 'corp' ? 'de corp' : 'de alliance'}.</div>}

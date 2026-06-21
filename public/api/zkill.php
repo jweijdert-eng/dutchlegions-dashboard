@@ -6,17 +6,18 @@ cors();
 
 $type = preg_match('/^(corporationID|allianceID)$/', $_GET['type'] ?? '') ? $_GET['type'] : 'corporationID';
 $id   = (int)($_GET['id'] ?? 0);
+$mode = isset($_GET['stats']) ? 'stats' : 'kills';   // stats=top killers/ships, anders recente kills
 if (!$id) { http_response_code(400); echo json_encode(['error' => 'no id']); exit; }
 
 header('Content-Type: application/json');
 
-$cacheFile = sys_get_temp_dir() . "/zkill_{$type}_{$id}.json";
+$cacheFile = sys_get_temp_dir() . "/zkill_{$mode}_{$type}_{$id}.json";
 if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < 300) {
     echo file_get_contents($cacheFile);
     exit;
 }
 
-$ch = curl_init("https://zkillboard.com/api/kills/{$type}/{$id}/");
+$ch = curl_init("https://zkillboard.com/api/{$mode}/{$type}/{$id}/");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT        => 20,
