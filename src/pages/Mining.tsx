@@ -66,11 +66,11 @@ export default function Mining() {
     setLoading(true); setEntries([])
 
     async function load() {
-      const allRaw: (MiningEntry & { _name: string })[] = []
+      const allRaw: (MiningEntry & { _name: string; _cid: number })[] = []
       await Promise.all(tokens.map(async t => {
         const m = await getMining(t.characterId, t.accessToken).catch(() => [] as MiningEntry[])
         const name = t.characterName ?? `#${t.characterId}`
-        allRaw.push(...m.map(e => ({ ...e, _name: name })))
+        allRaw.push(...m.map(e => ({ ...e, _name: name, _cid: t.characterId })))
       }))
 
       if (myId !== fetchId.current) return
@@ -115,6 +115,23 @@ export default function Mining() {
       fetchOrePrices([...new Set([...typeIds, ...mineralIds])]).then(prices => {
         if (myId !== fetchId.current) return
         setOrePrices(prices)
+
+        // Bijdragen aan de Top Miners-ranglijst: per character het maand-totaal (m³ + ISK).
+        const ym = new Date().toISOString().slice(0, 7)   // YYYY-MM
+        const perChar = new Map<number, { name: string; m3: number; isk: number }>()
+        for (const e of allRaw) {
+          if (!e.date.startsWith(ym)) continue
+          const cur = perChar.get(e._cid) ?? { name: e._name, m3: 0, isk: 0 }
+          cur.m3  += e.quantity * (vol.get(e.type_id) ?? 0)
+          cur.isk += e.quantity * (prices.get(e.type_id) ?? 0)
+          perChar.set(e._cid, cur)
+        }
+        for (const [cid, v] of perChar) {
+          fetch('/api/miners.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ characterId: cid, name: v.name, m3: Math.round(v.m3), isk: Math.round(v.isk) }),
+          }).catch(() => {})
+        }
       })
     }
 
