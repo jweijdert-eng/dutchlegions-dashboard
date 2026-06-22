@@ -6,8 +6,12 @@ const CORP_ID = 98652891   // Dutch Legions
 
 interface TopKiller { characterID: number; characterName: string; kills: number; losses?: number }
 
-const rank = (r: number) => r === 1 ? { c: '#f5c518', m: '🥇' } : r === 2 ? { c: '#cbd5e1', m: '🥈' } : r === 3 ? { c: '#cd7f32', m: '🥉' } : { c: 'var(--text-dim)', m: `#${r}` }
+const MEDAL = (r: number) =>
+  r === 1 ? { c: '#f5c518', glow: 'rgba(245,197,24,0.55)', grad: 'linear-gradient(150deg, rgba(245,197,24,0.28), rgba(245,197,24,0.04))', m: '🥇' }
+  : r === 2 ? { c: '#cbd5e1', glow: 'rgba(203,213,225,0.45)', grad: 'linear-gradient(150deg, rgba(203,213,225,0.22), rgba(203,213,225,0.03))', m: '🥈' }
+  : { c: '#cd7f32', glow: 'rgba(205,127,50,0.45)', grad: 'linear-gradient(150deg, rgba(205,127,50,0.24), rgba(205,127,50,0.03))', m: '🥉' }
 const kd = (k: number, l: number) => l === 0 ? (k > 0 ? '∞' : '0.0') : (k / l).toFixed(1)
+const kdColor = (k: number, l: number) => { const r = l === 0 ? (k > 0 ? 99 : 0) : k / l; return r >= 2 ? '#3ecf6e' : r >= 1 ? 'var(--gold)' : '#ff7676' }
 
 export default function Leaderboard() {
   const [rows, setRows] = useState<TopKiller[]>([])
@@ -31,55 +35,85 @@ export default function Leaderboard() {
 
   const maxKills = useMemo(() => Math.max(1, ...rows.map(r => r.kills)), [rows])
   const totals = useMemo(() => rows.reduce((a, r) => ({ k: a.k + r.kills, l: a.l + (r.losses ?? 0) }), { k: 0, l: 0 }), [rows])
+  const podium = rows.slice(0, 3)
+  const rest = rows.slice(3)
 
   return (
     <Layout header={<PageHeader title="Leaderboard" sub={loading ? 'zKillboard laden…' : `Dutch Legions · deze maand · top ${rows.length}`} />}>
       {err && <div style={{ ...card, color: 'var(--red)', marginBottom: '1rem' }}>{err}</div>}
 
-      {/* Samenvatting */}
+      {/* Gekleurde totaal-kaarten */}
       {!loading && rows.length > 0 && (
-        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: '1rem', fontSize: '0.78rem' }}>
-          <span><span style={{ color: 'var(--text-dim)' }}>Totaal kills: </span><strong style={{ color: '#3ecf6e' }}>{totals.k}</strong></span>
-          <span><span style={{ color: 'var(--text-dim)' }}>Totaal losses: </span><strong style={{ color: 'var(--red)' }}>{totals.l}</strong></span>
-          <span><span style={{ color: 'var(--text-dim)' }}>K/D: </span><strong>{kd(totals.k, totals.l)}</strong></span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.6rem', marginBottom: '1.1rem' }}>
+          <Stat label="KILLS" value={totals.k} color="#3ecf6e" grad="linear-gradient(150deg, rgba(62,207,110,0.18), rgba(62,207,110,0.02))" />
+          <Stat label="LOSSES" value={totals.l} color="#ff7676" grad="linear-gradient(150deg, rgba(224,85,85,0.18), rgba(224,85,85,0.02))" />
+          <Stat label="K/D" value={kd(totals.k, totals.l)} color="var(--gold)" grad="linear-gradient(150deg, rgba(240,192,64,0.18), rgba(240,192,64,0.02))" />
+          <Stat label="PILOTS" value={rows.length} color="var(--blue)" grad="linear-gradient(150deg, rgba(0,180,216,0.18), rgba(0,180,216,0.02))" />
         </div>
       )}
 
-      <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-        {/* Kop */}
-        <div style={{ ...row, fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
-          <span style={{ width: 40, textAlign: 'center', flexShrink: 0 }}>#</span>
-          <span style={{ width: 30, flexShrink: 0 }} />
-          <span style={{ flex: 1 }}>PILOT</span>
-          <span style={{ width: 60, textAlign: 'right' }}>KILLS</span>
-          <span style={{ width: 60, textAlign: 'right' }}>LOSSES</span>
-          <span style={{ width: 50, textAlign: 'right' }}>K/D</span>
+      {/* Podium top 3 */}
+      {podium.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(160px, 1fr))`, gap: '0.75rem', marginBottom: '1.1rem' }}>
+          {podium.map((r, i) => {
+            const md = MEDAL(i + 1)
+            return (
+              <a key={r.characterID} href={`https://zkillboard.com/character/${r.characterID}/`} target="_blank" rel="noreferrer"
+                style={{ textDecoration: 'none', background: md.grad, border: `1px solid ${md.c}`, borderRadius: 10, padding: '0.9rem 0.7rem', textAlign: 'center', position: 'relative', boxShadow: `0 0 20px ${md.glow}` }}>
+                <div style={{ position: 'absolute', top: 8, left: 10, fontSize: '1.2rem' }}>{md.m}</div>
+                <img src={`https://images.evetech.net/characters/${r.characterID}/portrait?size=128`} width={64} height={64}
+                  style={{ borderRadius: '50%', border: `3px solid ${md.c}`, boxShadow: `0 0 14px ${md.glow}` }} alt="" />
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff', marginTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.characterName}</div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: md.c, lineHeight: 1.1, marginTop: 4 }}>{r.kills}</div>
+                <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.12em' }}>KILLS</div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 6, fontSize: '0.66rem' }}>
+                  <span style={{ color: '#ff7676' }}>▼ {r.losses}</span>
+                  <span style={{ color: kdColor(r.kills, r.losses ?? 0), fontWeight: 700 }}>K/D {kd(r.kills, r.losses ?? 0)}</span>
+                </div>
+              </a>
+            )
+          })}
         </div>
-        {rows.map((r, i) => {
-          const rk = rank(i + 1)
-          return (
-            <a key={r.characterID} href={`https://zkillboard.com/character/${r.characterID}/`} target="_blank" rel="noreferrer"
-              style={{ ...row, textDecoration: 'none', borderBottom: '1px solid var(--border)', background: i < 3 ? 'rgba(240,192,64,0.04)' : 'transparent', position: 'relative' }}>
-              {/* kills-balk als subtiele achtergrond */}
-              <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(r.kills / maxKills) * 100}%`, background: 'rgba(62,207,110,0.07)', pointerEvents: 'none' }} />
-              <span style={{ width: 40, textAlign: 'center', flexShrink: 0, fontWeight: 800, fontSize: i < 3 ? '0.95rem' : '0.78rem', color: rk.c, zIndex: 1 }}>{rk.m}</span>
-              <img src={`https://images.evetech.net/characters/${r.characterID}/portrait?size=32`} width={26} height={26} style={{ borderRadius: '50%', flexShrink: 0, zIndex: 1 }} alt="" />
-              <span style={{ flex: 1, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: i < 3 ? 700 : 400, zIndex: 1 }}>{r.characterName}</span>
-              <span style={{ width: 60, textAlign: 'right', color: '#3ecf6e', fontWeight: 700, zIndex: 1 }}>{r.kills}</span>
-              <span style={{ width: 60, textAlign: 'right', color: 'var(--red)', zIndex: 1 }}>{r.losses}</span>
-              <span style={{ width: 50, textAlign: 'right', color: 'var(--text-dim)', zIndex: 1 }}>{kd(r.kills, r.losses ?? 0)}</span>
-            </a>
-          )
-        })}
-        {!loading && rows.length === 0 && !err && <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>Nog geen kills deze maand.</div>}
-      </div>
+      )}
+
+      {/* Rest (#4+) */}
+      {rest.length > 0 && (
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          {rest.map((r, idx) => {
+            const i = idx + 3
+            return (
+              <a key={r.characterID} href={`https://zkillboard.com/character/${r.characterID}/`} target="_blank" rel="noreferrer"
+                style={{ ...row, textDecoration: 'none', borderBottom: idx < rest.length - 1 ? '1px solid var(--border)' : 'none', position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(r.kills / maxKills) * 100}%`, background: 'linear-gradient(90deg, rgba(0,180,216,0.12), rgba(62,207,110,0.10))', pointerEvents: 'none' }} />
+                <span style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.74rem', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', zIndex: 1 }}>{i + 1}</span>
+                <img src={`https://images.evetech.net/characters/${r.characterID}/portrait?size=32`} width={26} height={26} style={{ borderRadius: '50%', flexShrink: 0, zIndex: 1 }} alt="" />
+                <span style={{ flex: 1, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', zIndex: 1 }}>{r.characterName}</span>
+                <span style={{ width: 56, textAlign: 'right', color: '#3ecf6e', fontWeight: 700, zIndex: 1 }}>{r.kills}</span>
+                <span style={{ width: 56, textAlign: 'right', color: '#ff7676', zIndex: 1 }}>{r.losses}</span>
+                <span style={{ width: 50, textAlign: 'right', color: kdColor(r.kills, r.losses ?? 0), fontWeight: 700, zIndex: 1 }}>{kd(r.kills, r.losses ?? 0)}</span>
+              </a>
+            )
+          })}
+        </div>
+      )}
+
+      {!loading && rows.length === 0 && !err && <div style={{ ...card, textAlign: 'center', color: 'var(--text-dim)' }}>Nog geen kills deze maand.</div>}
 
       <div style={{ marginTop: '1rem', fontSize: '0.6rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
-        Top corp-killers van deze maand (kills & losses uit zKillboard). K/D = kills ÷ losses. Klik een rij voor de zKillboard van die pilot.
+        Top corp-killers van deze maand (kills & losses uit zKillboard). K/D = kills ÷ losses (groen ≥2 · goud ≥1 · rood &lt;1). Klik een pilot voor zijn zKillboard.
       </div>
     </Layout>
   )
 }
 
-const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem' }
-const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '0.45rem 0.7rem', fontSize: '0.78rem' }
+function Stat({ label, value, color, grad }: { label: string; value: number | string; color: string; grad: string }) {
+  return (
+    <div style={{ background: grad, border: '1px solid var(--border)', borderRadius: 8, padding: '0.6rem 0.8rem' }}>
+      <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.14em' }}>{label}</div>
+      <div style={{ fontSize: '1.4rem', fontWeight: 800, color }}>{value}</div>
+    </div>
+  )
+}
+
+const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '1rem' }
+const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '0.5rem 0.7rem', fontSize: '0.78rem' }
