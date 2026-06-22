@@ -32,8 +32,8 @@ try {
         exit;
     }
 
-    // GET → top miners van DEZE maand
-    $stmt = $pdo->prepare("SELECT character_id, name, m3, isk, updated_at FROM miners WHERE ym = ? ORDER BY m3 DESC LIMIT 50");
+    // GET → top miners van DEZE maand (alleen wie daadwerkelijk gemined heeft)
+    $stmt = $pdo->prepare("SELECT character_id, name, m3, isk, updated_at FROM miners WHERE ym = ? AND m3 > 0 ORDER BY m3 DESC LIMIT 50");
     $stmt->execute([date('Y-m')]);
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
 } catch (Exception $e) {
