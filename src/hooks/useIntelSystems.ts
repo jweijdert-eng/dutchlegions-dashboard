@@ -98,6 +98,11 @@ async function resolveEnemies(message: string) {
     for (const c of data.corporations ?? []) enemies.push({ kind: 'corporation', id: c.id, name: c.name })
     for (const ch of data.characters ?? [])  enemies.push({ kind: 'character',   id: ch.id, name: ch.name })
 
+    // ESI /universe/ids/ matcht FUZZY (prefix): ["Rogue"] geeft ook "R O G U E" en
+    // "Rogues Gallery". Alleen entiteiten houden waarvan de naam exact een kandidaat is.
+    const candSet = new Set(cands.map(c => c.toLowerCase()))
+    enemies = enemies.filter(e => candSet.has(e.name.toLowerCase()))
+
     // Dedup: een kortere naam die een aaneengesloten deel-frase is van een langere
     // match weglaten ("Sella" valt weg als "SeLLa 4" ook matcht). Langste eerst.
     const words = (s: string) => s.toLowerCase().split(/\s+/)
