@@ -33,8 +33,27 @@ export const SHIP_TYPE_IDS: Record<string, number> = {
   bomber: 12023, bombers: 12023,
 }
 
-const SHIP_PATTERN = `\\b(${Object.keys(SHIP_TYPE_IDS).sort((a, b) => b.length - a.length).join('|')})s?\\b`
+// Runtime-map: hardcoded shorthand (dread/carrier/supers/…) + alle SDE-schepen uit /ships.json.
+let SHIP_MAP: Record<string, number> = { ...SHIP_TYPE_IDS }
+const buildPattern = () => `\\b(${Object.keys(SHIP_MAP).sort((a, b) => b.length - a.length).join('|')})s?\\b`
+let SHIP_PATTERN = buildPattern()
 
+// Eénmalig alle scheepsnamen laden (zodat élk schip herkend wordt, niet alleen de ~55 shorthand).
+let _loading: Promise<void> | null = null
+export function loadShipNames(): Promise<void> {
+  return (_loading ??= fetch('/ships.json').then(r => r.json()).then((j: Record<string, number>) => {
+    SHIP_MAP = { ...j, ...SHIP_TYPE_IDS }   // shorthand wint van de volledige naam
+    SHIP_PATTERN = buildPattern()
+  }).catch(() => { /* val terug op de basislijst */ }))
+}
+
+// Is dit woord/frase een scheepstype? (voor de intel-enemy-resolver, om schepen uit te sluiten)
+export function isShipName(word: string): boolean {
+  const w = word.toLowerCase()
+  return w in SHIP_MAP || w.replace(/s$/, '') in SHIP_MAP
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
 export function extractShips(msg: string): { typeId: number; name: string }[] {
   const re = new RegExp(SHIP_PATTERN, 'gi')
   const results: { typeId: number; name: string }[] = []
@@ -42,11 +61,10 @@ export function extractShips(msg: string): { typeId: number; name: string }[] {
   let match: RegExpExecArray | null
   while ((match = re.exec(msg)) !== null) {
     const w = match[1].toLowerCase()
-    const typeId = SHIP_TYPE_IDS[w] ?? SHIP_TYPE_IDS[w.replace(/s$/, '')] ?? null
+    const typeId = SHIP_MAP[w] ?? SHIP_MAP[w.replace(/s$/, '')] ?? null
     if (!typeId || seen.has(typeId)) continue
     seen.add(typeId)
-    const name = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
-    results.push({ typeId, name })
+    results.push({ typeId, name: match[1].split(/\s+/).map(cap).join(' ') })
   }
   return results
 }

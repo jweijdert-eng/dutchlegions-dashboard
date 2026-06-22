@@ -153,6 +153,17 @@ out_grp = {str(gid): [name, cid]
            for gid, name, cid in con.execute('SELECT groupID, groupName, categoryID FROM invGroups')}
 write('groups.json', out_grp)
 
+# Schepen (categorie 6) → { naam-lowercase: typeId } voor intel-schipherkenning.
+ship_groups = {int(gid) for gid, gv in out_grp.items() if gv[1] == 6}
+out_ships = {}
+for tid, name in out_names.items():
+    ti = out_ti.get(str(tid))
+    if ti and ti[0] in ship_groups:
+        k = name.lower()
+        if k not in out_ships:
+            out_ships[k] = int(tid)
+write('ships.json', out_ships)
+
 # Categorieën: { categoryId: naam }
 out_cat = {str(cid): name for cid, name in con.execute('SELECT categoryID, categoryName FROM invCategories')}
 write('categories.json', out_cat)

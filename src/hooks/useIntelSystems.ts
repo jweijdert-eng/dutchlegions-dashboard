@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSiteConfig } from './useSiteConfig'
 import { DEFAULT_INTEL_CHANNELS } from '../utils/intelChannels'
-import { extractShips, SHIP_TYPE_IDS } from '../utils/intelShips'
+import { extractShips, SHIP_TYPE_IDS, isShipName, loadShipNames } from '../utils/intelShips'
 
 // Leest dezelfde EVE-chatlogs als de Intel-pagina (via de Chatlogs-map die daar
 // gekoppeld is, opgeslagen in IndexedDB) en levert per systeem de meest recente
@@ -62,7 +62,9 @@ const STOP = new Set([
   ...Object.keys(SHIP_TYPE_IDS),
   'nv', 'nvt', 'clr', 'clear', 'safe', 'neut', 'neuts', 'cyno', 'red', 'reds', 'hostile', 'hostiles',
   'gate', 'station', 'dock', 'docked', 'undock', 'jump', 'jumped', 'spike', 'local', 'blue', 'blues',
-  'gang', 'fleet', 'roam', 'roaming', 'bubble', 'bubbles', 'camp', 'camped', 'inbound', 'system',
+  'gang', 'fleet', 'roam', 'roaming', 'bubble', 'bubbles', 'camp', 'camped', 'camping', 'gatecamp', 'inbound', 'system',
+  'tackled', 'pointed', 'scrammed', 'dead', 'pod', 'podded', 'kill', 'killed', 'warpin', 'warp', 'align', 'aligned',
+  'sitting', 'holding', 'staging', 'incoming', 'inc', 'coming', 'caps', 'subcaps', 'logi', 'dps', 'tackle',
 ])
 function enemyCandidates(message: string): string[] {
   const words = message.replace(/https?:\/\/\S+/g, ' ').split(/[^A-Za-z0-9'-]+/).filter(Boolean)
@@ -72,7 +74,9 @@ function enemyCandidates(message: string): string[] {
       const seq = words.slice(i, i + len)
       if (len === 1 && (STOP.has(seq[0].toLowerCase()) || seq[0].length < 3 || /^\d+$/.test(seq[0]))) continue
       const s = seq.join(' ')
-      if (s.length >= 3) out.add(s)
+      if (s.length < 3) continue
+      if (isShipName(s)) continue                 // scheepsnaam (Retribution/Jackdaw/Keres/…) → geen enemy
+      out.add(s)
     }
   }
   return [...out].slice(0, 50)
@@ -278,6 +282,7 @@ export function useIntelSystems(active: boolean): IntelResult {
   async function readOnce() {
     const handle = handleRef.current
     if (!handle) return
+    await loadShipNames()                          // volledige scheepslijst klaar vóór het parsen
     const watch = prefixKey ? prefixKey.split('|') : []
     let filesMatched = 0
     let available: string[] = []
