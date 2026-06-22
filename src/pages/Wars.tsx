@@ -38,7 +38,7 @@ export default function Wars() {
   const [mine, setMine] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'active' | 'mine'>('all')
+  const [filter, setFilter] = useState<'all' | 'active' | 'mine'>('active')
   usePageLoading(loading)
 
   // Killmails per oorlog (lazy bij uitklappen)
