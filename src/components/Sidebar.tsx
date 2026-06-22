@@ -79,6 +79,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Boosters',     path: '/boosters', icon: '💉', badge: null, wip: true },
   { label: 'Trading P&L',  path: '/trading-pnl', icon: '💹', badge: null, wip: true },
   { label: 'Kills v/d maand', path: '/kill-of-week', icon: '🥇', badge: null, wip: true },
+  { label: 'Leaderboard',  path: '/leaderboard', icon: '🏅', badge: null, wip: true },
 ]
 const ITEM_BY_PATH: Record<string, NavItem> = Object.fromEntries(NAV_ITEMS.map(i => [i.path, i]))
 
