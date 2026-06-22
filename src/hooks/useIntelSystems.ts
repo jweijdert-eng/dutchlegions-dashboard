@@ -73,6 +73,7 @@ function enemyCandidates(message: string): string[] {
     for (let len = 1; len <= 3 && i + len <= words.length; len++) {
       const seq = words.slice(i, i + len)
       if (len === 1 && (STOP.has(seq[0].toLowerCase()) || seq[0].length < 3 || /^\d+$/.test(seq[0]))) continue
+      if (seq.every(w => STOP.has(w.toLowerCase()))) continue   // alleen-jargon (bv. "gate camping")
       const s = seq.join(' ')
       if (s.length < 3) continue
       if (isShipName(s)) continue                 // scheepsnaam (Retribution/Jackdaw/Keres/…) → geen enemy
@@ -144,7 +145,7 @@ const MAX_AGE = 5 * 60 * 1000                     // ouder dan 5 min → van de 
 // LET OP: "nv"/"nvt" = No Visual (hostile niet zichtbaar, maar nog steeds intel!) → NIET clear.
 // Alleen expliciete clear-meldingen verbergen de marker.
 const CLEAR_RE  = /\b(clr|clear|safe)\b/i
-const THREAT_RE = /\b(\d{1,3}\+?|carrier|carriers|dread|dreads|super|supers|titan|titans|fax|faxes|cyno|rorqual|recon|recons|battleship|battleships|bs|bc|bcs|logi|logis|bomber|bombers|hic|hics|dic|dics|blops|sabre|flycatcher|heretic|eris|proteus|tengu|loki|legion|rapier|arazu|huginn|curse|pilgrim|stiletto|crow|malediction|interceptor|interdictor|bubble|bubbles|spike|neut|neuts)\b/i
+const THREAT_RE = /\b(\d{1,3}\+?|carrier|carriers|dread|dreads|super|supers|titan|titans|fax|faxes|cyno|rorqual|recon|recons|battleship|battleships|bs|bc|bcs|logi|logis|bomber|bombers|hic|hics|dic|dics|blops|sabre|flycatcher|heretic|eris|proteus|tengu|loki|legion|rapier|arazu|huginn|curse|pilgrim|stiletto|crow|malediction|interceptor|interdictor|bubble|bubbles|spike|neut|neuts|camp|camped|camping|gatecamp|tackle|tackled|pointed|scrammed)\b/i
 // Nullsec-systeemcode: 1–4 alfanumeriek, koppelteken, 1–4 alfanumeriek (bv. 6-AOLS,
 // BKG-Q2, J9-5MQ, 1DH-SX, 9-4RP2). Mag met een cijfer beginnen; moet een letter bevatten
 // (anders is "5-10" e.d. ook een match). Global → we zoeken de eerste geldige code.
