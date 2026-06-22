@@ -4,8 +4,10 @@ import { getKillmailDetail, resolveNames, type Killmail } from '../api/esi'
 import { usePageLoading } from '../hooks/usePageLoading'
 
 const CORP_ID = 98652891       // Dutch Legions
-const ALLIANCE_ID = 99013537   // Insidious
-const WEEK_MS = 7 * 24 * 3600 * 1000
+// Begin van de huidige kalendermaand (lokale tijd).
+function monthStart(): number {
+  const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime()
+}
 
 interface ZkbKill { killmail_id: number; zkb?: { hash: string; totalValue?: number } }
 interface Enriched { km: Killmail; value: number; hash: string }
@@ -25,7 +27,6 @@ function ago(iso: string) {
 }
 
 export default function KillOfWeek() {
-  const [scope, setScope] = useState<'corp' | 'alliance'>('corp')
   const [kills, setKills] = useState<Enriched[]>([])
   const [killers, setKillers] = useState<TopKiller[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
@@ -39,12 +40,9 @@ export default function KillOfWeek() {
   useEffect(() => {
     let cancelled = false
     setLoading(true); setErr(''); setKills([]); setKillers([])
-    const type = scope === 'corp' ? 'corporationID' : 'allianceID'
-    const id = scope === 'corp' ? CORP_ID : ALLIANCE_ID
 
-    // Eén schone request: de proxy levert kills én topKillers samen (een aparte
-    // ?stats-call werd op sommige machines client-side geblokkeerd).
-    fetch(`/api/zkill.php?type=${type}&id=${id}`)
+    // Alleen voor de corp. Eén schone request: de proxy levert kills én topKillers samen.
+    fetch(`/api/zkill.php?type=corporationID&id=${CORP_ID}`)
       .then(r => r.json())
       .then(async (data: { kills?: ZkbKill[]; topKillers?: TopKiller[] }) => {
         if (cancelled) return
@@ -59,8 +57,9 @@ export default function KillOfWeek() {
           if (km) detailed.push({ km, value: k.zkb!.totalValue ?? 0, hash: k.zkb!.hash })
         }
         if (cancelled) return
-        // hou kills van de laatste 7 dagen; val terug op recent als er geen zijn
-        const recent = detailed.filter(d => Date.now() - +new Date(d.km.killmail_time) <= WEEK_MS)
+        // hou kills van DEZE maand; val terug op recent als er geen zijn
+        const ms = monthStart()
+        const recent = detailed.filter(d => +new Date(d.km.killmail_time) >= ms)
         const final = (recent.length ? recent : detailed).slice(0, 6)
         // namen oplossen
         const ids = new Set<number>()
@@ -77,7 +76,7 @@ export default function KillOfWeek() {
       })
       .catch(() => { if (!cancelled) { setErr('Kon zKillboard niet bereiken.'); setLoading(false) } })
     return () => { cancelled = true }
-  }, [scope])
+  }, [])
 
   const nameOf = (id?: number) => (id ? names.get(id) ?? `#${id}` : '—')
   const sysName = (id: number) => systems[String(id)]?.[0] ?? `Systeem ${id}`
@@ -85,13 +84,7 @@ export default function KillOfWeek() {
   const rest = useMemo(() => kills.slice(1), [kills])
 
   return (
-    <Layout header={<PageHeader title="Kill of the Week" sub={loading ? 'zKillboard laden…' : `top ${kills.length} · ${scope === 'corp' ? 'Dutch Legions' : 'Insidious'}`} />}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
-        {(['corp', 'alliance'] as const).map(s => (
-          <button key={s} onClick={() => setScope(s)} style={pill(scope === s)}>{s === 'corp' ? 'Corp' : 'Alliance'}</button>
-        ))}
-      </div>
-
+    <Layout header={<PageHeader title="Kills van de maand" sub={loading ? 'zKillboard laden…' : `top ${kills.length} · Dutch Legions · deze maand`} />}>
       {killers.length > 0 && (
         <div style={{ ...card, marginBottom: '1rem' }}>
           <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.14em', marginBottom: '0.7rem' }}>⚔️ TOP KILLERS</div>
@@ -112,12 +105,12 @@ export default function KillOfWeek() {
       )}
 
       {err && <div style={{ ...card, color: 'var(--red)' }}>{err}</div>}
-      {!loading && !err && kills.length === 0 && <div style={card}>Geen kills gevonden voor {scope === 'corp' ? 'de corp' : 'de alliance'}.</div>}
+      {!loading && !err && kills.length === 0 && <div style={card}>Geen kills gevonden voor de corp deze maand.</div>}
 
       {top && (
         <a href={`https://zkillboard.com/kill/${top.km.killmail_id}/`} target="_blank" rel="noreferrer"
           style={{ ...card, display: 'block', textDecoration: 'none', borderColor: 'var(--gold)', marginBottom: '1rem', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 10, right: 12, fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.16em', color: 'var(--gold)' }}>🏆 KILL VAN DE WEEK</div>
+          <div style={{ position: 'absolute', top: 10, right: 12, fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.16em', color: 'var(--gold)' }}>🏆 KILL VAN DE MAAND</div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             <img src={`https://images.evetech.net/types/${top.km.victim.ship_type_id}/render?size=128`} width={96} height={96} style={{ borderRadius: 6, flexShrink: 0 }} alt="" />
             <div style={{ minWidth: 0 }}>
@@ -149,14 +142,10 @@ export default function KillOfWeek() {
       </div>
 
       <div style={{ marginTop: '1rem', fontSize: '0.6rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
-        De duurste corp-/alliance-kills, primair van de laatste 7 dagen (valt terug op recent als er deze week niets is). Bron: zKillboard. Klik een kaart voor de volledige killmail.
+        De duurste corp-kills van deze maand (valt terug op recent als er deze maand nog niets is). Bron: zKillboard. Klik een kaart voor de volledige killmail.
       </div>
     </Layout>
   )
 }
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.9rem 1rem' }
-const pill = (on: boolean): React.CSSProperties => ({
-  padding: '5px 16px', borderRadius: 14, fontSize: '0.72rem', cursor: 'pointer',
-  border: `1px solid ${on ? 'var(--gold)' : 'var(--text-dim)'}`, background: on ? 'rgba(240,160,48,0.18)' : 'rgba(255,255,255,0.05)', color: on ? '#fff' : 'var(--text)',
-})
