@@ -59,11 +59,25 @@ export default function Callback() {
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center', maxWidth: 400 }}>
-          <div style={{ color: 'var(--red)', fontSize: '0.85rem', marginBottom: '1rem' }}>Inloggen mislukt</div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem', marginBottom: '1.5rem' }}>{error}</div>
-          <a href="/login" style={{ color: 'var(--blue)', fontSize: '0.75rem' }}>Probeer opnieuw</a>
+      <div style={{ minHeight: '100vh', background: '#05050e', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.4) saturate(1.1)' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, transparent 35%, rgba(5,5,14,0.88) 100%)' }} />
+        <div style={{
+          position: 'relative', zIndex: 10, width: '100%', maxWidth: 430, textAlign: 'center',
+          background: 'linear-gradient(160deg, rgba(11,11,26,0.95) 0%, rgba(5,5,14,0.97) 100%)',
+          border: '1px solid rgba(224,85,85,0.35)', borderRadius: 14, padding: '2.4rem 2rem',
+          boxShadow: '0 10px 60px rgba(0,0,0,0.8), 0 0 50px rgba(224,85,85,0.07), inset 0 1px 0 rgba(255,255,255,0.05)',
+          backdropFilter: 'blur(12px)',
+        }}>
+          <img src="https://images.evetech.net/corporations/98652891/logo?size=128" width={56} height={56}
+            style={{ borderRadius: 10, marginBottom: '1.1rem', opacity: 0.95, boxShadow: '0 0 18px rgba(0,0,0,0.5)' }} alt="" />
+          <div style={{ fontSize: '1.8rem', lineHeight: 1, marginBottom: '0.6rem' }}>🔒</div>
+          <div style={{ color: '#ff7676', fontSize: '1.1rem', fontWeight: 800, letterSpacing: '0.04em', marginBottom: '0.7rem' }}>Inloggen mislukt</div>
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', lineHeight: 1.65, marginBottom: '1.7rem' }}>{error}</div>
+          <a href="/login" style={{
+            display: 'inline-block', background: 'rgba(0,180,216,0.15)', border: '1px solid var(--blue)', color: 'var(--blue)',
+            fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.04em', padding: '0.55rem 1.5rem', borderRadius: 8, textDecoration: 'none',
+          }}>↻ Probeer opnieuw</a>
         </div>
       </div>
     )
