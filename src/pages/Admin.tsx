@@ -654,7 +654,7 @@ export default function Admin() {
         </button>
       } />
     }>
-      <div style={{ padding: '1.5rem', maxWidth: 900 }}>
+      <div style={{ padding: '1.5rem', maxWidth: tab === 'members' ? 1280 : 900 }}>
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem' }}>
@@ -740,7 +740,7 @@ export default function Admin() {
         {/* Member Beheer */}
         {tab === 'members' && !loading && (
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 480px', maxWidth: 580 }}>
+          <div style={{ flex: '1 1 640px', maxWidth: 860 }}>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.75rem', letterSpacing: '0.08em' }}>
               {members.length} LEDEN — automatisch bijgewerkt bij inloggen
             </div>
