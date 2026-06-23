@@ -348,6 +348,32 @@
       if(rs.length){ const grp={}; for(const s of rs){ const l=s.label||riskLabel(s.name)||'Overig'; (grp[l]=grp[l]||[]).push(esc(s.name)+' L'+s.level); }
         flags.push({lvl:'warn', txt:'Risk-skills: '+Object.keys(grp).map(k=>'<b>'+k+'</b> ('+grp[k].join(', ')+')').join(' · ')}); }
       else flags.push({lvl:'ok', txt:'Geen cyno/covert/blops/recon/jump-skills.'});
+
+      // Character-leeftijd — verse/jonge alt = spy-/wegwerprisico
+      if(d.ageYears!=null){
+        const days=Math.round(d.ageYears*365.25);
+        if(d.ageYears<0.1) flags.push({lvl:'bad', txt:'<b>Zeer jong character</b> ('+days+' dagen oud) — mogelijk een wegwerp- of spy-alt.'});
+        else if(d.ageYears<0.5) flags.push({lvl:'warn', txt:'Jong character ('+d.ageYears.toFixed(1)+' jaar) — extra check waard.'});
+        else flags.push({lvl:'ok', txt:'Leeftijd: '+d.ageYears.toFixed(1)+' jaar.'});
+      }
+
+      // Corp-hopping — veel werkgevers in 12 mnd of veel zeer korte stints
+      if((d.corpHistory||[]).length){
+        const yearAgo=Date.now()-365.25*864e5;
+        const recent=d.corpHistory.filter(h=>new Date(h.start).getTime()>yearAgo);
+        const sorted=d.corpHistory.slice().sort((a,b)=>new Date(a.start)-new Date(b.start));
+        let short=0; for(let i=0;i<sorted.length-1;i++){ const dur=(new Date(sorted[i+1].start)-new Date(sorted[i].start))/864e5; if(dur<14) short++; }
+        if(recent.length>=5) flags.push({lvl:'warn', txt:'<b>Corp-hopping</b>: '+recent.length+' corps in de laatste 12 maanden.'});
+        else if(short>=3) flags.push({lvl:'warn', txt:'<b>Korte corp-stints</b>: '+short+'× een corp binnen 14 dagen verlaten.'});
+        else flags.push({lvl:'ok', txt:'Stabiele werkgevershistorie ('+d.corpHistory.length+' corps).'});
+      }
+
+      // Security status — sterk negatief (ganker/criminal) is het noteren waard
+      if(d.sec!=null && d.sec<-2) flags.push({lvl:'warn', txt:'Negatieve security status: '+d.sec.toFixed(1)+'.'});
+
+      // Erg lage SP — relatief vers character
+      if(d.sp!=null && d.sp<5e6) flags.push({lvl:'info', txt:'Lage skillpoints ('+(d.sp/1e6).toFixed(1)+'M SP) — relatief nieuw character.'});
+
       const enemy=await fetchEnemySet(adminToken);
       if(!enemy.size){ flags.push({lvl:'info', txt:'Kon DL/Insidious-standings niet laden (geen leesrechten op corp/alliance-contacts?). Standing- en historie-check overgeslagen.'}); return flags; }
       // Werkgevershistorie: zat hij in een vijandige corp/alliance?
