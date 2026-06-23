@@ -86,6 +86,8 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
       <style>{`
         @keyframes tk-scroll { from { transform: translateX(0) } to { transform: translateX(-50%) } }
         .tk-bar:hover .tk-track { animation-play-state: paused }
+        @keyframes tk-pop { 0%,100% { transform: translateY(0) scale(1); opacity: .9 } 50% { transform: translateY(-2px) scale(1.4); opacity: 1 } }
+        .tk-new { display:inline-flex; align-items:center; color:#4ade80; font-weight:900; text-shadow:0 0 9px rgba(62,207,110,.95), 0 0 3px rgba(62,207,110,.9); animation: tk-pop .85s ease-in-out infinite; }
       `}</style>
       <span
         onPointerDown={onPointerDown}
@@ -106,7 +108,7 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
                 <img src={`https://images.evetech.net/characters/${k.characterID}/portrait?size=32`} width={20} height={20} style={{ borderRadius: '50%' }} alt="" />
                 <span style={{ fontSize: '0.72rem', color: '#fff' }}>{k.characterName}</span>
                 <span title="kills" style={{ fontSize: '0.64rem', color: '#3ecf6e', fontWeight: 700 }}>▲{k.kills}</span>
-                {upIds.has(k.characterID) && <span title="nieuwe kill sinds je vorige bezoek" style={{ fontSize: '0.6rem', color: '#3ecf6e' }}>↑</span>}
+                {upIds.has(k.characterID) && <span className="tk-new" title="nieuwe kill sinds je vorige bezoek!" style={{ fontSize: '0.95rem', marginLeft: 1 }}>▲</span>}
                 {k.losses != null && <span title="losses (totaal)" style={{ fontSize: '0.64rem', color: 'var(--red)', fontWeight: 700 }}>▼{k.losses}</span>}
                 <span style={{ color: 'var(--border)', marginLeft: 4 }}>·</span>
               </a>
