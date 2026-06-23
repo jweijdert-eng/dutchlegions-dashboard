@@ -8,6 +8,7 @@ import { useLayoutMode } from '../context/LayoutModeContext'
 
 import { useAlerts } from '../context/useAlerts'
 import { useSiteSettings } from '../hooks/useSiteSettings'
+import { useMyRole } from '../hooks/useMyRole'
 import { useSiteConfig } from '../hooks/useSiteConfig'
 import { useMemberSettings } from '../utils/memberSettings'
 import { getWallet, getWalletJournal, getCharacterInfo, getAlliance, clearEsiCache } from '../api/esi'
@@ -548,6 +549,8 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const siteConfig = useSiteConfig()   // accentkleur (auto toegepast) + handige links
   const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
   const isAdminChar = tokens.some(t => t.characterId === 1831618559)
+  const myRole = useMyRole()
+  const isAdmin = isAdminChar || myRole === 'admin'   // owner OF rol-admin → ziet alle features
   const member = useMemberSettings()
   const [layout, setLayout] = useState<LayoutEntry[]>(loadLayout)
   const applyLayout = (l: LayoutEntry[]) => { setLayout(l); saveLayout(l) }
@@ -797,13 +800,13 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           ? <NavEditor layout={displayLayout} onChange={applyLayout} onReset={resetNav} labelOf={labelOf} onRenameItem={renameItem} onPublish={publishNav} saved={navSaved} iconFor={iconFor} known={knownKey} />
           : collapsed
           // Ingeklapt: platte icoon-rail (alle zichtbare items op volgorde van de boom)
-          ? displayLayout.flatMap(e => e.kind === 'group' ? (e.adminOnly && !isAdminChar ? [] : e.children) : [e.path])
+          ? displayLayout.flatMap(e => e.kind === 'group' ? (e.adminOnly && !isAdmin ? [] : e.children) : [e.path])
               .filter(p => knownKey(p) && !isHidden(p))
               .map(p => renderEntry(p, false, true))
           // Uitgeklapt: losse items + uitklapbare groepen
           : displayLayout.map(e => {
               if (e.kind === 'item') return knownKey(e.path) && !isHidden(e.path) ? renderEntry(e.path, false) : null
-              if (e.adminOnly && !isAdminChar) return null   // alleen-admin groep: verberg voor members
+              if (e.adminOnly && !isAdmin) return null   // alleen-admin groep: verberg voor members (rol-admin ziet 't wel)
               const visibleChildren = e.children.filter(p => knownKey(p) && !isHidden(p))
               if (visibleChildren.length === 0) return null
               return <GroupRow key={e.id} group={{ ...e, children: visibleChildren }} badgeCount={badgeCount} open={!closedGroups.has(e.id)} onToggle={() => toggleGroup(e.id)} renderChild={k => renderEntry(k, true)} adminOnly={e.adminOnly} />
@@ -826,6 +829,26 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           >
             <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>⌁</span>
             {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Local Chat</span>}
+          </NavLink>
+        )}
+
+        {/* Recruitment — voor recruiters (admins/owner zien 't al via Ontwikkeling) */}
+        {myRole === 'recruiter' && !isAdmin && (
+          <NavLink
+            to="/recruit-funnel"
+            title={collapsed ? 'Recruitment' : undefined}
+            style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: '0.65rem',
+              padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              textDecoration: 'none',
+              background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
+              borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
+              color: isActive ? 'var(--blue)' : 'var(--text)',
+            })}
+          >
+            <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>📋</span>
+            {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Recruitment</span>}
           </NavLink>
         )}
 
