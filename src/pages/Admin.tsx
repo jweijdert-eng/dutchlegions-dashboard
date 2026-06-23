@@ -10,6 +10,7 @@ import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { DEFAULT_INTEL_CHANNELS, type IntelChannel } from '../utils/intelChannels'
 
 const ADMIN_CHAR_ID = 1831618559
+const ROLE_COLOR: Record<string, string> = { admin: '#e05555', recruiter: 'var(--blue)', member: 'var(--text-dim)' }
 
 const ACCENTS = [
   { hex: '#00b4d8', name: 'Blauw' },  { hex: '#22d3ee', name: 'Cyaan' },
@@ -153,6 +154,7 @@ export default function Admin() {
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [pageStats, setPageStats] = useState<{ page: string; views: number; users: number }[]>([])
   const [members, setMembers] = useState<SiteMember[]>([])
+  const [roles, setRoles] = useState<Record<number, string>>({})   // character_id → rol
   const [allowName, setAllowName] = useState('')
   const [allowMsg, setAllowMsg] = useState('')
   const [allowedOrgs, setAllowedOrgs] = useState<{ org_id: number; type: string; name: string }[]>([])
@@ -425,8 +427,29 @@ export default function Admin() {
       setMembers(list)
       fetchMemberOrgs(list)
       fetchAllowedOrgs()
+      fetchRoles()
     } catch { /* ignore */ }
     setLoading(false)
+  }
+
+  async function fetchRoles() {
+    if (!adminToken) return
+    try {
+      const r = await fetch(`/api/roles.php?token=${encodeURIComponent(adminToken.accessToken)}`)
+      const j = await r.json()
+      const map: Record<number, string> = {}
+      for (const x of j?.roles ?? []) map[Number(x.character_id)] = x.role
+      setRoles(map)
+    } catch { /* ignore */ }
+  }
+
+  async function setMemberRole(m: SiteMember, role: string) {
+    if (!adminToken) return
+    setRoles(prev => { const n = { ...prev }; if (role === 'member') delete n[m.character_id]; else n[m.character_id] = role; return n })
+    await fetch(`/api/roles.php?token=${encodeURIComponent(adminToken.accessToken)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: m.character_id, name: m.name, role }),
+    }).catch(() => {})
   }
 
   async function refreshMembers() {
@@ -781,6 +804,8 @@ export default function Admin() {
                   const online = isOnline(m.last_seen)
                   const blocked = !!m.blocked
                   const org = orgs[m.character_id]
+                  const isOwner = m.character_id === ADMIN_CHAR_ID
+                  const memRole = isOwner ? 'admin' : (roles[m.character_id] ?? 'member')
                   return (
                     <div key={m.character_id}
                       onClick={() => openDetail(m)}
@@ -819,6 +844,11 @@ export default function Admin() {
                           </div>
                         )}
                       </div>
+                      {memRole !== 'member' && (
+                        <span title={isOwner ? 'Eigenaar — altijd admin' : `Rol: ${memRole}`} style={{ fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0.12rem 0.4rem', borderRadius: 3, color: ROLE_COLOR[memRole] ?? 'var(--gold)', border: `1px solid ${ROLE_COLOR[memRole] ?? 'var(--gold)'}`, whiteSpace: 'nowrap' }}>
+                          {isOwner ? '👑 owner' : memRole}
+                        </span>
+                      )}
                       {blocked && (
                         <span style={{ fontSize: '0.6rem', color: 'var(--red)', fontWeight: 700, letterSpacing: '0.06em' }}>GEBLOKKEERD</span>
                       )}
@@ -833,6 +863,17 @@ export default function Admin() {
                       )}
                       {m.character_id !== ADMIN_CHAR_ID && (
                         <>
+                          <select
+                            value={memRole}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => { e.stopPropagation(); setMemberRole(m, e.target.value) }}
+                            title="Rol toewijzen"
+                            style={{ padding: '0.2rem 0.3rem', fontSize: '0.65rem', fontWeight: 600, borderRadius: 3, cursor: 'pointer', background: 'var(--surface)', border: `1px solid ${ROLE_COLOR[memRole] ?? 'var(--border)'}`, color: ROLE_COLOR[memRole] ?? 'var(--text)' }}
+                          >
+                            <option value="member">Member</option>
+                            <option value="recruiter">Recruiter</option>
+                            <option value="admin">Admin</option>
+                          </select>
                           <button
                             onClick={e => { e.stopPropagation(); toggleAllow(m) }}
                             title={m.allowed === 1 ? 'Van allowlist halen' : 'Op allowlist zetten (mag inloggen ongeacht corp/alliance)'}
