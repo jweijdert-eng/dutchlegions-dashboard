@@ -30,14 +30,23 @@ export default function TopKillersTicker({ floating = false }: { floating?: bool
         if (cancelled) return
         const list = (d?.topKillers ?? []).slice(0, 10)
         try {
-          // Vergelijk met de vorige stand: meer kills dan toen → groen pijltje.
-          const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || '{}') as Record<string, number>
+          // Baseline-venster van 1 uur: pijltje voor iedereen die sinds de baseline
+          // kills bijkreeg (blijft staan). Baseline wordt pas ververst als 'ie >1u oud is,
+          // zodat het pijltje niet bij elke page-load weer reset.
+          const WINDOW = 60 * 60 * 1000
+          const now = Date.now()
+          let snap: { ts: number; kills: Record<string, number> } | null = null
+          try { snap = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null') } catch { /* ignore */ }
+          const fresh = !!(snap && snap.ts && (now - snap.ts < WINDOW))
+          const baseline = fresh ? snap!.kills : null
           const ups = new Set<number>()
-          for (const k of list) { const prev = snap[k.characterID]; if (prev != null && k.kills > prev) ups.add(k.characterID) }
+          if (baseline) for (const k of list) { const prev = baseline[k.characterID]; if (prev != null && k.kills > prev) ups.add(k.characterID) }
           setUpIds(ups)
-          const next: Record<string, number> = {}
-          for (const k of list) next[k.characterID] = k.kills
-          localStorage.setItem(SNAP_KEY, JSON.stringify(next))
+          if (!fresh) {  // nieuw venster → baseline vastleggen
+            const kills: Record<string, number> = {}
+            for (const k of list) kills[k.characterID] = k.kills
+            localStorage.setItem(SNAP_KEY, JSON.stringify({ ts: now, kills }))
+          }
         } catch { /* ignore */ }
         setKillers(list)
       })
