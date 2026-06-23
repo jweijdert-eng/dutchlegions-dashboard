@@ -184,6 +184,16 @@
       if(!r.ok)throw new Error('Token-uitwisseling mislukt ('+r.status+')'); const d=await r.json(); const p=JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); const sub=String(p.sub); const cid=parseInt(sub.includes(':')?sub.split(':').pop():sub,10);
       return {accessToken:d.access_token,refreshToken:d.refresh_token,expiresAt:Date.now()+d.expires_in*1000,characterId:cid,characterName:p.name}; }
 
+    // EVE-token vernieuwen via de refresh_token (PKCE: client_id in de body, geen secret).
+    async function refresh(t){
+      const r=await fetch('https://login.eveonline.com/v2/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:t.refreshToken,client_id:CLIENT_ID})});
+      if(!r.ok)throw new Error('Token verversen mislukt ('+r.status+')');
+      const d=await r.json(); const p=JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); const sub=String(p.sub); const cid=parseInt(sub.includes(':')?sub.split(':').pop():sub,10);
+      const nt={accessToken:d.access_token,refreshToken:d.refresh_token||t.refreshToken,expiresAt:Date.now()+d.expires_in*1000,characterId:cid,characterName:p.name};
+      try{ localStorage.setItem(STORE_KEY,JSON.stringify(nt)); }catch{}
+      return nt;
+    }
+
     // ── Login-scherm ────────────────────────────────────────────────────────────
     function renderLogin(err){
       root.innerHTML='<div class="center"><div class="card">'+
@@ -496,7 +506,10 @@
       document.getElementById('refresh').onclick=()=>{ _enemyCache=null; renderAdmin(t); };
       if(isOwner) document.getElementById('manage').onclick=()=>manageRecruiters(t);
       const list=document.getElementById('list'); let rows=[];
-      try { const r=await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)); if(!r.ok)throw new Error(r.status===403?'Geen toegang':('HTTP '+r.status)); rows=await r.json(); }
+      try {
+        let r=await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken));
+        if(r.status===403 && t.refreshToken){ try{ Object.assign(t, await refresh(t)); r=await fetch(API+'/recruit_list.php?token='+encodeURIComponent(t.accessToken)); }catch{} }
+        if(!r.ok)throw new Error(r.status===403?'Geen toegang (log opnieuw in)':('HTTP '+r.status)); rows=await r.json(); }
       catch(e){ list.innerHTML='<div class="err">Kon aanmeldingen niet laden: '+esc(e.message||'')+'</div>'; return; }
       if(!rows.length){ list.innerHTML='<div class="empty">Nog geen aanmeldingen.</div>'; return; }
       const parsed=rows.map(r=>{ let d={}; try{d=JSON.parse(r.data)||{};}catch{} return {...r,d}; });
@@ -588,11 +601,21 @@
     }
 
     // ── Init ────────────────────────────────────────────────────────────────────
+    // Houd het token vers: ververs zodra het binnen 5 min verloopt, in-place op het
+    // object dat alle calls gebruiken (anders krijg je na ~20 min "Geen toegang").
+    function startSession(t){
+      afterLogin(t);
+      if(t.refreshToken) setInterval(async()=>{ try{ if(t.expiresAt && t.expiresAt > Date.now()+5*60000) return; Object.assign(t, await refresh(t)); }catch{} }, 4*60000);
+    }
     (async ()=>{
       const u=new URLSearchParams(location.search); const code=u.get('code'), state=u.get('state');
-      if(code&&state){ try{ const t=await exchange(code,state); localStorage.setItem(STORE_KEY,JSON.stringify(t)); history.replaceState({},'',REDIRECT_URI); afterLogin(t); }
+      if(code&&state){ try{ const t=await exchange(code,state); localStorage.setItem(STORE_KEY,JSON.stringify(t)); history.replaceState({},'',REDIRECT_URI); startSession(t); }
         catch(e){ history.replaceState({},'',REDIRECT_URI); renderLogin(e.message||'Login mislukt'); } return; }
-      const saved=localStorage.getItem(STORE_KEY); if(saved){ try{ return afterLogin(JSON.parse(saved)); }catch{} }
+      const saved=localStorage.getItem(STORE_KEY);
+      if(saved){ try{ let t=JSON.parse(saved);
+        if(t.refreshToken && (!t.expiresAt || t.expiresAt < Date.now()+60000)){ t=await refresh(t); }
+        return startSession(t);
+      }catch{ try{localStorage.removeItem(STORE_KEY);}catch{} } }
       renderLogin();
     })();
   </script>
