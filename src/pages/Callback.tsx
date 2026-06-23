@@ -59,11 +59,12 @@ export default function Callback() {
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', background: '#05050e', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'fixed', inset: 0, background: '#05050e', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.4) saturate(1.1)' }} />
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, transparent 35%, rgba(5,5,14,0.88) 100%)' }} />
         <div style={{
-          position: 'relative', zIndex: 10, width: '100%', maxWidth: 430, textAlign: 'center',
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 10, width: 'calc(100% - 3rem)', maxWidth: 430, textAlign: 'center', boxSizing: 'border-box',
           background: 'linear-gradient(160deg, rgba(11,11,26,0.95) 0%, rgba(5,5,14,0.97) 100%)',
           border: '1px solid rgba(224,85,85,0.35)', borderRadius: 14, padding: '2.4rem 2rem',
           boxShadow: '0 10px 60px rgba(0,0,0,0.8), 0 0 50px rgba(224,85,85,0.07), inset 0 1px 0 rgba(255,255,255,0.05)',
