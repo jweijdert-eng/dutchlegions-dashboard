@@ -9,6 +9,34 @@ cors();
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('X-LiteSpeed-Cache-Control: no-cache');
 
+// Character-modus (recruiting-vetting): stats + awox-tellen uit de recente kills.
+if (isset($_GET['char'])) {
+    $char = (int)$_GET['char'];
+    if (!$char) { http_response_code(400); echo json_encode(['error' => 'no char']); exit; }
+    $cacheC = sys_get_temp_dir() . "/zkill_char_{$char}.json";
+    if (is_file($cacheC) && filesize($cacheC) > 2 && (time() - filemtime($cacheC)) < 600) {
+        echo file_get_contents($cacheC); exit;
+    }
+    $statsRaw = zfetch("https://zkillboard.com/api/stats/characterID/{$char}/");
+    $killsRaw = zfetch("https://zkillboard.com/api/kills/characterID/{$char}/");
+    $j = $statsRaw ? json_decode($statsRaw, true) : [];
+    $awox = 0;
+    foreach (($killsRaw ? json_decode($killsRaw, true) : []) as $k) {
+        if (!empty($k['zkb']['awox'])) $awox++;
+    }
+    $out = json_encode([
+        'shipsDestroyed' => (int)($j['shipsDestroyed'] ?? 0),
+        'shipsLost'      => (int)($j['shipsLost'] ?? 0),
+        'dangerRatio'    => (int)($j['dangerRatio'] ?? 0),
+        'gangRatio'      => (int)($j['gangRatio'] ?? 0),
+        'soloKills'      => (int)($j['soloKills'] ?? 0),
+        'awox'           => $awox,
+        'hasData'        => $statsRaw ? true : false,
+    ]);
+    if ($statsRaw) @file_put_contents($cacheC, $out);
+    echo $out; exit;
+}
+
 $type = preg_match('/^(corporationID|allianceID)$/', $_GET['type'] ?? '') ? $_GET['type'] : 'corporationID';
 $id   = (int)($_GET['id'] ?? 0);
 if (!$id) { http_response_code(400); echo json_encode(['error' => 'no id']); exit; }

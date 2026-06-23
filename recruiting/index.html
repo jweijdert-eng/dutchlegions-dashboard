@@ -374,6 +374,20 @@
       // Erg lage SP — relatief vers character
       if(d.sp!=null && d.sp<5e6) flags.push({lvl:'info', txt:'Lage skillpoints ('+(d.sp/1e6).toFixed(1)+'M SP) — relatief nieuw character.'});
 
+      // zKillboard-historie (via dashboard-proxy; zKill heeft geen CORS) — awox + PvP-activiteit
+      try {
+        const zk = await fetch('https://dutchlegionsdashboard.eu/api/zkill.php?char='+selfId).then(r=>r.json()).catch(()=>null);
+        if(zk && zk.hasData){
+          if(zk.awox>0) flags.push({lvl:'bad', txt:'<b>Awox</b>: '+zk.awox+'× een eigen corpmate gekilled (zKillboard) — onderzoek waard.'});
+          const tot=(zk.shipsDestroyed||0)+(zk.shipsLost||0);
+          if(tot===0) flags.push({lvl:'info', txt:'Geen PvP-historie op zKillboard.'});
+          else {
+            if(zk.awox===0) flags.push({lvl:'ok', txt:'Geen awox-kills op zKillboard.'});
+            flags.push({lvl:'info', txt:'zKill: <b>'+(zk.shipsDestroyed||0)+'</b> kills / <b>'+(zk.shipsLost||0)+'</b> losses · danger '+(zk.dangerRatio||0)+'% · '+(zk.soloKills||0)+' solo.'});
+          }
+        } else flags.push({lvl:'info', txt:'zKillboard-historie kon niet geladen worden.'});
+      } catch { /* proxy onbereikbaar */ }
+
       const enemy=await fetchEnemySet(adminToken);
       if(!enemy.size){ flags.push({lvl:'info', txt:'Kon DL/Insidious-standings niet laden (geen leesrechten op corp/alliance-contacts?). Standing- en historie-check overgeslagen.'}); return flags; }
       // Werkgevershistorie: zat hij in een vijandige corp/alliance?
