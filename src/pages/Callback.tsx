@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { exchangeCode } from '../auth/sso'
 import { useAuth } from '../auth/AuthContext'
+import GuestChat from '../components/GuestChat'
 
 export default function Callback() {
   const { addToken } = useAuth()
@@ -79,7 +80,11 @@ export default function Callback() {
             display: 'inline-block', background: 'rgba(0,180,216,0.15)', border: '1px solid var(--blue)', color: 'var(--blue)',
             fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.04em', padding: '0.55rem 1.5rem', borderRadius: 8, textDecoration: 'none',
           }}>↻ Probeer opnieuw</a>
+          <div style={{ marginTop: '1.1rem', fontSize: '0.62rem', color: 'var(--text-dim)' }}>
+            Wil je lid worden of heb je een vraag? Gebruik de <span style={{ color: 'var(--blue)' }}>💬 chat</span> rechtsonder.
+          </div>
         </div>
+        <GuestChat />
       </div>
     )
   }
