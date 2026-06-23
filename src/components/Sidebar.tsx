@@ -550,7 +550,8 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const localChatOn = settings.local_chat !== false // default zichtbaar tenzij admin het uitzet
   const isAdminChar = tokens.some(t => t.characterId === 1831618559)
   const myRole = useMyRole()
-  const isAdmin = isAdminChar || myRole === 'admin'   // owner OF rol-admin → ziet alle features
+  // owner OF rol-admin → ziet alle features. In member-preview verbergen we ze (net als de Admin-link).
+  const isAdmin = (isAdminChar || myRole === 'admin') && !previewMode
   const member = useMemberSettings()
   const [layout, setLayout] = useState<LayoutEntry[]>(loadLayout)
   const applyLayout = (l: LayoutEntry[]) => { setLayout(l); saveLayout(l) }
