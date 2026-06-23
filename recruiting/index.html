@@ -110,11 +110,19 @@
     .racts button { border:1px solid var(--border); background:transparent; border-radius:5px; font-size:.62rem; font-weight:600; padding:.2rem .5rem; cursor:pointer; color:var(--text-dim); }
     .racts button:hover { border-color:currentColor; }
     .racts .a-acc:hover { color:var(--green); } .racts .a-rej:hover { color:var(--red); } .racts .a-del:hover { color:var(--red); }
-    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:100; }
-    .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.2rem; width:min(460px,92vw); max-height:84vh; overflow:auto; }
-    .modal h3 { margin:0 0 .9rem; font-size:1.05rem; }
-    .arow { display:flex; gap:.5rem; align-items:center; justify-content:space-between; padding:.45rem .1rem; border-bottom:1px solid rgba(255,255,255,.05); font-size:.8rem; }
-    .arow:last-child { border-bottom:none; } .arow img { width:24px; height:24px; border-radius:50%; vertical-align:middle; margin-right:.45rem; }
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:center; justify-content:center; z-index:100; backdrop-filter:blur(4px); }
+    .modal { background:linear-gradient(160deg,rgba(17,17,34,.98),rgba(8,8,20,.99)); border:1px solid var(--border); border-radius:14px; padding:1.3rem; width:min(480px,92vw); max-height:84vh; overflow:auto; box-shadow:0 20px 70px rgba(0,0,0,.7); }
+    .modal h3 { margin:0 0 .25rem; font-size:1.1rem; display:flex; align-items:center; gap:.5rem; }
+    .modal .msub { font-size:.7rem; color:var(--text-dim); margin-bottom:1rem; line-height:1.5; }
+    .arow { display:flex; gap:.6rem; align-items:center; justify-content:space-between; padding:.5rem .65rem; border-radius:8px; font-size:.82rem; margin-bottom:.35rem; background:rgba(255,255,255,.03); border:1px solid var(--border); transition:background .12s; }
+    .arow:hover { background:rgba(255,255,255,.06); }
+    .arow .who { display:flex; align-items:center; gap:.55rem; min-width:0; }
+    .arow img { width:34px; height:34px; border-radius:50%; flex-shrink:0; }
+    .arow .nm2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rbadge { font-size:.55rem; font-weight:800; letter-spacing:.07em; text-transform:uppercase; padding:.14rem .4rem; border-radius:4px; white-space:nowrap; flex-shrink:0; }
+    .rrm { background:transparent; border:1px solid rgba(224,85,85,.4); color:var(--red); border-radius:6px; padding:.28rem .6rem; font-size:.68rem; font-weight:600; cursor:pointer; flex-shrink:0; transition:background .12s; }
+    .rrm:hover { background:rgba(224,85,85,.14); }
+    .radd-btn { background:linear-gradient(135deg,rgba(0,180,216,.9),rgba(0,140,180,.9)); border:1px solid rgba(0,180,216,.6); color:#021016; border-radius:6px; padding:.45rem .9rem; font-size:.74rem; font-weight:700; cursor:pointer; white-space:nowrap; }
     @media (max-width:640px) { .side { width:64px; } .side-h .nm,.side-h .org,.ni .lbl,.ni .ct { display:none; } }
   </style>
 </head>
@@ -548,19 +556,20 @@
     function manageRecruiters(t){
       const bg=document.createElement('div'); bg.className='modal-bg';
       bg.innerHTML='<div class="modal"><h3>👥 Recruiters beheren</h3>'+
-        '<div class="atools" style="margin-bottom:.5rem"><input id="rname" placeholder="Character-naam…"><button class="btn" id="radd">Toevoegen</button></div>'+
-        '<div id="amsg" style="font-size:.72rem;color:var(--text-dim);min-height:1rem;margin-bottom:.5rem"></div>'+
+        '<div class="msub">Geef vertrouwde leden toegang tot de aanmeldingen. De eigenaar staat vast en kan niet verwijderd worden.</div>'+
+        '<div class="atools" style="margin-bottom:.5rem"><input id="rname" placeholder="Character-naam toevoegen…"><button class="radd-btn" id="radd">＋ Toevoegen</button></div>'+
+        '<div id="amsg" style="font-size:.72rem;color:var(--text-dim);min-height:1rem;margin-bottom:.6rem"></div>'+
         '<div id="alist"><div class="spinner"></div></div>'+
-        '<div style="text-align:right;margin-top:1rem"><button class="btn" id="aclose">Sluiten</button></div></div>';
+        '<div style="text-align:right;margin-top:1.1rem"><button class="btn" id="aclose">Sluiten</button></div></div>';
       document.body.appendChild(bg);
       const close=()=>bg.remove(); bg.onclick=e=>{ if(e.target===bg)close(); }; bg.querySelector('#aclose').onclick=close;
       const msg=bg.querySelector('#amsg'), nameInp=bg.querySelector('#rname');
       async function load(){ const lst=bg.querySelector('#alist'); lst.innerHTML='<div class="spinner"></div>';
         let data; try{ const r=await fetch(API+'/recruit_admins.php?token='+encodeURIComponent(t.accessToken)); if(!r.ok)throw 0; data=await r.json(); }catch{ lst.innerHTML='<div class="err">Kon recruiters niet laden.</div>'; return; }
         const admins=data.admins||[];
-        let h='<div class="arow"><span><img src="https://images.evetech.net/characters/'+data.owner_id+'/portrait?size=32">Eigenaar (jij)</span><span style="color:var(--text-dim);font-size:.7rem">vast</span></div>';
-        h+=admins.map(a=>'<div class="arow"><span><img src="https://images.evetech.net/characters/'+a.character_id+'/portrait?size=32">'+esc(a.name||('#'+a.character_id))+'</span><button class="btn" data-rm="'+a.character_id+'">Verwijderen</button></div>').join('');
-        if(!admins.length) h+='<div class="empty">Nog geen extra recruiters.</div>';
+        let h='<div class="arow"><span class="who"><img src="https://images.evetech.net/characters/'+data.owner_id+'/portrait?size=64"><span class="nm2">Eigenaar (jij)</span></span><span class="rbadge" style="color:var(--gold);border:1px solid var(--gold);background:rgba(240,192,64,.1)">👑 owner</span></div>';
+        h+=admins.map(a=>'<div class="arow"><span class="who"><img src="https://images.evetech.net/characters/'+a.character_id+'/portrait?size=64"><span class="nm2">'+esc(a.name||('#'+a.character_id))+'</span><span class="rbadge" style="color:var(--blue);border:1px solid var(--blue);background:rgba(0,180,216,.1)">recruiter</span></span><button class="rrm" data-rm="'+a.character_id+'">✕ verwijderen</button></div>').join('');
+        if(!admins.length) h+='<div class="empty" style="padding:1rem;text-align:center;color:var(--text-dim);font-size:.74rem">Nog geen extra recruiters. Voeg er een toe op naam.</div>';
         lst.innerHTML=h;
         lst.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{ await fetch(API+'/recruit_admins.php?token='+encodeURIComponent(t.accessToken)+'&remove='+b.dataset.rm).catch(()=>{}); load(); });
       }
