@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { useAuth } from '../auth/AuthContext'
 
@@ -30,6 +30,7 @@ export default function Ansiblex() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'err'>('idle')
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetch('/api/ansiblex.php', { cache: 'no-store' }).then(r => r.json())
@@ -61,6 +62,14 @@ export default function Ansiblex() {
       .catch(() => {})
   }
 
+  // .txt-bestand inlezen → in het tekstvak (daarna handmatig Opslaan).
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    e.target.value = ''                 // zelfde bestand later opnieuw kunnen kiezen
+    if (!f) return
+    f.text().then(t => setText(t)).catch(() => {})
+  }
+
   return (
     <Layout header={<PageHeader title="Ansiblex-lijst" sub={`${pairs.length} verbindingen · gedeeld met de corp`} />}>
       <div style={{ maxWidth: 560 }}>
@@ -78,6 +87,12 @@ export default function Ansiblex() {
               background: copied ? 'rgba(62,207,110,0.12)' : 'transparent', border: `1px solid ${copied ? 'var(--green)' : 'var(--border)'}`, color: copied ? 'var(--green)' : 'var(--text)' }}>
             {copied ? '✓ Gekopieerd' : '📋 Kopiëren'}
           </button>
+          <button onClick={() => fileRef.current?.click()} title="Lees een .txt-bestand in"
+            style={{ padding: '0.4rem 1rem', borderRadius: 4, fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--border)', color: 'var(--text)' }}>
+            📂 Importeren
+          </button>
+          <input ref={fileRef} type="file" accept=".txt,text/plain" onChange={onFile} style={{ display: 'none' }} />
           {status === 'err' && <span style={{ fontSize: '0.68rem', color: 'var(--red)' }}>Opslaan mislukt — ben je ingelogd?</span>}
           {dirty && status !== 'err' && <span style={{ fontSize: '0.66rem', color: 'var(--text-dim)' }}>niet-opgeslagen wijzigingen</span>}
         </div>
