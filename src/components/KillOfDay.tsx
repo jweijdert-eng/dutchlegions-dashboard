@@ -34,12 +34,14 @@ function TrophyIcon({ size = 10 }: { size?: number }) {
   )
 }
 
-// Grootste corp-kill (ISK) van de laatste 24 uur — compacte banner bovenaan het Dashboard.
+// Grootste corp-kills van de laatste 24 uur — roteert door de top 6 (banner bovenaan het Dashboard).
 export default function KillOfDay() {
-  const [kod, setKod] = useState<Kod | null>(null)
+  const [kills, setKills] = useState<Kod[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
   const [systems, setSystems] = useState<Record<string, [string, number, number]>>({})
   const [loaded, setLoaded] = useState(false)
+  const [idx, setIdx] = useState(0)
+  const [paused, setPaused] = useState(false)
 
   useEffect(() => { fetch('/systems.json').then(r => r.json()).then(setSystems).catch(() => {}) }, [])
 
@@ -57,29 +59,43 @@ export default function KillOfDay() {
           return km ? { km, value: k.zkb!.totalValue ?? 0 } : null
         }))
         if (cancelled) return
-        const inDay = detailed.filter((d): d is Kod => !!d && +new Date(d.km.killmail_time) >= dayAgo)
-        const best = inDay.reduce<Kod | null>((b, d) => (!b || d.value > b.value ? d : b), null)
-        if (best) {
-          const ids = new Set<number>([best.km.victim.ship_type_id])
-          if (best.km.victim.character_id) ids.add(best.km.victim.character_id)
-          if (best.km.victim.corporation_id) ids.add(best.km.victim.corporation_id)
-          const fb = best.km.attackers.find(a => a.final_blow)
-          if (fb?.character_id) ids.add(fb.character_id)
+        // Kills van de laatste 24u, grootste eerst → top 6 om doorheen te roteren.
+        const top = detailed
+          .filter((d): d is Kod => !!d && +new Date(d.km.killmail_time) >= dayAgo)
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 6)
+        if (top.length) {
+          const ids = new Set<number>()
+          for (const d of top) {
+            ids.add(d.km.victim.ship_type_id)
+            if (d.km.victim.character_id) ids.add(d.km.victim.character_id)
+            if (d.km.victim.corporation_id) ids.add(d.km.victim.corporation_id)
+            const fb = d.km.attackers.find(a => a.final_blow)
+            if (fb?.character_id) ids.add(fb.character_id)
+          }
           const nm = await resolveNames([...ids]).catch(() => new Map<number, string>())
           if (!cancelled) setNames(nm)
         }
-        if (!cancelled) { setKod(best); setLoaded(true) }
+        if (!cancelled) { setKills(top); setLoaded(true) }
       })
       .catch(() => { if (!cancelled) setLoaded(true) })
     return () => { cancelled = true }
   }, [])
+
+  // Roteer elke 6s door de kills van vandaag; pauzeer bij hover.
+  useEffect(() => {
+    if (kills.length <= 1 || paused) return
+    const t = setInterval(() => setIdx(i => (i + 1) % kills.length), 6000)
+    return () => clearInterval(t)
+  }, [kills.length, paused])
+  useEffect(() => { if (idx >= kills.length) setIdx(0) }, [kills.length, idx])
 
   if (!loaded) return null
   const nameOf = (id?: number) => (id ? names.get(id) ?? `#${id}` : '—')
   const sysName = (id?: number) => (id ? systems[String(id)]?.[0] ?? `Systeem ${id}` : '—')
 
   // Geen kill in 24u → slanke gedempte strook (blijft vindbaar, weinig ruis).
-  if (!kod) {
+  if (kills.length === 0) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', marginBottom: '0.75rem',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, fontSize: '0.72rem', color: 'var(--text-dim)' }}>
@@ -90,45 +106,61 @@ export default function KillOfDay() {
     )
   }
 
+  const kod = kills[Math.min(idx, kills.length - 1)]
   const v = kod.km.victim
   const fb = kod.km.attackers.find(a => a.final_blow)
+  const multi = kills.length > 1
   return (
-    <a href={`https://zkillboard.com/kill/${kod.km.killmail_id}/`} target="_blank" rel="noreferrer"
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.65rem 1rem', marginBottom: '0.75rem',
-        background: 'radial-gradient(120% 160% at 8% 0%, #1d1733 0%, #0a0a22 52%, #06060f 100%)',
-        border: '1px solid rgba(240,192,64,0.22)', borderRadius: 6, overflow: 'hidden', textDecoration: 'none', color: 'var(--text)' }}>
-      {/* subtiele gouden gloed rechts — sluit aan bij de hero-stijl */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: 'radial-gradient(55% 140% at 93% 50%, rgba(240,192,64,0.12) 0%, transparent 60%)' }} />
-      <EveImage category="types" id={v.ship_type_id} variation="icon" size={64} px={46} style={{ position: 'relative', flexShrink: 0, borderRadius: 4 }} />
-      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.5rem', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--gold)',
-          background: 'rgba(240,192,64,0.12)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.14rem 0.45rem', marginBottom: '0.28rem' }}>
-          <TrophyIcon size={10} />
-          KILL VAN DE DAG
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', fontWeight: 700, minWidth: 0 }}>
-          <span style={{ flexShrink: 0 }}>{nameOf(v.ship_type_id)}</span>
-          <span style={{ color: 'var(--text-dim)', fontWeight: 400, flexShrink: 0 }}>·</span>
-          {v.character_id && <EveImage category="characters" id={v.character_id} variation="portrait" size={64} px={24} style={{ borderRadius: '50%', flexShrink: 0 }} />}
-          <span style={{ color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(v.character_id)}</span>
+    <div style={{ position: 'relative', marginBottom: '0.75rem' }}
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <a href={`https://zkillboard.com/kill/${kod.km.killmail_id}/`} target="_blank" rel="noreferrer"
+        style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.65rem 1rem',
+          background: 'radial-gradient(120% 160% at 8% 0%, #1d1733 0%, #0a0a22 52%, #06060f 100%)',
+          border: '1px solid rgba(240,192,64,0.22)', borderRadius: 6, overflow: 'hidden', textDecoration: 'none', color: 'var(--text)' }}>
+        {/* subtiele gouden gloed rechts — sluit aan bij de hero-stijl */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: 'radial-gradient(55% 140% at 93% 50%, rgba(240,192,64,0.12) 0%, transparent 60%)' }} />
+        <EveImage category="types" id={v.ship_type_id} variation="icon" size={64} px={46} style={{ position: 'relative', flexShrink: 0, borderRadius: 4 }} />
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.5rem', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--gold)',
+            background: 'rgba(240,192,64,0.12)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.14rem 0.45rem', marginBottom: '0.28rem' }}>
+            <TrophyIcon size={10} />
+            {multi ? 'TOP KILLS VANDAAG' : 'KILL VAN DE DAG'}
+            {multi && <span style={{ opacity: 0.8 }}>· {idx + 1}/{kills.length}</span>}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', fontWeight: 700, minWidth: 0 }}>
+            <span style={{ flexShrink: 0 }}>{nameOf(v.ship_type_id)}</span>
+            <span style={{ color: 'var(--text-dim)', fontWeight: 400, flexShrink: 0 }}>·</span>
+            {v.character_id && <EveImage category="characters" id={v.character_id} variation="portrait" size={64} px={24} style={{ borderRadius: '50%', flexShrink: 0 }} />}
+            <span style={{ color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(v.character_id)}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.22rem', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{nameOf(v.corporation_id)}</span>
+            <span style={{ flexShrink: 0 }}>·</span>
+            <span style={{ flexShrink: 0 }}><SolarSystem name={sysName(kod.km.solar_system_id)} systemId={kod.km.solar_system_id} fontSize="0.7rem" /></span>
+            <span style={{ flexShrink: 0 }}>· {ago(kod.km.killmail_time)}</span>
+            {fb?.character_id && <>
+              <span style={{ flexShrink: 0 }}>· final blow:</span>
+              <EveImage category="characters" id={fb.character_id} variation="portrait" size={64} px={20} style={{ borderRadius: '50%', flexShrink: 0 }} />
+              <span style={{ color: 'var(--green)', flexShrink: 0, fontWeight: 600 }}>{nameOf(fb.character_id)}</span>
+            </>}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.22rem', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{nameOf(v.corporation_id)}</span>
-          <span style={{ flexShrink: 0 }}>·</span>
-          <span style={{ flexShrink: 0 }}><SolarSystem name={sysName(kod.km.solar_system_id)} systemId={kod.km.solar_system_id} fontSize="0.7rem" /></span>
-          <span style={{ flexShrink: 0 }}>· {ago(kod.km.killmail_time)}</span>
-          {fb?.character_id && <>
-            <span style={{ flexShrink: 0 }}>· final blow:</span>
-            <EveImage category="characters" id={fb.character_id} variation="portrait" size={64} px={20} style={{ borderRadius: '50%', flexShrink: 0 }} />
-            <span style={{ color: 'var(--green)', flexShrink: 0, fontWeight: 600 }}>{nameOf(fb.character_id)}</span>
-          </>}
+        <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--gold)', lineHeight: 1 }}>{fmtISK(kod.value)}</div>
+          <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginTop: '0.2rem' }}>ISK</div>
         </div>
-      </div>
-      <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0 }}>
-        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--gold)', lineHeight: 1 }}>{fmtISK(kod.value)}</div>
-        <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginTop: '0.2rem' }}>ISK</div>
-      </div>
-    </a>
+      </a>
+      {/* rotatie-bolletjes (klikbaar) */}
+      {multi && (
+        <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5 }}>
+          {kills.map((_, i) => (
+            <button key={i} aria-label={`kill ${i + 1}`} title={`kill ${i + 1}`} onClick={() => setIdx(i)}
+              style={{ width: 7, height: 7, borderRadius: '50%', padding: 0, cursor: 'pointer', border: 'none',
+                background: i === idx ? 'var(--gold)' : 'rgba(240,192,64,0.35)', transition: 'background .2s' }} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
