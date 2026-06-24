@@ -19,6 +19,20 @@ function ago(iso: string) {
   return `${Math.round(h)} uur geleden`
 }
 
+// Trofee-icoon (SVG i.p.v. emoji → consistent op elk systeem, erft de tekstkleur).
+function TrophyIcon({ size = 10 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+      <path d="M4 22h16" />
+      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+    </svg>
+  )
+}
+
 // Grootste corp-kill (ISK) van de laatste 24 uur — compacte banner bovenaan het Dashboard.
 export default function KillOfDay() {
   const [kod, setKod] = useState<Kod | null>(null)
@@ -68,7 +82,8 @@ export default function KillOfDay() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', marginBottom: '0.75rem',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-        🏆 <span style={{ fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text)' }}>Kill van de dag</span>
+        <span style={{ color: 'var(--gold)', display: 'inline-flex' }}><TrophyIcon size={13} /></span>
+        <span style={{ fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text)' }}>Kill van de dag</span>
         <span>— geen corp-kill in de laatste 24 uur</span>
       </div>
     )
@@ -86,16 +101,24 @@ export default function KillOfDay() {
         background: 'radial-gradient(55% 140% at 93% 50%, rgba(240,192,64,0.12) 0%, transparent 60%)' }} />
       <EveImage category="types" id={v.ship_type_id} variation="icon" size={64} px={46} style={{ position: 'relative', flexShrink: 0, borderRadius: 4 }} />
       <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'inline-block', fontSize: '0.5rem', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--gold)',
-          background: 'rgba(240,192,64,0.12)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.12rem 0.42rem', marginBottom: '0.28rem' }}>
-          🏆 KILL VAN DE DAG
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.5rem', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--gold)',
+          background: 'rgba(240,192,64,0.12)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.14rem 0.45rem', marginBottom: '0.28rem' }}>
+          <TrophyIcon size={10} />
+          KILL VAN DE DAG
         </span>
-        <div style={{ fontSize: '0.92rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {nameOf(v.ship_type_id)} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>· {nameOf(v.character_id)}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', fontWeight: 700, minWidth: 0 }}>
+          <span style={{ flexShrink: 0 }}>{nameOf(v.ship_type_id)}</span>
+          <span style={{ color: 'var(--text-dim)', fontWeight: 400, flexShrink: 0 }}>·</span>
+          {v.character_id && <EveImage category="characters" id={v.character_id} variation="portrait" size={32} px={18} style={{ borderRadius: '50%', flexShrink: 0 }} />}
+          <span style={{ color: 'var(--text-dim)', fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(v.character_id)}</span>
         </div>
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.12rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {nameOf(v.corporation_id)} · {sysName(kod.km.solar_system_id)} · {ago(kod.km.killmail_time)}
-          {fb?.character_id && <> · final blow: {nameOf(fb.character_id)}</>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.18rem', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(v.corporation_id)} · {sysName(kod.km.solar_system_id)} · {ago(kod.km.killmail_time)}</span>
+          {fb?.character_id && <>
+            <span style={{ flexShrink: 0 }}>· final blow:</span>
+            <EveImage category="characters" id={fb.character_id} variation="portrait" size={32} px={15} style={{ borderRadius: '50%', flexShrink: 0 }} />
+            <span style={{ flexShrink: 0 }}>{nameOf(fb.character_id)}</span>
+          </>}
         </div>
       </div>
       <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0 }}>
