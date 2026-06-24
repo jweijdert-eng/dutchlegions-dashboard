@@ -219,6 +219,7 @@ function AppRoutes() {
       <Route path="/character" element={<ProtectedRoute><Character /></ProtectedRoute>} />
       <Route path="/wallet"    element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
       <Route path="/kills"     element={<ProtectedRoute><Kills /></ProtectedRoute>} />
+      <Route path="/corp-killboard" element={<ProtectedRoute><Kills /></ProtectedRoute>} />
       <Route path="/market"    element={<ProtectedRoute><Market /></ProtectedRoute>} />
       <Route path="/industry"  element={<ProtectedRoute><Industry /></ProtectedRoute>} />
       <Route path="/mining"    element={<ProtectedRoute><Mining /></ProtectedRoute>} />

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { getKillmailDetail, resolveNames, getCharacterInfo, getCorporation } from '../api/esi'
 import { getKills, getLosses, getCorpKills, getCorpLosses } from '../api/zkillboard'
@@ -113,7 +113,11 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 export default function Kills() {
   const { activeTokens: tokens, mainCharId } = useAuth()
   const [searchParams] = useSearchParams()
-  const scope: 'me' | 'corp' = searchParams.get('board') === 'corp' ? 'corp' : 'me'
+  const location = useLocation()
+  const navigate = useNavigate()
+  // Corp-killboard: eigen route /corp-killboard (of ?board=corp voor oude links).
+  const scope: 'me' | 'corp' =
+    (location.pathname === '/corp-killboard' || searchParams.get('board') === 'corp') ? 'corp' : 'me'
   const [view, setView]     = useState<'list' | 'analyse'>('list')   // beide killboards standaard als lijst
   const [corp, setCorp]     = useState<{ id: number; name: string } | null>(null)
   const [entries, setEntries]     = useState<KillEntry[]>([])
@@ -274,6 +278,10 @@ export default function Kills() {
         sub={loading ? 'Laden...' : `${kills.length}K · ${losses.length}L · ${eff}% ISK efficiëntie`}
         right={
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden', marginRight: '0.2rem' }}>
+              <button onClick={() => navigate('/kills')}          style={{ ...btnStyle(scope === 'me',   'var(--blue)'), border: 'none', borderRadius: 0 }}>Mijn</button>
+              <button onClick={() => navigate('/corp-killboard')} style={{ ...btnStyle(scope === 'corp', 'var(--blue)'), border: 'none', borderRadius: 0 }}>Corp</button>
+            </div>
             <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 2, overflow: 'hidden', marginRight: '0.2rem' }}>
               <button onClick={() => setView('analyse')} style={{ ...btnStyle(view === 'analyse', 'var(--gold)'), border: 'none', borderRadius: 0 }}>Analyse</button>
               <button onClick={() => setView('list')}    style={{ ...btnStyle(view === 'list'),    border: 'none', borderRadius: 0 }}>Lijst</button>
