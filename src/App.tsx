@@ -21,6 +21,7 @@ const Kills        = lz(() => import('./pages/Kills'))
 const CorpKillboard = lz(() => import('./pages/CorpKillboard'))
 const EnemyDossier  = lz(() => import('./pages/EnemyDossier'))
 const JumpBridges   = lz(() => import('./pages/JumpBridges'))
+const Ansiblex      = lz(() => import('./pages/Ansiblex'))
 const Industry     = lz(() => import('./pages/Industry'))
 const Mining       = lz(() => import('./pages/Mining'))
 const Planets      = lz(() => import('./pages/Planets'))
@@ -225,6 +226,7 @@ function AppRoutes() {
       <Route path="/corp-killboard" element={<ProtectedRoute><CorpKillboard /></ProtectedRoute>} />
       <Route path="/enemy-dossier" element={<ProtectedRoute><EnemyDossier /></ProtectedRoute>} />
       <Route path="/jumpbridges" element={<ProtectedRoute><JumpBridges /></ProtectedRoute>} />
+      <Route path="/ansiblex" element={<ProtectedRoute><Ansiblex /></ProtectedRoute>} />
       <Route path="/market"    element={<ProtectedRoute><Market /></ProtectedRoute>} />
       <Route path="/industry"  element={<ProtectedRoute><Industry /></ProtectedRoute>} />
       <Route path="/mining"    element={<ProtectedRoute><Mining /></ProtectedRoute>} />
