@@ -9,13 +9,20 @@ header('Cache-Control: no-store');
 $pdo = getDB();
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $row = $pdo->query("SELECT value FROM settings WHERE `key` = 'jump_bridges'")->fetch(PDO::FETCH_ASSOC);
+    $rows = [];
+    foreach ($pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('jump_bridges','jump_bridges_updated','jump_bridges_updatedby')")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $rows[$r['key']] = $r['value'];
+    }
     $bridges = [];
-    if ($row && !empty($row['value'])) {
-        $d = json_decode($row['value'], true);
+    if (!empty($rows['jump_bridges'])) {
+        $d = json_decode($rows['jump_bridges'], true);
         if (is_array($d)) $bridges = $d;
     }
-    echo json_encode(['bridges' => $bridges]);
+    echo json_encode([
+        'bridges'   => $bridges,
+        'updatedAt' => isset($rows['jump_bridges_updated']) ? (int)$rows['jump_bridges_updated'] : null,
+        'updatedBy' => $rows['jump_bridges_updatedby'] ?? null,
+    ]);
     exit;
 }
 
@@ -38,10 +45,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $bridges[] = [$a, $c];
         if (count($bridges) >= 200) break;
     }
+    $stmt = $pdo->prepare("INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?");
     $json = json_encode($bridges);
-    $stmt = $pdo->prepare("INSERT INTO settings (`key`, value) VALUES ('jump_bridges', ?) ON DUPLICATE KEY UPDATE value = ?");
-    $stmt->execute([$json, $json]);
-    echo json_encode(['ok' => true, 'count' => count($bridges)]);
+    $stmt->execute(['jump_bridges', $json, $json]);
+    $now = (string)time();
+    $stmt->execute(['jump_bridges_updated', $now, $now]);
+    $by = mb_substr(trim((string)($data['updatedBy'] ?? '')), 0, 64);
+    $stmt->execute(['jump_bridges_updatedby', $by, $by]);
+    echo json_encode(['ok' => true, 'count' => count($bridges), 'updatedAt' => (int)$now, 'updatedBy' => $by]);
     exit;
 }
 

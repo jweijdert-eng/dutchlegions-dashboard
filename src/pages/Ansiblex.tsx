@@ -21,22 +21,28 @@ function parseLines(text: string): [string, string][] {
   return out
 }
 const toText = (pairs: [string, string][]) => pairs.map(([a, b]) => `${a} » ${b}`).join('\n')
+const fmtDate = (unix: number) =>
+  new Date(unix * 1000).toLocaleString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 export default function Ansiblex() {
   const { activeTokens, mainCharId } = useAuth()
-  const token = (activeTokens.find(t => t.characterId === mainCharId) ?? activeTokens[0])?.accessToken
+  const me = activeTokens.find(t => t.characterId === mainCharId) ?? activeTokens[0]
+  const token = me?.accessToken
   const [text, setText]     = useState('')
   const [saved, setSaved]   = useState('')   // laatst opgeslagen versie (voor 'gewijzigd?')
   const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'err'>('idle')
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  const [updatedBy, setUpdatedBy] = useState<string>('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetch('/api/ansiblex.php', { cache: 'no-store' }).then(r => r.json())
-      .then((d: { bridges?: [string, string][] }) => {
+      .then((d: { bridges?: [string, string][]; updatedAt?: number | null; updatedBy?: string }) => {
         const t = toText(Array.isArray(d?.bridges) ? d.bridges : [])
         setText(t); setSaved(t)
+        setUpdatedAt(d?.updatedAt ?? null); setUpdatedBy(d?.updatedBy ?? '')
       }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
@@ -47,11 +53,13 @@ export default function Ansiblex() {
     if (!token) { setStatus('err'); return }
     setStatus('saving')
     fetch('/api/ansiblex.php', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, bridges: pairs }) })
+      body: JSON.stringify({ token, bridges: pairs, updatedBy: me?.characterName ?? '' }) })
       .then(r => r.json())
-      .then(() => {
+      .then((d: { updatedAt?: number; updatedBy?: string }) => {
         const t = toText(pairs)            // genormaliseerd + gededupet
         setText(t); setSaved(t); setStatus('done'); setTimeout(() => setStatus('idle'), 1800)
+        if (d?.updatedAt) setUpdatedAt(d.updatedAt)
+        setUpdatedBy(d?.updatedBy ?? me?.characterName ?? '')
       })
       .catch(() => setStatus('err'))
   }
@@ -96,6 +104,11 @@ export default function Ansiblex() {
           {status === 'err' && <span style={{ fontSize: '0.68rem', color: 'var(--red)' }}>Opslaan mislukt — ben je ingelogd?</span>}
           {dirty && status !== 'err' && <span style={{ fontSize: '0.66rem', color: 'var(--text-dim)' }}>niet-opgeslagen wijzigingen</span>}
         </div>
+        {updatedAt && (
+          <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.55rem' }}>
+            Laatst bijgewerkt: {fmtDate(updatedAt)}{updatedBy ? ` door ${updatedBy}` : ''}
+          </div>
+        )}
       </div>
     </Layout>
   )
