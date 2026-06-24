@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Genereert de gebundelde SDE-data in public/ uit de EVE Ref reference-data export.
+"""Genereert de gebundelde SDE-data in public/ uit twee bronnen:
+  - EVE Ref reference-data (item-recepten): blueprints, reactions, type-names, schematics
+  - CCP's officiële Tranquility static-data (JSONL-zip): álle universe-/item-tabellen
+    (systems, regions, stations, jumps, type-info, groups, categories, reprocess, …)
+Geen third-party Fuzzwork-SQLite meer; alle bundels zijn 1-op-1 geverifieerd identiek.
 Draai: python tools/build-sde.py  (daarna committen + pushen)
 
 Output (compact, meegedeployd met de site → geen lokale server nodig):
@@ -8,14 +12,14 @@ Output (compact, meegedeployd met de site → geen lokale server nodig):
   public/type-names.json  { typeId: "Naam" }                                  (published types, en)
   public/schematics.json  { id: { schematic_name, cycle_time, pins:[{type_id,is_input,quantity}] } } (PI)
 """
-import io, json, tarfile, urllib.request, os, gzip, sqlite3, tempfile, zipfile
+import io, json, tarfile, urllib.request, os, zipfile
 from datetime import datetime, timezone
 
 URL = 'https://data.everef.net/reference-data/reference-data-latest.tar.xz'
 LATEST = 'https://developers.eveonline.com/static-data/tranquility/latest.jsonl'
-FUZZ = 'https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz'
-# Officiële Tranquility static-data (JSONL-zip) — bevat het echte position2D-veld
-# dat de in-game New Eden-kaart gebruikt (2D 'schematic' layout, niet de ruwe 3D-projectie).
+# Officiële Tranquility static-data (JSONL-zip). Eén CCP-bron voor álle universe-/
+# item-tabellen (vervangt de third-party Fuzzwork-SQLite) én het position2D-veld dat
+# de in-game New Eden-kaart gebruikt (2D 'schematic' layout, niet de ruwe 3D-projectie).
 SDE_JSONL = 'https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip'
 PUB = os.path.join(os.path.dirname(__file__), '..', 'public')
 
@@ -82,65 +86,96 @@ for sid, s in sch.items():
     out_sch[sid] = {'schematic_name': s['name']['en'], 'cycle_time': s['cycle_time'], 'pins': pins}
 write('schematics.json', out_sch)
 
-# ── Fuzzwork SQLite (klassieke SDE) → systems / stations / type-info / reprocessing ──
-# LET OP: decomprimeer met Python's gzip; git-bash 'gunzip' levert hier een onbruikbaar bestand.
-print('Downloaden Fuzzwork SDE SQLite (~136MB)...')
-gz = urllib.request.urlopen(FUZZ, timeout=600).read()
-db_path = os.path.join(tempfile.gettempdir(), 'fuzzwork-sde.db')
-with open(db_path, 'wb') as f:
-    f.write(gzip.decompress(gz))
-con = sqlite3.connect(db_path)
+# ── Officiële Tranquility static-data (JSONL-zip) → systems / stations / type-info / … ──
+# Eén officiële CCP-bron i.p.v. de third-party Fuzzwork-SQLite. Alle bundels hieronder
+# zijn 1-op-1 geverifieerd identiek aan de oude Fuzzwork-output (incl. de 5210 stations).
+print('Downloaden officiële SDE JSONL-zip (~94MB)...')
+sde_zip = urllib.request.urlopen(SDE_JSONL, timeout=600).read()
+zf = zipfile.ZipFile(io.BytesIO(sde_zip))
 
-# Solar systems: { systemId: [naam, security, regionId] }
-# 4 decimalen → de app rondt zelf naar 1 decimaal (anders dubbel afronden: Jita 0.9459 → 0.95 → 1.0).
-out_sys = {str(sid): [name, round(sec, 4), rid]
-           for sid, name, sec, rid in con.execute(
-               'SELECT solarSystemID, solarSystemName, security, regionID FROM mapSolarSystems')}
+def jrows(name):
+    with zf.open(name) as f:
+        for raw in f:
+            yield json.loads(raw)
+
+def en(o):
+    return o.get('en') if isinstance(o, dict) else o   # SDE-namen zijn {en, de, …}
+
+# Solar systems + 2D-kaartcoördinaten in één pass.
+# security: 4 decimalen → de app rondt zelf naar 1 (anders dubbel afronden: Jita 0.9459 → 1.0).
+# position2D = de in-game 'schematic' 2D-layout; /1e12 afgerond, alleen k-space (id < 31000000),
+# want wormhole/J-space heeft geen zinnige 2D-plek en zou de cluster-vorm vervormen.
+sysname = {}
+out_sys = {}
+out_xy = {}
+for s in jrows('mapSolarSystems.jsonl'):
+    sid = s['_key']
+    nm = en(s['name'])
+    sysname[sid] = nm
+    out_sys[str(sid)] = [nm, round(s['securityStatus'], 4), s['regionID']]
+    if sid < 31000000:
+        p2 = s.get('position2D')
+        if p2:
+            out_xy[str(sid)] = [round(p2['x'] / 1e12), round(p2['y'] / 1e12)]
 write('systems.json', out_sys)
+write('system-coords.json', out_xy)
 
 # Regio's: { regionId: naam }
-out_reg = {str(rid): name for rid, name in con.execute('SELECT regionID, regionName FROM mapRegions')}
-write('regions.json', out_reg)
-
-# Systeem-coördinaten voor de New Eden cluster-kaart: { systemId: [x2d, y2d] }
-# Uit het officiële position2D-veld (Tranquility static-data) → exact dezelfde 2D
-# 'schematic' layout als de in-game star map (position2D.X ~ 3D-X, position2D.Y ~ 3D-Z).
-# /1e12 afgerond. Alleen k-space (id < 31000000); wormhole/J-space heeft geen zinnige
-# 2D-plek en zou de cluster-vorm vervormen.
-print('Downloaden officiële SDE JSONL-zip (~84MB) voor position2D...')
-sde_zip = urllib.request.urlopen(SDE_JSONL, timeout=600).read()
-out_xy = {}
-with zipfile.ZipFile(io.BytesIO(sde_zip)) as z:
-    with z.open('mapSolarSystems.jsonl') as f:
-        for raw in f:
-            s = json.loads(raw)
-            sid = s['_key']
-            if sid >= 31000000:
-                continue
-            p2 = s.get('position2D')
-            if not p2:
-                continue
-            out_xy[str(sid)] = [round(p2['x'] / 1e12), round(p2['y'] / 1e12)]
-write('system-coords.json', out_xy)
+write('regions.json', {str(r['_key']): en(r['name']) for r in jrows('mapRegions.jsonl')})
 
 # Stargate-buren: { systemId: [buurSystemId, ...] } — voor jump-afstand (BFS).
 adj = {}
-for a, b in con.execute('SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps'):
-    adj.setdefault(str(a), []).append(b)
+for sg in jrows('mapStargates.jsonl'):
+    adj.setdefault(str(sg['solarSystemID']), []).append(sg['destination']['solarSystemID'])
 write('system-jumps.json', adj)
 
-# NPC-stations: { stationId: [naam, systemId] }
-# (Productie-capaciteit zit niet in deze SDE-dump; de app checkt de 'services' van
-#  een station live via ESI /universe/stations/{id}/ wanneer een systeem gekozen is.)
-out_sta = {str(sid): [name, sysid]
-           for sid, name, sysid in con.execute(
-               'SELECT stationID, stationName, solarSystemID FROM staStations')}
+# NPC-stations: { stationId: [naam, systemId] }.
+# CCP slaat stationnamen niet meer op → reconstrueren uit celestial (planeet/maan) +
+# eigenaar-corp + station-operatie, exact zoals de in-game/Fuzzwork-naam. De paar
+# 'benoemde' planeten (homeworlds) hebben een eigennaam die niet in de SDE staat → vaste
+# lore-lijst (verandert nooit). (Station-services checkt de app live via ESI.)
+NAMED_PLANETS = {
+    40009253: 'Matigu', 40009255: 'Matias', 40139398: 'Nemantizor', 40139403: 'Oris',
+    40161837: 'Matar', 40161840: 'Vakir', 40161845: 'Kulheim', 40240009: 'Intaki Prime',
+    40314573: 'Caldari Prime', 40329081: 'Kjarval',
+}
+_ROMAN = [(1000, 'M'), (900, 'CM'), (500, 'D'), (400, 'CD'), (100, 'C'), (90, 'XC'),
+          (50, 'L'), (40, 'XL'), (10, 'X'), (9, 'IX'), (5, 'V'), (4, 'IV'), (1, 'I')]
+def roman(n):
+    r = ''
+    for v, sym in _ROMAN:
+        while n >= v:
+            r += sym
+            n -= v
+    return r
+planets = {p['_key']: p for p in jrows('mapPlanets.jsonl')}
+moons = {m['_key']: m for m in jrows('mapMoons.jsonl')}
+corps = {c['_key']: en(c['name']) for c in jrows('npcCorporations.jsonl')}
+ops = {o['_key']: en(o.get('operationName')) for o in jrows('stationOperations.jsonl')}
+def celestial(st):
+    o = st['orbitID']
+    if o in moons:   # maan-station: altijd Arabisch, zonder eigennaam ("Luminaire 7 - Moon 4")
+        m = moons[o]
+        p = planets[m['orbitID']]
+        return f"{sysname[p['solarSystemID']]} {p['celestialIndex']} - Moon {m['orbitIndex']}"
+    if o in planets:  # planeet-station: benoemd → Romeins + eigennaam, anders Arabisch
+        p = planets[o]
+        sn = sysname[p['solarSystemID']]
+        idx = p['celestialIndex']
+        return f"{sn} {roman(idx)} ({NAMED_PLANETS[o]})" if o in NAMED_PLANETS else f"{sn} {idx}"
+    return sysname[st['solarSystemID']]   # zonder planeet/maan (bv. Zarzakh) → systeemnaam
+out_sta = {}
+for st in jrows('npcStations.jsonl'):
+    c = celestial(st)
+    corp = corps.get(st['ownerID'], '')
+    op = ops.get(st['operationID'], '')
+    nm = f"{c} - {corp} {op}".strip() if st.get('useOperationName') else f"{c} - {corp}".strip()
+    out_sta[str(st['_key'])] = [nm, st['solarSystemID']]
 write('stations.json', out_sta)
 
 # Type-info: { typeId: [groupId, volume, portionSize] }  — SP-per-categorie, m³, reprocessing-batch
-out_ti = {str(tid): [gid, vol, portion]
-          for tid, gid, vol, portion in con.execute(
-              'SELECT typeID, groupID, volume, portionSize FROM invTypes')}
+out_ti = {str(t['_key']): [t['groupID'], t.get('volume', 0), t['portionSize']]
+          for t in jrows('types.jsonl')}
 write('type-info.json', out_ti)
 
 # Boosters (combat-drugs): groep 303-producten die een manufacturing-recept hebben.
@@ -149,8 +184,7 @@ booster_ids = sorted({ bp['p'][0] for bp in out_bp.values()
 write('boosters.json', booster_ids)
 
 # Groepen: { groupId: [naam, categoryId] }
-out_grp = {str(gid): [name, cid]
-           for gid, name, cid in con.execute('SELECT groupID, groupName, categoryID FROM invGroups')}
+out_grp = {str(g['_key']): [en(g['name']), g['categoryID']] for g in jrows('groups.jsonl')}
 write('groups.json', out_grp)
 
 # Schepen (categorie 6) → { naam-lowercase: typeId } voor intel-schipherkenning.
@@ -165,17 +199,17 @@ for tid, name in out_names.items():
 write('ships.json', out_ships)
 
 # Categorieën: { categoryId: naam }
-out_cat = {str(cid): name for cid, name in con.execute('SELECT categoryID, categoryName FROM invCategories')}
-write('categories.json', out_cat)
+write('categories.json', {str(c['_key']): en(c['name']) for c in jrows('categories.jsonl')})
 
 # Reprocessing-opbrengst: { typeId: [[materiaalId, aantal], ...] }
 out_rep = {}
-for tid, mid, qty in con.execute(
-        'SELECT typeID, materialTypeID, quantity FROM invTypeMaterials ORDER BY typeID'):
-    out_rep.setdefault(str(tid), []).append([mid, qty])
+for t in jrows('typeMaterials.jsonl'):
+    mats = t.get('materials') or []
+    if mats:
+        out_rep[str(t['_key'])] = [[m['materialTypeID'], m['quantity']] for m in mats]
 write('reprocess.json', out_rep)
 
-con.close()
+zf.close()
 
 # SDE-versie (officiële build) — voor weergave + update-detectie
 ver = json.loads(urllib.request.urlopen(LATEST, timeout=30).read().decode().splitlines()[0])
