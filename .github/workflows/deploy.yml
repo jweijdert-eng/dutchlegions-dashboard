@@ -4,17 +4,23 @@ on:
   push:
     branches: [main]
 
+# Serialiseer deploys: nooit twee FTP-uploads tegelijk (voorkomt race-fouten en
+# een terugdraaiende index.html). Niet annuleren — laat een lopende upload afmaken.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
       FTP_TIMEOUT_MS: 120000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 

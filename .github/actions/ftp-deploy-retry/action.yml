@@ -54,7 +54,12 @@ runs:
         dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
         timeout: ${{ inputs.timeout-ms }}
 
-    - name: Retry FTP upload
+    - name: Wachten voor poging 2
+      if: steps.upload_1.outcome == 'failure'
+      shell: bash
+      run: sleep 15
+
+    - name: Retry FTP upload (poging 2)
       id: upload_2
       if: steps.upload_1.outcome == 'failure'
       continue-on-error: true
@@ -70,9 +75,30 @@ runs:
         dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
         timeout: ${{ inputs.timeout-ms }}
 
-    - name: Fail if FTP upload keeps timing out
+    - name: Wachten voor poging 3
       if: steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
       shell: bash
+      run: sleep 30
+
+    - name: Retry FTP upload (poging 3)
+      id: upload_3
+      if: steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure'
+      continue-on-error: true
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ inputs.server }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+        local-dir: ${{ inputs.local-dir }}
+        server-dir: ${{ inputs.server-dir }}
+        protocol: ${{ inputs.protocol }}
+        port: ${{ inputs.port }}
+        dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
+        timeout: ${{ inputs.timeout-ms }}
+
+    - name: Fail als FTP na 3 pogingen blijft falen
+      if: steps.upload_1.outcome == 'failure' && steps.upload_2.outcome == 'failure' && steps.upload_3.outcome == 'failure'
+      shell: bash
       run: |
-        echo "FTP upload failed on both the initial attempt and the retry."
+        echo "FTP upload mislukt na 3 pogingen (poging 1, 2 én 3)."
         exit 1

@@ -14,7 +14,7 @@ jobs:
     env:
       FTP_TIMEOUT_MS: 120000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -43,10 +43,10 @@ jobs:
           git push
 
       # Zelf bouwen + deployen (de auto-commit triggert de gewone deploy-workflow niet)
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.diff.outputs.changed == 'true'
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
