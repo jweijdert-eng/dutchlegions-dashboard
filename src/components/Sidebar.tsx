@@ -64,6 +64,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Hauling',      path: '/hauling',    icon: '🛻', badge: null },
   { label: 'Killboard',    path: '/kills',      icon: '☠️', badge: null },
   { label: 'Corp Killboard', path: '/corp-killboard', icon: '💀', badge: null },
+  { label: 'Vijand-dossier', path: '/enemy-dossier', icon: '🕵️', badge: null },
   { label: 'Wars',         path: '/wars',       icon: '🗡️', badge: null },
   { label: 'Fleet',        path: '/fleet',      icon: '🛰️', badge: null },
   { label: 'Ratting',      path: '/ratting',    icon: '🪙', badge: null },
@@ -96,7 +97,7 @@ const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
   { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/market', '/contracts', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build'] },
-  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/fleet', '/ratting'] },
+  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/fleet', '/ratting'] },
 ]
 
 const NAV_LS_KEY = 'nav_layout_v1'

@@ -55,6 +55,19 @@ if (isset($_GET['feed'])) {
     exit;
 }
 
+// Losses-modus: alleen de verloren schepen van de corp/alliance (voor het vijand-dossier).
+if (isset($_GET['losses'])) {
+    $cacheL = sys_get_temp_dir() . "/zkill_losses_{$type}_{$id}.json";
+    if (is_file($cacheL) && filesize($cacheL) > 2 && (time() - filemtime($cacheL)) < 600) {
+        echo file_get_contents($cacheL); exit;
+    }
+    $raw = zfetch("https://zkillboard.com/api/losses/{$type}/{$id}/");
+    if ($raw) { @file_put_contents($cacheL, $raw); echo $raw; }
+    elseif (is_file($cacheL)) { echo file_get_contents($cacheL); }
+    else { echo '[]'; }
+    exit;
+}
+
 $cacheFile = sys_get_temp_dir() . "/zkill_combo_{$type}_{$id}.json";
 if (is_file($cacheFile) && filesize($cacheFile) > 2 && (time() - filemtime($cacheFile)) < 300) {
     echo file_get_contents($cacheFile);

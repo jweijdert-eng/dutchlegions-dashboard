@@ -139,6 +139,7 @@ export interface Killmail {
     character_id?: number
     corporation_id?: number
     alliance_id?: number
+    ship_type_id?: number
     final_blow: boolean
   }>
 }

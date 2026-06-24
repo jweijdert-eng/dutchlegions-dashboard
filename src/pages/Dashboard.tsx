@@ -30,6 +30,7 @@ import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
 import LocalChatWidget from '../components/LocalChatWidget'
 import TopKillersTicker from '../components/TopKillersTicker'
+import KillOfDay from '../components/KillOfDay'
 import Starfield from '../components/Starfield'
 import { useMemberSettings } from '../utils/memberSettings'
 
@@ -834,6 +835,9 @@ export default function Dashboard() {
     >
       {/* Top-killers ticker — in de lay-out bovenaan, zichtbaar voor iedereen */}
       {!previewMode && <TopKillersTicker />}
+
+      {/* Kill van de dag — grootste corp-kill van de laatste 24u */}
+      {!previewMode && <KillOfDay />}
 
       {/* Urgent alert banner */}
       {!phase1Loading && urgentAlerts > 0 && (

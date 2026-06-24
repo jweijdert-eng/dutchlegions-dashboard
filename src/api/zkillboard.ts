@@ -20,3 +20,14 @@ export const getLosses = (charId: number, page = 1) => zkill(`/api/losses/charac
 // Corp-brede killboard (alle leden samen).
 export const getCorpKills  = (corpId: number, page = 1) => zkill(`/api/kills/corporationID/${corpId}/page/${page}/`)
 export const getCorpLosses = (corpId: number, page = 1) => zkill(`/api/losses/corporationID/${corpId}/page/${page}/`)
+
+// Recente corp-losses via de eigen proxy (CORS + User-Agent server-side, betrouwbaarder
+// dan rechtstreeks zKill vanuit de browser). Voor het vijand-dossier.
+export async function getCorpLossesViaProxy(corpId: number): Promise<ZkillEntry[]> {
+  try {
+    const res = await fetch(`/api/zkill.php?losses=1&type=corporationID&id=${corpId}`)
+    if (!res.ok) return []
+    const d = await res.json()
+    return Array.isArray(d) ? (d as ZkillEntry[]) : []
+  } catch { return [] }
+}
