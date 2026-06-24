@@ -113,12 +113,21 @@ function cleanLayout(layout: LayoutEntry[]): LayoutEntry[] {
       present.add(e.path); clean.push(e)
     }
   }
-  // Nieuwe pagina's die nog nergens staan: gewone items bovenaan; WIP-items in de
-  // 'Ontwikkeling'-groep (bestaande hergebruikt, anders nieuw + admin-only).
+  // Nieuwe pagina's die nog nergens staan: plaats een gewoon item in zijn standaard-
+  // groep (uit DEFAULT_LAYOUT) als die bestaat — bijv. /corp-killboard → PvP — anders
+  // los onderaan. WIP-items gaan in de 'Ontwikkeling'-groep.
   const missingTop: string[] = []
   const missingWip: string[] = []
   for (const i of NAV_ITEMS) if (!present.has(i.path)) (i.wip ? missingWip : missingTop).push(i.path)
-  for (const p of missingTop) clean.push({ kind: 'item', path: p })
+  const defaultGroupOf: Record<string, string> = {}
+  for (const e of DEFAULT_LAYOUT) if (e.kind === 'group') for (const c of e.children) defaultGroupOf[c] = e.id
+  for (const p of missingTop) {
+    const gid = defaultGroupOf[p]
+    const gi = gid ? clean.findIndex(e => e.kind === 'group' && e.id === gid) : -1
+    const g = gi >= 0 ? clean[gi] : null
+    if (g && g.kind === 'group') clean[gi] = { ...g, children: [...g.children, p] }
+    else clean.push({ kind: 'item', path: p })
+  }
   if (missingWip.length) {
     const gi = clean.findIndex(e => e.kind === 'group' && /^ontwikkeling$/i.test(e.label))
     const g = gi >= 0 ? clean[gi] : null
