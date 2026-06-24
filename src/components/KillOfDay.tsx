@@ -66,9 +66,9 @@ export default function KillOfDay() {
   // Geen kill in 24u → slanke gedempte strook (blijft vindbaar, weinig ruis).
   if (!kod) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.8rem', marginBottom: '0.75rem',
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', marginBottom: '0.75rem',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-        🏆 <span style={{ fontWeight: 700, letterSpacing: '0.06em' }}>KILL VAN DE DAG</span>
+        🏆 <span style={{ fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text)' }}>Kill van de dag</span>
         <span>— geen corp-kill in de laatste 24 uur</span>
       </div>
     )
@@ -78,23 +78,27 @@ export default function KillOfDay() {
   const fb = kod.km.attackers.find(a => a.final_blow)
   return (
     <a href={`https://zkillboard.com/kill/${kod.km.killmail_id}/`} target="_blank" rel="noreferrer"
-      style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.7rem 1rem', marginBottom: '0.75rem',
-        background: 'linear-gradient(100deg, rgba(240,192,64,0.10), var(--surface) 55%)',
-        border: '1px solid rgba(240,192,64,0.35)', borderRadius: 8, textDecoration: 'none', color: 'var(--text)' }}>
-      <div style={{ fontSize: '0.55rem', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--gold)', writingMode: 'vertical-rl', transform: 'rotate(180deg)', lineHeight: 1 }}>
-        🏆 KILL V/D DAG
-      </div>
-      <EveImage category="types" id={v.ship_type_id} variation="icon" size={64} px={46} style={{ flexShrink: 0, borderRadius: 4 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.65rem 1rem', marginBottom: '0.75rem',
+        background: 'radial-gradient(120% 160% at 8% 0%, #1d1733 0%, #0a0a22 52%, #06060f 100%)',
+        border: '1px solid rgba(240,192,64,0.22)', borderRadius: 6, overflow: 'hidden', textDecoration: 'none', color: 'var(--text)' }}>
+      {/* subtiele gouden gloed rechts — sluit aan bij de hero-stijl */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(55% 140% at 93% 50%, rgba(240,192,64,0.12) 0%, transparent 60%)' }} />
+      <EveImage category="types" id={v.ship_type_id} variation="icon" size={64} px={46} style={{ position: 'relative', flexShrink: 0, borderRadius: 4 }} />
+      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'inline-block', fontSize: '0.5rem', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--gold)',
+          background: 'rgba(240,192,64,0.12)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: 3, padding: '0.12rem 0.42rem', marginBottom: '0.28rem' }}>
+          🏆 KILL VAN DE DAG
+        </span>
         <div style={{ fontSize: '0.92rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {nameOf(v.ship_type_id)} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>· {nameOf(v.character_id)}</span>
         </div>
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.12rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {nameOf(v.corporation_id)} · {sysName(kod.km.solar_system_id)} · {ago(kod.km.killmail_time)}
           {fb?.character_id && <> · final blow: {nameOf(fb.character_id)}</>}
         </div>
       </div>
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+      <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0 }}>
         <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--gold)', lineHeight: 1 }}>{fmtISK(kod.value)}</div>
         <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginTop: '0.2rem' }}>ISK</div>
       </div>
