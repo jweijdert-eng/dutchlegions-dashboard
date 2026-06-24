@@ -2,7 +2,9 @@ name: Update SDE
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # elke dag 06:00 UTC
+    # EVE-downtime is 11:00 UTC; CCP brengt nieuwe SDE/patches tijdens die downtime uit.
+    # 12:00 UTC = 1u buffer erna → een nieuwe SDE staat dezelfde dag live.
+    - cron: '0 12 * * *'   # elke dag 12:00 UTC (na EVE-downtime)
   workflow_dispatch: {}     # handmatig te starten
 
 permissions:
