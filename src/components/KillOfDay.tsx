@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getKillmailDetail, resolveNames, type Killmail } from '../api/esi'
 import EveImage from './EveImage'
+import SolarSystem from './SolarSystem'
 
 const CORP_ID = 98652891   // Dutch Legions
 
@@ -109,15 +110,18 @@ export default function KillOfDay() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', fontWeight: 700, minWidth: 0 }}>
           <span style={{ flexShrink: 0 }}>{nameOf(v.ship_type_id)}</span>
           <span style={{ color: 'var(--text-dim)', fontWeight: 400, flexShrink: 0 }}>·</span>
-          {v.character_id && <EveImage category="characters" id={v.character_id} variation="portrait" size={32} px={18} style={{ borderRadius: '50%', flexShrink: 0 }} />}
-          <span style={{ color: 'var(--text-dim)', fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(v.character_id)}</span>
+          {v.character_id && <EveImage category="characters" id={v.character_id} variation="portrait" size={64} px={24} style={{ borderRadius: '50%', flexShrink: 0 }} />}
+          <span style={{ color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(v.character_id)}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.18rem', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(v.corporation_id)} · {sysName(kod.km.solar_system_id)} · {ago(kod.km.killmail_time)}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.22rem', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{nameOf(v.corporation_id)}</span>
+          <span style={{ flexShrink: 0 }}>·</span>
+          <span style={{ flexShrink: 0 }}><SolarSystem name={sysName(kod.km.solar_system_id)} systemId={kod.km.solar_system_id} fontSize="0.7rem" /></span>
+          <span style={{ flexShrink: 0 }}>· {ago(kod.km.killmail_time)}</span>
           {fb?.character_id && <>
             <span style={{ flexShrink: 0 }}>· final blow:</span>
-            <EveImage category="characters" id={fb.character_id} variation="portrait" size={32} px={15} style={{ borderRadius: '50%', flexShrink: 0 }} />
-            <span style={{ flexShrink: 0 }}>{nameOf(fb.character_id)}</span>
+            <EveImage category="characters" id={fb.character_id} variation="portrait" size={64} px={20} style={{ borderRadius: '50%', flexShrink: 0 }} />
+            <span style={{ color: 'var(--green)', flexShrink: 0, fontWeight: 600 }}>{nameOf(fb.character_id)}</span>
           </>}
         </div>
       </div>
