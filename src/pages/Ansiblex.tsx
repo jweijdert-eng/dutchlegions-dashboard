@@ -64,10 +64,6 @@ export default function Ansiblex() {
   return (
     <Layout header={<PageHeader title="Ansiblex-lijst" sub={`${pairs.length} verbindingen · gedeeld met de corp`} />}>
       <div style={{ maxWidth: 560 }}>
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginBottom: '0.6rem', lineHeight: 1.5 }}>
-          De jump-bridge-lijst, gedeeld met de hele corp. Plak of bewerk hieronder en klik <b>Opslaan</b>.
-          Heen/terug (<code>A » B</code> én <code>B » A</code>) wordt automatisch samengevoegd.
-        </div>
         <textarea value={text} onChange={e => setText(e.target.value)} rows={18} spellCheck={false}
           placeholder={loading ? 'Laden…' : 'LXWN-W » AH-B84\n15W-GC » UMI-KK\n…'}
           style={{ width: '100%', boxSizing: 'border-box', background: '#05050e', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: '0.8rem', fontFamily: 'monospace', lineHeight: 1.6, padding: '0.7rem 0.9rem', outline: 'none', resize: 'vertical' }} />
