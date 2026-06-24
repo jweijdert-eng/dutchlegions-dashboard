@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import SolarSystem from '../components/SolarSystem'
+import { useAuth } from '../auth/AuthContext'
 
 interface JumpBridge {
   id: string
@@ -118,12 +119,16 @@ function parseBridges(text: string): Omit<JumpBridge, 'online'>[] {
   for (const raw of text.split('\n')) {
     const line = raw.trim(); if (!line) continue
     const label = line.match(/\(([^)]+)\)/)?.[1] ?? ''
-    const clean = line.replace(/\(.*?\)/g, '').replace(/:.*/g, '').trim()
-    const m = clean.match(/^(.+?)\s*(?:»|->|>|–|-)\s*(.+)$/)
-    if (!m) continue
-    const systemA = m[1].trim(), systemB = m[2].trim()
-    if (!systemA || !systemB) continue
-    const id = `${systemA.toLowerCase()}|${systemB.toLowerCase()}`
+    const clean = line.replace(/\(.*?\)/g, '').replace(/\s*[-–—]\s*ansiblex.*$/i, '').replace(/:.*/g, '').trim()
+    // Splits op pijl/pipe-scheiders (GEEN kaal koppelteken — nullsec-namen als 5T-KM3
+    // bevatten koppeltekens). Fallback: dash/pijl mét spaties eromheen ("Jita - Amarr").
+    let parts = clean.split(/\s*(?:»|›|→|↔|<->|->|=>|\||\t|,|;)\s*/).filter(Boolean)
+    if (parts.length < 2) parts = clean.split(/\s+(?:[-–—>])\s+/).filter(Boolean)
+    if (parts.length < 2) continue
+    const systemA = parts[0].trim(), systemB = parts[1].trim()
+    if (!systemA || !systemB || systemA.toLowerCase() === systemB.toLowerCase()) continue
+    // Ongerichte dedup: A»B en B»A zijn dezelfde bridge (lijst staat vaak heen én terug).
+    const id = [systemA.toLowerCase(), systemB.toLowerCase()].sort().join('|')
     if (seen.has(id)) continue
     seen.add(id); results.push({ id, systemA, systemB, label })
   }
@@ -287,6 +292,11 @@ const STORAGE_KEY = 'eve_jumpbridges'
 function loadBridges(): JumpBridge[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') } catch { return [] }
 }
+// Gedeeld op de server opgeslagen als [A, B]-paren → naar het lokale JumpBridge-model.
+function pairToBridge([a, b]: [string, string]): JumpBridge {
+  const A = String(a).toUpperCase(), B = String(b).toUpperCase()
+  return { id: [A, B].sort().join('|'), systemA: A, systemB: B, label: '', online: true }
+}
 
 // ─── Hoofdpagina ──────────────────────────────────────────────────────────────
 
@@ -301,9 +311,42 @@ export default function JumpBridges() {
   const [routeLoading, setRouteLoading] = useState(false)
   const [search,      setSearch]      = useState('')
   const [view,        setView]        = useState<'list' | 'map'>('list')
+  const [copied,      setCopied]      = useState(false)
+  const [saveState,   setSaveState]   = useState<'idle' | 'saving' | 'done'>('idle')
 
+  const { activeTokens, mainCharId } = useAuth()
+  const token = (activeTokens.find(t => t.characterId === mainCharId) ?? activeTokens[0])?.accessToken
+
+  // De gedeelde (corp-brede) lijst van de server laden — die de admin/leden bijwerken.
+  useEffect(() => {
+    fetch('/api/ansiblex.php', { cache: 'no-store' })
+      .then(r => r.json())
+      .then((d: { bridges?: [string, string][] }) => {
+        if (Array.isArray(d?.bridges) && d.bridges.length) {
+          const bs = d.bridges.map(pairToBridge)
+          setBridges(bs); localStorage.setItem(STORAGE_KEY, JSON.stringify(bs)); setShowImport(false)
+        }
+      })
+      .catch(() => { /* offline → lokale cache blijft staan */ })
+  }, [])
+
+  // Opslaan: lokaal (cache) + gedeeld op de server (member-schrijfbaar endpoint).
   function save(next: JumpBridge[]) {
     setBridges(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    if (!token) return
+    setSaveState('saving')
+    fetch('/api/ansiblex.php', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, bridges: next.map(b => [b.systemA, b.systemB]) }) })
+      .then(() => setSaveState('done')).catch(() => setSaveState('idle'))
+      .finally(() => setTimeout(() => setSaveState('idle'), 1500))
+  }
+
+  // Hele lijst als "A » B"-tekst naar het klembord.
+  function copyList() {
+    const text = bridges.map(b => `${b.systemA} » ${b.systemB}`).join('\n')
+    navigator.clipboard.writeText(text)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+      .catch(() => {})
   }
 
   function doImport() {
@@ -311,6 +354,13 @@ export default function JumpBridges() {
     const existing = new Set(bridges.map(b => b.id))
     const fresh = parsed.filter(p => !existing.has(p.id)).map(p => ({ ...p, online: true }))
     save([...bridges, ...fresh]); setImportText(''); setShowImport(false)
+  }
+
+  // Vervang de hele lijst door de plaktekst (voor een geüpdatete Ansiblex-lijst).
+  function doReplace() {
+    const parsed = parseBridges(importText); if (!parsed.length) return
+    save(parsed.map(p => ({ ...p, online: true })))
+    setImportText(''); setShowImport(false)
   }
 
   async function calcRoute() {
@@ -347,13 +397,17 @@ export default function JumpBridges() {
 
   return (
     <Layout header={
-      <PageHeader title="Jump Bridges" sub={`${bridges.length} bridges · ${onlineCount} online`}
+      <PageHeader title="Jump Bridges" sub={`${bridges.length} bridges${saveState === 'saving' ? ' · opslaan…' : saveState === 'done' ? ' · opgeslagen ✓' : ' · gedeeld met de corp'}`}
         right={
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
             {(['list', 'map'] as const).map(v => (
               <button key={v} onClick={() => setView(v)} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', background: view === v ? 'rgba(0,180,216,0.1)' : 'transparent', border: `1px solid ${view === v ? 'var(--blue)' : 'var(--border)'}`, color: view === v ? 'var(--blue)' : 'var(--text-dim)', textTransform: 'capitalize' }}>{v === 'list' ? 'Lijst' : 'Map'}</button>
             ))}
-            <button onClick={() => setShowImport(s => !s)} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', background: showImport ? 'rgba(0,180,216,0.1)' : 'transparent', border: `1px solid ${showImport ? 'var(--blue)' : 'var(--border)'}`, color: showImport ? 'var(--blue)' : 'var(--text-dim)' }}>+ Importeren</button>
+            <button onClick={copyList} disabled={bridges.length === 0} title="Kopieer alle bridges als tekst"
+              style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: bridges.length ? 'pointer' : 'not-allowed', background: copied ? 'rgba(62,207,110,0.12)' : 'transparent', border: `1px solid ${copied ? 'var(--green)' : 'var(--border)'}`, color: copied ? 'var(--green)' : 'var(--text-dim)', opacity: bridges.length ? 1 : 0.5 }}>
+              {copied ? '✓ Gekopieerd' : '📋 Kopiëren'}
+            </button>
+            <button onClick={() => setShowImport(s => !s)} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', background: showImport ? 'rgba(0,180,216,0.1)' : 'transparent', border: `1px solid ${showImport ? 'var(--blue)' : 'var(--border)'}`, color: showImport ? 'var(--blue)' : 'var(--text-dim)' }}>✏️ Bijwerken</button>
           </div>
         }
       />
@@ -363,19 +417,20 @@ export default function JumpBridges() {
         {/* Import */}
         {showImport && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.75rem 1rem' }}>
-            <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.4rem' }}>IMPORTEER JUMP BRIDGES</div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>
-              Één per regel.&nbsp;
-              <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.3rem', borderRadius: 2, fontSize: '0.62rem' }}>Jita » Amarr</code>
-              &nbsp;of&nbsp;
-              <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.3rem', borderRadius: 2, fontSize: '0.62rem' }}>Jita -&gt; Amarr</code>
+            <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.4rem' }}>ANSIBLEX-LIJST BIJWERKEN</div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.5rem', lineHeight: 1.5 }}>
+              Plak de lijst — één per regel, bv.&nbsp;
+              <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.3rem', borderRadius: 2, fontSize: '0.62rem' }}>BKG-Q2 » 9F-7PZ</code>.
+              Heen/terug (A»B én B»A) wordt automatisch samengevoegd. <b>Vervang alles</b> = de plaktekst wordt de complete lijst; <b>Toevoegen</b> houdt de bestaande erbij. Wijzigingen zijn <b>gedeeld met de hele corp</b>.
             </div>
             <textarea value={importText} onChange={e => setImportText(e.target.value)}
               placeholder={'Jita » Amarr\nAmarr » Dodixie (Ansiblex Gate)\n...'} rows={6}
               style={{ width: '100%', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', fontSize: '0.72rem', padding: '0.5rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+              {importText.trim() && <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)', marginRight: 'auto' }}>{parseBridges(importText).length} bridge(s) herkend</span>}
               <button onClick={() => { setShowImport(false); setImportText('') }} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)' }}>Annuleren</button>
-              <button onClick={doImport} disabled={!importText.trim()} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: 'pointer', background: 'rgba(0,180,216,0.12)', border: '1px solid rgba(0,180,216,0.4)', color: 'var(--blue)', opacity: importText.trim() ? 1 : 0.5 }}>Importeren</button>
+              <button onClick={doImport} disabled={!importText.trim()} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', cursor: importText.trim() ? 'pointer' : 'not-allowed', background: 'rgba(0,180,216,0.12)', border: '1px solid rgba(0,180,216,0.4)', color: 'var(--blue)', opacity: importText.trim() ? 1 : 0.5 }}>Toevoegen</button>
+              <button onClick={doReplace} disabled={!importText.trim()} style={{ padding: '0.3rem 0.65rem', borderRadius: 2, fontSize: '0.68rem', fontWeight: 600, cursor: importText.trim() ? 'pointer' : 'not-allowed', background: 'rgba(62,207,110,0.12)', border: '1px solid var(--green)', color: 'var(--green)', opacity: importText.trim() ? 1 : 0.5 }}>Vervang alles</button>
             </div>
           </div>
         )}
