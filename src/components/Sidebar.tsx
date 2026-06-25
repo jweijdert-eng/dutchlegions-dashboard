@@ -35,7 +35,7 @@ function Sparkline({ values }: { values: number[] }) {
 }
 
 
-type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts'; wip?: boolean }
+type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' | 'ansiblex'; wip?: boolean }
 
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
@@ -67,7 +67,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Vijand-dossier', path: '/enemy-dossier', icon: '🕵️', badge: null },
   { label: 'Wars',         path: '/wars',       icon: '🗡️', badge: null },
   { label: 'Fleet',        path: '/fleet',      icon: '🛰️', badge: null },
-  { label: 'Ansiblex', path: '/ansiblex', icon: '🌉', badge: null },
+  { label: 'Ansiblex', path: '/ansiblex', icon: '🌉', badge: 'ansiblex' },
   { label: 'Ratting',      path: '/ratting',    icon: '🪙', badge: null },
   { label: 'Industry',     path: '/industry',   icon: '🔩', badge: 'jobs' },
   { label: 'Mining',       path: '/mining',     icon: '⚒️', badge: null },
@@ -192,8 +192,10 @@ function LeafRow({ item, badgeCount, collapsed, nested, label }: { item: NavItem
       {!collapsed && <span style={nested
         ? { fontWeight: 400, letterSpacing: '0.03em', flex: 1 }
         : { fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>{name}</span>}
-      {!collapsed && <Badge count={count} />}
-      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)' }} />}
+      {!collapsed && (item.badge === 'ansiblex'
+        ? (count > 0 && <span title="Lijst is bijgewerkt" style={{ fontSize: 12, lineHeight: 1, flexShrink: 0 }}>🔄</span>)
+        : <Badge count={count} />)}
+      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: item.badge === 'ansiblex' ? 'var(--gold)' : 'var(--red)' }} />}
     </NavLink>
   )
 }
@@ -565,6 +567,22 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   // owner OF rol-admin → ziet alle features. In member-preview verbergen we ze (net als de Admin-link).
   const isAdmin = (isAdminChar || myRole === 'admin') && !previewMode
   const member = useMemberSettings()
+  // Ansiblex "bijgewerkt"-indicator: server-timestamp vs. wat dit toestel voor het laatst
+  // zag (localStorage). Markeer als gezien zodra de Ansiblex-pagina geopend wordt.
+  const location = useLocation()
+  const [ansiAt, setAnsiAt] = useState<number | null>(null)
+  const [ansiSeen, setAnsiSeen] = useState<number>(() => { try { return Number(localStorage.getItem('ansiblex_seen') || 0) } catch { return 0 } })
+  useEffect(() => {
+    fetch('/api/ansiblex.php', { cache: 'no-store' }).then(r => r.json())
+      .then((d: { updatedAt?: number | null }) => setAnsiAt(d?.updatedAt ?? null)).catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (location.pathname === '/ansiblex' && ansiAt) {
+      try { localStorage.setItem('ansiblex_seen', String(ansiAt)) } catch { /* ignore */ }
+      setAnsiSeen(ansiAt)
+    }
+  }, [location.pathname, ansiAt])
+  const ansiUpdate = !!(ansiAt && ansiAt > ansiSeen)
   const [layout, setLayout] = useState<LayoutEntry[]>(loadLayout)
   const applyLayout = (l: LayoutEntry[]) => { setLayout(l); saveLayout(l) }
   const resetNav = () => { try { localStorage.removeItem('nav_layout_v1'); localStorage.removeItem('nav_labels') } catch { /* ignore */ }; setLabels({}); setLayout(loadLayout()) }
@@ -680,10 +698,11 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
     })
   }, [tokens.map(t => t.characterId).join(',')])
 
-  function badgeCount(key: 'mail' | 'jobs' | 'alerts' | null): number {
+  function badgeCount(key: NavItem['badge']): number {
     if (key === 'mail')   return alerts.unreadMail
     if (key === 'jobs')   return alerts.readyJobs
     if (key === 'alerts') return alerts.unreadMail + alerts.readyJobs
+    if (key === 'ansiblex') return ansiUpdate ? 1 : 0
     return 0
   }
 
