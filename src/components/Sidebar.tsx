@@ -35,7 +35,7 @@ function Sparkline({ values }: { values: number[] }) {
 }
 
 
-type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' | 'ansiblex'; wip?: boolean }
+type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' | 'ansiblex' | 'ideas'; wip?: boolean }
 
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
@@ -58,6 +58,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Mail',         path: '/mail',       icon: '📨', badge: 'mail' },
   { label: 'Assets',       path: '/assets',     icon: '🗃️', badge: null },
   { label: 'Notities',     path: '/notes',      icon: '🗒️', badge: null },
+  { label: 'Ideeënbus',    path: '/ideeen',     icon: '💡', badge: 'ideas' },
   { label: 'Finance',      path: '/wallet',     icon: '🏦', badge: null },
   { label: 'Market',       path: '/market',     icon: '🛒', badge: null },
   { label: 'Contracts',    path: '/contracts',  icon: '🤝', badge: null },
@@ -583,6 +584,18 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
     }
   }, [location.pathname, ansiAt])
   const ansiUpdate = !!(ansiAt && ansiAt > ansiSeen)
+  // Ideeënbus-badge: aantal open ideeën (server geeft dit alleen aan admins terug).
+  const ideasTok = (tokens.find(t => t.characterId === mainCharId) ?? tokens[0])?.accessToken
+  const [ideasOpen, setIdeasOpen] = useState(0)
+  useEffect(() => {
+    if (!ideasTok) { setIdeasOpen(0); return }
+    let cancelled = false
+    fetch(`/api/ideeen.php?action=count&token=${encodeURIComponent(ideasTok)}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then((d: { open?: number }) => { if (!cancelled) setIdeasOpen(Number(d?.open) || 0) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [ideasTok])
   const [layout, setLayout] = useState<LayoutEntry[]>(loadLayout)
   const applyLayout = (l: LayoutEntry[]) => { setLayout(l); saveLayout(l) }
   const resetNav = () => { try { localStorage.removeItem('nav_layout_v1'); localStorage.removeItem('nav_labels') } catch { /* ignore */ }; setLabels({}); setLayout(loadLayout()) }
@@ -703,6 +716,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
     if (key === 'jobs')   return alerts.readyJobs
     if (key === 'alerts') return alerts.unreadMail + alerts.readyJobs
     if (key === 'ansiblex') return ansiUpdate ? 1 : 0
+    if (key === 'ideas')    return ideasOpen
     return 0
   }
 
