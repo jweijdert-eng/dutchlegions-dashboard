@@ -59,6 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Assets',       path: '/assets',     icon: '🗃️', badge: null },
   { label: 'Notities',     path: '/notes',      icon: '🗒️', badge: null },
   { label: 'Ideeënbus',    path: '/ideeen',     icon: '💡', badge: 'ideas' },
+  { label: 'EVE Nieuws',   path: '/eve-news',   icon: '📰', badge: null },
   { label: 'Finance',      path: '/wallet',     icon: '🏦', badge: null },
   { label: 'Market',       path: '/market',     icon: '🛒', badge: null },
   { label: 'Contracts',    path: '/contracts',  icon: '🤝', badge: null },

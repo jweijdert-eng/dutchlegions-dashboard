@@ -33,6 +33,7 @@ const Blueprints   = lz(() => import('./pages/Blueprints'))
 const Contracts    = lz(() => import('./pages/Contracts'))
 const Notes        = lz(() => import('./pages/Notes'))
 const Ideeen       = lz(() => import('./pages/Ideeen'))
+const EveNews      = lz(() => import('./pages/EveNews'))
 const DebugUnresolved = lz(() => import('./pages/DebugUnresolved'))
 const MultiChar    = lz(() => import('./pages/MultiChar'))
 const LocalChat    = lz(() => import('./pages/LocalChat'))
@@ -239,6 +240,7 @@ function AppRoutes() {
       <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
       <Route path="/notes"      element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/ideeen"     element={<ProtectedRoute><Ideeen /></ProtectedRoute>} />
+      <Route path="/eve-news"   element={<ProtectedRoute><EveNews /></ProtectedRoute>} />
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
       <Route path="/local"      element={<LocalChatRoute><LocalChat /></LocalChatRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
