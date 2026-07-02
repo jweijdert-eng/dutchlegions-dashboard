@@ -153,6 +153,25 @@ if ($killers) {
     usort($killers, fn($a, $b) => $b['kills'] <=> $a['kills']);
 }
 
+// Maand-snapshot wegschrijven: bij elke verse load bewaren we de huidige-maand-top-10
+// (server-side berekend, dus niet te vervalsen). Zodra de maand voorbij is komen er geen
+// updates meer met dat YYYYMM binnen → de snapshot bevriest en wordt het maand-archief.
+// Best-effort: een DB-storing mag de killboard nooit breken.
+if ($killers) {
+    try {
+        $pdo = getDB();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS leaderboard_snapshots (
+            corp_id BIGINT NOT NULL, ym VARCHAR(6) NOT NULL,
+            data MEDIUMTEXT, updated_at DATETIME,
+            PRIMARY KEY (corp_id, ym))");
+        $top = array_slice($killers, 0, 10);
+        $st = $pdo->prepare("INSERT INTO leaderboard_snapshots (corp_id, ym, data, updated_at)
+            VALUES (?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = NOW()");
+        $st->execute([$id, date('Ym'), json_encode($top)]);
+    } catch (Exception $e) { /* archief is best-effort */ }
+}
+
 // Bij volledige zKill-storing terugvallen op (verlopen) cache.
 if ($kills === null && !$killers && is_file($cacheFile) && filesize($cacheFile) > 2) {
     echo file_get_contents($cacheFile);

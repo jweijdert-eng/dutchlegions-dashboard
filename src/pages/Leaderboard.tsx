@@ -5,6 +5,14 @@ import { usePageLoading } from '../hooks/usePageLoading'
 const CORP_ID = 98652891   // Dutch Legions
 
 interface TopKiller { characterID: number; characterName: string; kills: number; losses?: number }
+interface ArchiveMonth { ym: string; rows: TopKiller[]; frozenAt: string }
+
+const MAAND = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december']
+const monthLabel = (ym: string) => {
+  const y = ym.slice(0, 4), m = parseInt(ym.slice(4, 6), 10) - 1
+  const naam = MAAND[m] ?? ''
+  return `${naam.charAt(0).toUpperCase()}${naam.slice(1)} ${y}`
+}
 
 const MEDAL = (r: number) =>
   r === 1 ? { c: '#f5c518', glow: 'rgba(245,197,24,0.55)', grad: 'linear-gradient(150deg, rgba(245,197,24,0.28), rgba(245,197,24,0.04))', m: '🥇' }
@@ -15,6 +23,7 @@ const kdColor = (k: number, l: number) => { const r = l === 0 ? (k > 0 ? 99 : 0)
 
 export default function Leaderboard() {
   const [rows, setRows] = useState<TopKiller[]>([])
+  const [archive, setArchive] = useState<ArchiveMonth[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   usePageLoading(loading)
@@ -30,6 +39,15 @@ export default function Leaderboard() {
         setRows(list); setLoading(false)
       })
       .catch(() => { if (!cancelled) { setErr('Kon zKillboard niet bereiken.'); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/leaderboard_archive.php?id=${CORP_ID}`)
+      .then(r => r.json())
+      .then((d: { months?: ArchiveMonth[] }) => { if (!cancelled) setArchive(d?.months ?? []) })
+      .catch(() => { /* archief is optioneel */ })
     return () => { cancelled = true }
   }, [])
 
@@ -99,10 +117,60 @@ export default function Leaderboard() {
 
       {!loading && rows.length === 0 && !err && <div style={{ ...card, textAlign: 'center', color: 'var(--text-dim)' }}>Nog geen kills deze maand.</div>}
 
+      {/* Archief: afgelopen maanden (bevroren top 10) */}
+      {archive.length > 0 && (
+        <div style={{ marginTop: '1.6rem' }}>
+          <div style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.14em', color: 'var(--text-dim)', marginBottom: '0.7rem', textTransform: 'uppercase' }}>
+            📜 Afgelopen maanden
+          </div>
+          {archive.map((mo, mi) => (
+            <ArchiveCard key={mo.ym} month={mo} defaultOpen={mi === 0} />
+          ))}
+        </div>
+      )}
+
       <div style={{ marginTop: '1rem', fontSize: '0.6rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
         Top corp-killers van deze maand (kills & losses uit zKillboard). K/D = kills ÷ losses (groen ≥2 · goud ≥1 · rood &lt;1). Klik een pilot voor zijn zKillboard.
+        Afgelopen maanden worden aan het einde van elke maand automatisch als top-10 vastgelegd.
       </div>
     </Layout>
+  )
+}
+
+// Eén afgelopen maand: inklapbare kaart met de bevroren top 10 (medailles voor top 3).
+function ArchiveCard({ month, defaultOpen }: { month: ArchiveMonth; defaultOpen: boolean }) {
+  const rows = month.rows.slice(0, 10)
+  const winner = rows[0]
+  return (
+    <details open={defaultOpen} style={{ ...card, padding: 0, overflow: 'hidden', marginBottom: '0.6rem' }}>
+      <summary style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.6rem 0.8rem', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>
+        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff' }}>{monthLabel(month.ym)}</span>
+        {winner && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+            🥇
+            <span style={{ color: '#f5c518', fontWeight: 700 }}>{winner.characterName}</span>
+            <span style={{ color: '#3ecf6e' }}>{winner.kills} kills</span>
+          </span>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: '0.6rem', color: 'var(--text-dim)' }}>top {rows.length}</span>
+      </summary>
+      <div style={{ borderTop: '1px solid var(--border)' }}>
+        {rows.map((r, idx) => {
+          const medal = idx < 3 ? MEDAL(idx + 1) : null
+          return (
+            <a key={r.characterID} href={`https://zkillboard.com/character/${r.characterID}/`} target="_blank" rel="noreferrer"
+              style={{ ...row, textDecoration: 'none', borderBottom: idx < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              <span style={{ width: 24, textAlign: 'center', fontWeight: 800, fontSize: '0.74rem', color: medal ? medal.c : 'var(--text-dim)', flexShrink: 0 }}>{medal ? medal.m : idx + 1}</span>
+              <img src={`https://images.evetech.net/characters/${r.characterID}/portrait?size=32`} width={24} height={24} style={{ borderRadius: '50%', flexShrink: 0 }} alt="" />
+              <span style={{ flex: 1, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.characterName}</span>
+              <span style={{ width: 50, textAlign: 'right', color: '#3ecf6e', fontWeight: 700 }}>{r.kills}</span>
+              <span style={{ width: 50, textAlign: 'right', color: '#ff7676' }}>{r.losses ?? 0}</span>
+              <span style={{ width: 46, textAlign: 'right', color: kdColor(r.kills, r.losses ?? 0), fontWeight: 700 }}>{kd(r.kills, r.losses ?? 0)}</span>
+            </a>
+          )
+        })}
+      </div>
+    </details>
   )
 }
 
