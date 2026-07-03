@@ -166,6 +166,7 @@ export default function Admin() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
+  const [reloginMsg, setReloginMsg] = useState('')
   const [motdText, setMotdText] = useState('')
   const [motdEnabled, setMotdEnabled] = useState(false)
   const [motdType, setMotdType] = useState<MotdType>('info')
@@ -622,6 +623,27 @@ export default function Admin() {
         body: JSON.stringify({ characterId: adminToken.characterId, settings: next }),
       })
     } catch { /* ignore */ }
+  }
+
+  // Zet een nieuwe auth_epoch → elke member wordt bij de eerstvolgende keer laden
+  // uitgelogd en moet opnieuw inloggen (jouw eigen sessie stempelt de nieuwe epoch
+  // hierna zelf, dus jij blijft ingelogd).
+  async function forceRelogin() {
+    if (!adminToken) return
+    if (!window.confirm('Alle members dwingen opnieuw in te loggen?\nZe worden bij hun volgende bezoek uitgelogd.')) return
+    const epoch = new Date().toISOString()
+    setReloginMsg('Bezig…')
+    try {
+      const r = await fetch('/api/settings.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: adminToken.characterId, settings: { auth_epoch: epoch } }),
+      })
+      if (!r.ok) throw new Error()
+      // Stempel jouw eigen browser zodat je zelf ingelogd blijft.
+      localStorage.setItem('eve_auth_epoch', epoch)
+      setReloginMsg(`Gedaan — members loggen opnieuw in vanaf ${new Date(epoch).toLocaleString('nl')}.`)
+    } catch { setReloginMsg('Er ging iets mis.') }
   }
 
   const TAB_STYLE = (active: boolean): React.CSSProperties => ({
@@ -1269,6 +1291,30 @@ export default function Admin() {
                 </div>
               </div>
             ))}
+
+            {/* Geforceerde re-login */}
+            <div>
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.15em', margin: '0 0 0.5rem 0.25rem' }}>
+                SESSIES
+              </div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '0.7rem 1rem',
+              }}>
+                <span style={{ fontSize: '1.1rem', flexShrink: 0, width: 24, textAlign: 'center' }}>🔑</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text)' }}>Iedereen opnieuw laten inloggen</div>
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>
+                    {reloginMsg || 'Wist bij alle members de opgeslagen sessie; ze loggen bij hun volgende bezoek opnieuw in. Jij blijft zelf ingelogd.'}
+                  </div>
+                </div>
+                <button
+                  onClick={forceRelogin}
+                  style={{ flexShrink: 0, background: 'rgba(240,192,64,0.12)', border: '1px solid var(--gold)', borderRadius: 3, color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
+                >Nu forceren</button>
+              </div>
+            </div>
 
             <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>
               Wijzigingen worden direct opgeslagen in de database.

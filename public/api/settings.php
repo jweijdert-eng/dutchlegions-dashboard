@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             if ($row['key'] === 'github_pat') continue;          // geheim, niet uitlekken
             if ($row['key'] === 'theme_accent') continue;        // string-waarde, via siteconfig.php
             if ($row['key'] === 'corp_links') continue;          // JSON-waarde, via siteconfig.php
+            if ($row['key'] === 'auth_epoch') { $out['auth_epoch'] = $row['value']; continue; } // string, niet booleanen
             $out[$row['key']] = $row['value'] === 'true';
         }
         echo json_encode($out);
@@ -30,7 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo = getDB();
         foreach (($data['settings'] ?? []) as $key => $value) {
-            $val  = $value ? 'true' : 'false';
+            // auth_epoch is een string (tijdstempel); de rest zijn booleans.
+            $val  = $key === 'auth_epoch' ? (string)$value : ($value ? 'true' : 'false');
             $stmt = $pdo->prepare('INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?');
             $stmt->execute([$key, $val, $val]);
         }

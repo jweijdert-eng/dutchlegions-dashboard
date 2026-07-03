@@ -7,6 +7,7 @@ export interface SiteSettings {
   require_corp?: boolean
   require_alliance?: boolean
   local_chat?: boolean
+  auth_epoch?: string   // wijzigt zodra de admin een geforceerde re-login triggert
 }
 
 let _cache: SiteSettings | null = null

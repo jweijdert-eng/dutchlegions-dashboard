@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { refreshAccessToken, type TokenData } from './sso'
+import { fetchSiteSettings } from '../hooks/useSiteSettings'
 
 interface AuthContextValue {
   tokens: TokenData[]
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 const STORAGE_KEY = 'eve_tokens'
 const MAIN_KEY    = 'eve_main_char'
+const EPOCH_KEY   = 'eve_auth_epoch'   // laatste door deze browser bevestigde re-login-epoch
 
 function loadTokens(): TokenData[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as TokenData[] }
@@ -75,6 +77,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Refresh direct bij laden (verlopen tokens na page reload)
   useEffect(() => { doRefresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Geforceerde re-login: de admin kan in Admin → Instellingen een nieuwe
+  // "auth_epoch" zetten. Zodra de door de server bekende epoch afwijkt van wat
+  // deze browser eerder bevestigde, wissen we de tokens → app toont weer login.
+  useEffect(() => {
+    fetchSiteSettings().then(s => {
+      const serverEpoch = s.auth_epoch ?? ''
+      if (!serverEpoch) return                     // admin heeft nooit een re-login getriggerd
+      const stored = localStorage.getItem(EPOCH_KEY) ?? ''
+      if (serverEpoch === stored) return            // al bevestigd, niets te doen
+      localStorage.setItem(EPOCH_KEY, serverEpoch)
+      if (tokensRef.current.length > 0) {
+        localStorage.removeItem(STORAGE_KEY)
+        localStorage.removeItem(MAIN_KEY)
+        setTokens([])                               // dwingt loginscherm af
+      }
+    }).catch(() => { /* netwerk-fout: geen re-login forceren */ })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const id = setInterval(() => { doRefresh() }, 60_000)
     return () => clearInterval(id)
@@ -98,6 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addToken = useCallback((token: TokenData) => {
     setTokens(prev => [...prev.filter(t => t.characterId !== token.characterId), token])
+    // Stempel de huidige re-login-epoch, zodat een verse login niet meteen
+    // weer wordt uitgelogd door de force-relogin-check hierboven.
+    fetchSiteSettings().then(s => {
+      if (s.auth_epoch) localStorage.setItem(EPOCH_KEY, s.auth_epoch)
+    }).catch(() => { /* ignore */ })
     fetch('/api/checkin.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
