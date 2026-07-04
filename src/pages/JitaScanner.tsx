@@ -106,6 +106,10 @@ export default function JitaScanner() {
   const [sortKey, setSortKey] = useState<SortKey>('netMarginPct')
   const [showFilters, setShowFilters] = useState(false)
 
+  // Strategie-planner
+  const [budgetM, setBudgetM] = useState(500) // budget in miljoen ISK
+  const [slots, setSlots] = useState(8)        // aantal gelijktijdige order-slots
+
   async function openMarket(typeId: number) {
     const t = tokens[0]
     if (!t) { setMsg('Log in om items in-game te openen.'); return }
@@ -160,6 +164,32 @@ export default function JitaScanner() {
       : ((b[sortKey] as number) ?? 0) - ((a[sortKey] as number) ?? 0))
     return out.slice(0, 200)
   }, [rows, mode, minMarginPct, maxMarginPct, minVolume, minBuyPrice, maxPrice, sortKey])
+
+  // Bouwt een concreet koop-portfolio: verdeel het budget over de beste items op
+  // winst/dag, per item begrensd door budget/slots én ~30% van het dagvolume
+  // (wat je realistisch per dag kunt wegzetten). Alleen zinvol na een "Beste nu"-scan.
+  const strategy = useMemo(() => {
+    if (!rows || mode !== 'beste') return null
+    const budget = budgetM * 1e6
+    const perItem = budget / Math.max(1, slots)
+    const pool = rows
+      .filter(r => (r.dayVolume ?? 0) >= 20 && !r.pump &&
+        r.netMarginPct >= minMarginPct && r.netMarginPct <= maxMarginPct &&
+        r.bestBuy >= minBuyPrice && (maxPrice <= 0 || r.bestSell <= maxPrice))
+      .sort((a, b) => (b.dayProfit ?? 0) - (a.dayProfit ?? 0))
+    const picks: Array<Row & { qty: number; capital: number; profitDay: number }> = []
+    let totalCap = 0, totalProfit = 0
+    for (const r of pool) {
+      if (picks.length >= slots) break
+      const qty = Math.min(Math.floor(0.3 * (r.dayVolume ?? 0)), Math.floor(perItem / r.bestBuy))
+      if (qty < 1) continue
+      const capital = qty * r.bestBuy
+      const profitDay = qty * r.netMargin
+      picks.push({ ...r, qty, capital, profitDay })
+      totalCap += capital; totalProfit += profitDay
+    }
+    return { picks, totalCap, totalProfit, roi: totalCap ? (totalProfit / totalCap) * 100 : 0 }
+  }, [rows, mode, budgetM, slots, minMarginPct, maxMarginPct, minBuyPrice, maxPrice])
 
   const pct = prog.total ? Math.round((prog.done / prog.total) * 100) : 0
   const btn = (bg: string): React.CSSProperties => ({
@@ -242,6 +272,71 @@ export default function JitaScanner() {
         {mode === 'beste' && rows && !scanning && (
           <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.6rem' }}>
             Gerangschikt op geschatte <b>winst/dag</b> (winst/stuk × haalbaar dagvolume). Prijs-pieken zijn eruit gefilterd.
+          </div>
+        )}
+
+        {/* Strategie-planner: concreet koop-portfolio op basis van budget + slots */}
+        {mode === 'beste' && strategy && !scanning && (
+          <div style={{ marginBottom: '1rem', padding: '0.85rem', background: 'var(--surface)', border: '1px solid var(--blue)', borderRadius: 3 }}>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '0.7rem' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '0.3rem' }}>📋 STRATEGIE — KOOPPLAN</div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Verdeel je budget over de beste flips</div>
+              </div>
+              <div style={{ width: 130 }}>
+                <div style={LABEL}>Budget (M ISK)</div>
+                <input type="number" value={budgetM} onChange={e => setBudgetM(Math.max(0, +e.target.value))} style={INPUT} />
+              </div>
+              <div style={{ width: 110 }}>
+                <div style={LABEL}>Order-slots</div>
+                <input type="number" value={slots} onChange={e => setSlots(Math.max(1, +e.target.value))} style={INPUT} />
+              </div>
+            </div>
+
+            {strategy.picks.length === 0 ? (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                Geen items passen binnen dit budget/filter. Verhoog het budget of versoepel de filters.
+              </div>
+            ) : (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>
+                      <th style={{ ...TH, textAlign: 'left' }}>Koop dit</th>
+                      <th style={TH}>Koop @</th>
+                      <th style={TH}>Aantal</th>
+                      <th style={TH}>Kapitaal</th>
+                      <th style={TH}>Marge %</th>
+                      <th style={TH}>~Winst/dag</th>
+                    </tr></thead>
+                    <tbody>
+                      {strategy.picks.map(p => (
+                        <tr key={p.typeId} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ ...TD, textAlign: 'left' }}>
+                            <button onClick={() => openMarket(p.typeId)} title="Open in-game marktvenster"
+                              style={{ background: 'none', border: 0, padding: 0, color: 'var(--blue)', cursor: 'pointer', fontSize: '0.75rem', textAlign: 'left' }}>{p.name}</button>
+                          </td>
+                          <td style={TD}>{fmtISK(p.bestBuy)}</td>
+                          <td style={TD}>{p.qty.toLocaleString('nl-NL')}</td>
+                          <td style={TD}>{fmtISK(p.capital)}</td>
+                          <td style={{ ...TD, color: '#4ade80' }}>{p.netMarginPct.toFixed(1)}%</td>
+                          <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(p.profitDay)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginTop: '0.7rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border)', fontSize: '0.75rem' }}>
+                  <span>Kapitaal ingezet: <b>{fmtISK(strategy.totalCap)}</b></span>
+                  <span>Verwachte winst/dag: <b style={{ color: '#4ade80' }}>{fmtISK(strategy.totalProfit)}</b></span>
+                  <span>Rendement: <b style={{ color: '#4ade80' }}>{strategy.roi.toFixed(1)}% / dag</b></span>
+                  <span style={{ color: 'var(--text-dim)' }}>≈ {fmtISK(strategy.totalProfit * 30)} / maand</span>
+                </div>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.4rem' }}>
+                  Aantal = min(budget/slots, ~30% dagvolume). Plaats buy-orders op "Koop @", verkoop op de sell-prijs, en houd je orders bovenaan (Market-pagina). Schatting, geen garantie.
+                </div>
+              </>
+            )}
           </div>
         )}
 
