@@ -47,6 +47,7 @@ const CourierCalc  = lz(() => import('./pages/CourierCalc'))
 const BoosterCalc  = lz(() => import('./pages/BoosterCalc'))
 const StationTrading = lz(() => import('./pages/StationTrading'))
 const JitaScanner  = lz(() => import('./pages/JitaScanner'))
+const JitaMonitor  = lz(() => import('./pages/JitaMonitor'))
 const KillOfWeek   = lz(() => import('./pages/KillOfWeek'))
 const Leaderboard  = lz(() => import('./pages/Leaderboard'))
 const TopMiners    = lz(() => import('./pages/TopMiners'))
@@ -232,6 +233,7 @@ function AppRoutes() {
       <Route path="/ansiblex" element={<ProtectedRoute><Ansiblex /></ProtectedRoute>} />
       <Route path="/market"    element={<ProtectedRoute><Market /></ProtectedRoute>} />
       <Route path="/jita-scanner" element={<ProtectedRoute><JitaScanner /></ProtectedRoute>} />
+      <Route path="/jita-monitor" element={<ProtectedRoute><JitaMonitor /></ProtectedRoute>} />
       <Route path="/industry"  element={<ProtectedRoute><Industry /></ProtectedRoute>} />
       <Route path="/mining"    element={<ProtectedRoute><Mining /></ProtectedRoute>} />
       <Route path="/planets"   element={<ProtectedRoute><Planets /></ProtectedRoute>} />

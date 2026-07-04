@@ -63,6 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Finance',      path: '/wallet',     icon: '🏦', badge: null },
   { label: 'Market',       path: '/market',     icon: '🛒', badge: null },
   { label: 'Jita Scanner', path: '/jita-scanner', icon: '📈', badge: null },
+  { label: 'Order-monitor', path: '/jita-monitor', icon: '🔔', badge: null },
   { label: 'Contracts',    path: '/contracts',  icon: '🤝', badge: null },
   { label: 'Hauling',      path: '/hauling',    icon: '🛻', badge: null },
   { label: 'Killboard',    path: '/kills',      icon: '☠️', badge: null },
@@ -99,7 +100,7 @@ export type LayoutEntry =
 const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'item', path: '/' },
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
-  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/market', '/jita-scanner', '/contracts', '/hauling'] },
+  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/market', '/jita-scanner', '/jita-monitor', '/contracts', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build'] },
   { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/fleet', '/ansiblex', '/ratting'] },
 ]
