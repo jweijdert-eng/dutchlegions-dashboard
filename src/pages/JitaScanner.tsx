@@ -156,6 +156,7 @@ export default function JitaScanner() {
   const [sortKey, setSortKey] = useState<SortKey>('netMarginPct')
   const [showFilters, setShowFilters] = useState(false)
   const [hideFalling, setHideFalling] = useState(false) // trend-filter: dalende markt verbergen
+  const [hideSkins, setHideSkins] = useState(true)       // SKINs (cosmetisch) verbergen
 
   // Strategie-planner
   const [budgetM, setBudgetM] = useState(500) // budget in miljoen ISK
@@ -232,11 +233,12 @@ export default function JitaScanner() {
       if (mode === 'beste') out = out.filter(r => (r.dayVolume ?? 0) >= 20 && !r.pump)
       if (mode === 'beste' && hideFalling) out = out.filter(r => (r.trendPct ?? 0) >= -3)
     }
+    if (hideSkins) out = out.filter(r => !/\bskin\b/i.test(r.name))
     out.sort((a, b) => sortKey === 'name'
       ? a.name.localeCompare(b.name)
       : ((b[sortKey] as number) ?? 0) - ((a[sortKey] as number) ?? 0))
     return out.slice(0, 200)
-  }, [rows, mode, minMarginPct, maxMarginPct, minVolume, minBuyPrice, maxPrice, sortKey, hideFalling])
+  }, [rows, mode, minMarginPct, maxMarginPct, minVolume, minBuyPrice, maxPrice, sortKey, hideFalling, hideSkins])
 
   // Bouwt een concreet koop-portfolio: verdeel het budget over de beste items op
   // winst/dag, per item begrensd door budget/slots én ~30% van het dagvolume
@@ -345,6 +347,10 @@ export default function JitaScanner() {
                 <option value="name">Naam</option>
               </select>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, alignSelf: 'flex-end', fontSize: '0.68rem', color: 'var(--text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={hideSkins} onChange={e => setHideSkins(e.target.checked)} />
+              Verberg SKINs
+            </label>
           </div>
         )}
 
