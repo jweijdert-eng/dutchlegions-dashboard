@@ -66,9 +66,9 @@ interface Row {
   typeId: number; name: string
   bestBuy: number; bestSell: number; spread: number
   netMargin: number; netMarginPct: number
-  tradeVolume: number
+  tradeVolume: number; orderbookVol: number
   dayVolume?: number; dayProfit?: number; pump?: boolean
-  trendPct?: number; volatilityPct?: number
+  trendPct?: number; volatilityPct?: number; iskPerDay?: number
 }
 
 function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] {
@@ -89,7 +89,7 @@ function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] 
     const netMarginPct = buyCost ? (netMargin / buyCost) * 100 : 0
     rows.push({
       typeId, bestBuy: a.bb, bestSell: a.bs, spread: a.bs - a.bb,
-      netMargin, netMarginPct, tradeVolume: Math.min(a.sv, a.bv),
+      netMargin, netMarginPct, tradeVolume: Math.min(a.sv, a.bv), orderbookVol: a.sv + a.bv,
     })
   }
   return rows
@@ -118,8 +118,8 @@ function historyStats(hist: RegionHistoryPoint[]) {
   return { dayVolume, avg30, min30, max30, trendPct, volatilityPct }
 }
 
-type SortKey = 'dayProfit' | 'netMarginPct' | 'netMargin' | 'spread' | 'tradeVolume' | 'bestSell' | 'name'
-type Mode = 'snel' | 'beste'
+type SortKey = 'iskPerDay' | 'dayVolume' | 'dayProfit' | 'netMarginPct' | 'netMargin' | 'spread' | 'tradeVolume' | 'bestSell' | 'name'
+type Mode = 'snel' | 'beste' | 'traded'
 
 const INPUT: React.CSSProperties = {
   background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2,
@@ -179,12 +179,18 @@ export default function JitaScanner() {
       const names = await resolveNames(raw.map(r => r.typeId))
       let withNames: Row[] = raw.map(r => ({ ...r, name: names.get(r.typeId) ?? `#${r.typeId}` }))
 
-      if (m === 'beste') {
+      if (m === 'beste' || m === 'traded') {
         setPhase('Daghandel bepalen…')
-        const cands = [...withNames]
-          .filter(r => r.netMarginPct >= 5 && r.netMarginPct <= 40 && r.bestBuy >= 1000 && r.tradeVolume >= 20)
-          .sort((a, b) => b.netMargin * Math.min(b.tradeVolume, 500) - a.netMargin * Math.min(a.tradeVolume, 500))
-          .slice(0, ENRICH_TOP)
+        // Kandidaten: "beste" = beste flip-potentie; "traded" = grootste markten
+        // (orderbook-volume × prijs), zodat we de meest verhandelde items pakken.
+        const cands = m === 'beste'
+          ? [...withNames]
+              .filter(r => r.netMarginPct >= 5 && r.netMarginPct <= 40 && r.bestBuy >= 1000 && r.tradeVolume >= 20)
+              .sort((a, b) => b.netMargin * Math.min(b.tradeVolume, 500) - a.netMargin * Math.min(a.tradeVolume, 500))
+              .slice(0, ENRICH_TOP)
+          : [...withNames]
+              .sort((a, b) => b.orderbookVol * b.bestSell - a.orderbookVol * a.bestSell)
+              .slice(0, 200)
         const enr = new Map<number, Partial<Row>>()
         let done = 0; setProg({ done: 0, total: cands.length })
         await Promise.all(cands.map(async r => {
@@ -197,11 +203,12 @@ export default function JitaScanner() {
             pump: st.avg30 > 0 && r.bestSell > st.avg30 * 1.3,
             trendPct: st.trendPct,
             volatilityPct: st.volatilityPct,
+            iskPerDay: st.dayVolume * st.avg30,
           })
           setProg({ done: ++done, total: cands.length })
         }))
         withNames = withNames.map(r => ({ ...r, ...enr.get(r.typeId) }))
-        setSortKey('dayProfit')
+        setSortKey(m === 'beste' ? 'dayProfit' : 'iskPerDay')
       } else {
         setSortKey('netMarginPct')
       }
@@ -213,12 +220,18 @@ export default function JitaScanner() {
 
   const filtered = useMemo(() => {
     if (!rows) return []
-    let out = rows.filter(r =>
-      r.netMarginPct >= minMarginPct && r.netMarginPct <= maxMarginPct &&
-      r.tradeVolume >= minVolume && r.bestBuy >= minBuyPrice &&
-      (maxPrice <= 0 || r.bestSell <= maxPrice))
-    if (mode === 'beste') out = out.filter(r => (r.dayVolume ?? 0) >= 20 && !r.pump)
-    if (mode === 'beste' && hideFalling) out = out.filter(r => (r.trendPct ?? 0) >= -3)
+    let out: Row[]
+    if (mode === 'traded') {
+      // Meest verhandeld: geen marge-filters, alleen items met echte daghandel.
+      out = rows.filter(r => (r.dayVolume ?? 0) > 0 && (maxPrice <= 0 || r.bestSell <= maxPrice))
+    } else {
+      out = rows.filter(r =>
+        r.netMarginPct >= minMarginPct && r.netMarginPct <= maxMarginPct &&
+        r.tradeVolume >= minVolume && r.bestBuy >= minBuyPrice &&
+        (maxPrice <= 0 || r.bestSell <= maxPrice))
+      if (mode === 'beste') out = out.filter(r => (r.dayVolume ?? 0) >= 20 && !r.pump)
+      if (mode === 'beste' && hideFalling) out = out.filter(r => (r.trendPct ?? 0) >= -3)
+    }
     out.sort((a, b) => sortKey === 'name'
       ? a.name.localeCompare(b.name)
       : ((b[sortKey] as number) ?? 0) - ((a[sortKey] as number) ?? 0))
@@ -252,6 +265,7 @@ export default function JitaScanner() {
   }, [rows, mode, budgetM, slots, minMarginPct, maxMarginPct, minBuyPrice, maxPrice])
 
   const pct = prog.total ? Math.round((prog.done / prog.total) * 100) : 0
+  const enriched = mode !== 'snel' // beste & traded hebben historie-kolommen
   const btn = (bg: string): React.CSSProperties => ({
     padding: '0.5rem 0.9rem', borderRadius: 2, fontSize: '0.72rem', fontWeight: 700, cursor: scanning ? 'default' : 'pointer',
     background: bg, color: '#04121f', border: 0, opacity: scanning ? 0.6 : 1,
@@ -279,6 +293,9 @@ export default function JitaScanner() {
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
           <button onClick={() => runScan('beste')} disabled={scanning} style={btn('var(--blue)')}>
             {scanning && mode === 'beste' ? `Bezig… ${pct}%` : '⭐ Beste nu (met volume)'}
+          </button>
+          <button onClick={() => runScan('traded')} disabled={scanning} style={{ ...btn('var(--surface2)'), color: 'var(--text)', border: '1px solid var(--border)' }}>
+            {scanning && mode === 'traded' ? `Bezig… ${pct}%` : '📊 Meest verhandeld'}
           </button>
           <button onClick={() => runScan('snel')} disabled={scanning} style={{ ...btn('var(--surface2)'), color: 'var(--text)', border: '1px solid var(--border)' }}>
             {scanning && mode === 'snel' ? `Bezig… ${pct}%` : 'Snel scannen'}
@@ -317,6 +334,8 @@ export default function JitaScanner() {
             <div style={{ width: 150 }}>
               <div style={LABEL}>Sorteer op</div>
               <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)} style={INPUT}>
+                {mode === 'traded' && <option value="iskPerDay">ISK-omzet / dag</option>}
+                {enriched && <option value="dayVolume">Dagvolume</option>}
                 {mode === 'beste' && <option value="dayProfit">Winst / dag</option>}
                 <option value="netMarginPct">Marge %</option>
                 <option value="netMargin">Marge / stuk</option>
@@ -336,6 +355,13 @@ export default function JitaScanner() {
               <input type="checkbox" checked={hideFalling} onChange={e => setHideFalling(e.target.checked)} style={{ verticalAlign: 'middle', marginRight: 4 }} />
               Verberg dalende markt (trend ▼)
             </label>
+          </div>
+        )}
+
+        {mode === 'traded' && rows && !scanning && (
+          <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.6rem' }}>
+            De <b>meest verhandelde</b> items in Jita 4-4, gerangschikt op <b>ISK-omzet/dag</b> (dagvolume × prijs).
+            Dit zijn de meest liquide markten — veilig om te flippen, maar vaak met dunne marges.
           </div>
         )}
 
@@ -415,10 +441,11 @@ export default function JitaScanner() {
                   <th style={TH}>Verkoop @ (sell)</th>
                   <th style={TH}>Verschil</th>
                   <th style={TH}>Marge %</th>
-                  {mode === 'beste' && <th style={TH}>Dag-volume</th>}
+                  {enriched && <th style={TH}>Dag-volume</th>}
+                  {mode === 'traded' && <th style={TH}>ISK-omzet/dag</th>}
                   {mode === 'beste' && <th style={TH}>~Winst/dag</th>}
-                  {mode === 'beste' && <th style={TH}>Trend</th>}
-                  {mode === 'beste' && <th style={TH}>Volatiliteit</th>}
+                  {enriched && <th style={TH}>Trend</th>}
+                  {enriched && <th style={TH}>Volatiliteit</th>}
                 </tr>
               </thead>
               <tbody>
@@ -437,16 +464,17 @@ export default function JitaScanner() {
                     <td style={TD}>{fmtISK(r.bestSell)}</td>
                     <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.spread)}</td>
                     <td style={{ ...TD, color: '#4ade80' }}>{r.netMarginPct.toFixed(1)}%</td>
-                    {mode === 'beste' && <td style={TD}>{(r.dayVolume ?? 0).toLocaleString('nl-NL')}</td>}
+                    {enriched && <td style={TD}>{(r.dayVolume ?? 0).toLocaleString('nl-NL')}</td>}
+                    {mode === 'traded' && <td style={{ ...TD, fontWeight: 700 }}>{fmtISK(r.iskPerDay ?? 0)}</td>}
                     {mode === 'beste' && <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.dayProfit ?? 0)}</td>}
-                    {mode === 'beste' && (() => { const t = trendBadge(r.trendPct); return (
+                    {enriched && (() => { const t = trendBadge(r.trendPct); return (
                       <td style={{ ...TD, color: t.color }} title="Prijstrend: recente vs. oudere helft (30d)">{t.sym} {t.txt}</td>
                     ) })()}
-                    {mode === 'beste' && <td style={{ ...TD, color: (r.volatilityPct ?? 0) > 15 ? '#ffce54' : 'var(--text)' }} title="Prijsschommeling (variatiecoëfficiënt, 30d)">{(r.volatilityPct ?? 0).toFixed(0)}%</td>}
+                    {enriched && <td style={{ ...TD, color: (r.volatilityPct ?? 0) > 15 ? '#ffce54' : 'var(--text)' }} title="Prijsschommeling (variatiecoëfficiënt, 30d)">{(r.volatilityPct ?? 0).toFixed(0)}%</td>}
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={mode === 'beste' ? 10 : 5} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>
+                  <tr><td colSpan={mode === 'beste' ? 10 : mode === 'traded' ? 9 : 5} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>
                     Geen items voldoen aan de filters.
                   </td></tr>
                 )}
