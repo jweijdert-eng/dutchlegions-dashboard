@@ -1257,6 +1257,49 @@ export async function getRegionOrders(regionId: number, typeId: number): Promise
   return results
 }
 
+// Alle order-pagina's van een hele regio (order_type=all, álle types). Zwaar:
+// The Forge is ~420 pagina's. Gebruikt de interne esiFetch (concurrency-limiet +
+// retry) en leest x-pages voor de paginering. Roept onProgress(done, total) aan.
+export async function getAllRegionOrders(
+  regionId: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<PublicMarketOrder[]> {
+  const url = (p: number) =>
+    `${BASE}/markets/${regionId}/orders/?datasource=tranquility&order_type=all&page=${p}`
+  const first = await esiFetch(url(1))
+  if (!first.ok) throw new Error(`ESI region-orders: ${first.status}`)
+  const pages = parseInt(first.headers.get('x-pages') ?? '1') || 1
+  const all = (await first.json()) as PublicMarketOrder[]
+  let done = 1
+  onProgress?.(done, pages)
+  await Promise.all(
+    Array.from({ length: pages - 1 }, (_, i) => i + 2).map(async p => {
+      const res = await esiFetch(url(p))
+      if (res.ok) all.push(...((await res.json()) as PublicMarketOrder[]))
+      done++
+      onProgress?.(done, pages)
+    }),
+  )
+  return all
+}
+
+export interface RegionHistoryPoint {
+  date: string
+  average: number
+  highest: number
+  lowest: number
+  order_count: number
+  volume: number
+}
+
+export async function getRegionHistory(regionId: number, typeId: number): Promise<RegionHistoryPoint[]> {
+  try {
+    return await esiGet<RegionHistoryPoint[]>(`/markets/${regionId}/history/?type_id=${typeId}`)
+  } catch {
+    return []
+  }
+}
+
 export interface CharacterFleet {
   fleet_id: number
   role: 'fleet_commander' | 'wing_commander' | 'squad_commander' | 'squad_member'
