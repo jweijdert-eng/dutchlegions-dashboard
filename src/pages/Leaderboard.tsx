@@ -34,7 +34,9 @@ export default function Leaderboard() {
       .then(r => r.json())
       .then((d: { topKillers?: TopKiller[] }) => {
         if (cancelled) return
-        const list = (d?.topKillers ?? []).map(k => ({ ...k, losses: k.losses ?? 0 }))
+        const list = (d?.topKillers ?? [])
+          .map(k => ({ ...k, losses: k.losses ?? 0 }))
+          .sort((a, b) => b.kills - a.kills) // vangnet: altijd op kills aflopend
         if (!list.length) setErr('Geen data van zKillboard.')
         setRows(list); setLoading(false)
       })
@@ -98,12 +100,12 @@ export default function Leaderboard() {
       {rest.length > 0 && (
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
           {rest.map((r, idx) => {
-            const i = idx + 3
+            const rank = idx + 4 // rest begint bij de 4e plek
             return (
               <a key={r.characterID} href={`https://zkillboard.com/character/${r.characterID}/`} target="_blank" rel="noreferrer"
                 style={{ ...row, textDecoration: 'none', borderBottom: idx < rest.length - 1 ? '1px solid var(--border)' : 'none', position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(r.kills / maxKills) * 100}%`, background: 'linear-gradient(90deg, rgba(0,180,216,0.12), rgba(62,207,110,0.10))', pointerEvents: 'none' }} />
-                <span style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.74rem', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', zIndex: 1 }}>{i + 1}</span>
+                <span style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.74rem', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', zIndex: 1 }}>{rank}</span>
                 <img src={`https://images.evetech.net/characters/${r.characterID}/portrait?size=32`} width={26} height={26} style={{ borderRadius: '50%', flexShrink: 0, zIndex: 1 }} alt="" />
                 <span style={{ flex: 1, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', zIndex: 1 }}>{r.characterName}</span>
                 <span style={{ width: 56, textAlign: 'right', color: '#3ecf6e', fontWeight: 700, zIndex: 1 }}>{r.kills}</span>
@@ -139,7 +141,7 @@ export default function Leaderboard() {
 
 // Eén afgelopen maand: inklapbare kaart met de bevroren top 10 (medailles voor top 3).
 function ArchiveCard({ month, defaultOpen }: { month: ArchiveMonth; defaultOpen: boolean }) {
-  const rows = month.rows.slice(0, 10)
+  const rows = [...month.rows].sort((a, b) => b.kills - a.kills).slice(0, 10)
   const winner = rows[0]
   return (
     <details open={defaultOpen} style={{ ...card, padding: 0, overflow: 'hidden', marginBottom: '0.6rem' }}>
