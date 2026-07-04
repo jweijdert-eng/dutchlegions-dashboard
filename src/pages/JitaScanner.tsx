@@ -28,6 +28,31 @@ function trendBadge(pct: number | undefined) {
   return { sym: '→', color: 'var(--text-dim)', txt: `${p >= 0 ? '+' : ''}${p.toFixed(0)}%` }
 }
 
+// Eén helder koopadvies uit de losse signalen. vsAvgPct (prijs vs 30d-gem) is
+// optioneel — alleen beschikbaar bij het opzoeken van één item.
+function buyVerdict(m: { netMarginPct: number; dayVolume?: number; trendPct?: number; vsAvgPct?: number | null }) {
+  const reasons: string[] = []
+  let bad = false, warn = false
+  if (m.netMarginPct < 3) { bad = true; reasons.push('marge te laag') }
+  else if (m.netMarginPct < 5) { warn = true; reasons.push('krappe marge') }
+  if (m.dayVolume !== undefined) {
+    if (m.dayVolume < 20) { bad = true; reasons.push('nauwelijks handel') }
+    else if (m.dayVolume < 50) { warn = true; reasons.push('laag volume') }
+  }
+  if (m.trendPct !== undefined) {
+    if (m.trendPct < -8) { bad = true; reasons.push('prijs daalt hard') }
+    else if (m.trendPct < -3) { warn = true; reasons.push('prijs daalt') }
+  }
+  if (m.vsAvgPct != null) {
+    if (m.vsAvgPct > 12) { bad = true; reasons.push('prijs op piek') }
+    else if (m.vsAvgPct > 5) { warn = true; reasons.push('prijs bovengemiddeld') }
+    else if (m.vsAvgPct < -5) reasons.push('goedkoop nu')
+  }
+  if (bad) return { label: 'NIET KOPEN', color: '#ff5c6c', reason: reasons.find(r => r !== 'goedkoop nu') ?? '' }
+  if (warn) return { label: 'TWIJFELACHTIG', color: '#ffce54', reason: reasons.find(r => r !== 'goedkoop nu') ?? '' }
+  return { label: 'KOOP NU', color: '#4ade80', reason: reasons.includes('goedkoop nu') ? 'goedkoop t.o.v. 30d' : 'goede marge & volume' }
+}
+
 interface Fees { broker: number; tax: number } // fracties
 const PRESETS = [
   { label: 'Geen skills',  broker: 0.05,  tax: 0.08 },
@@ -384,6 +409,7 @@ export default function JitaScanner() {
               <thead>
                 <tr style={{ background: 'var(--surface)' }}>
                   <th style={{ ...TH, textAlign: 'left' }}>Item</th>
+                  {mode === 'beste' && <th style={{ ...TH, textAlign: 'left' }}>Advies</th>}
                   <th style={TH}>Koop @ (buy)</th>
                   <th style={TH}>Verkoop @ (sell)</th>
                   <th style={TH}>Verschil</th>
@@ -403,6 +429,9 @@ export default function JitaScanner() {
                         {r.name}
                       </button>
                     </td>
+                    {mode === 'beste' && (() => { const v = buyVerdict({ netMarginPct: r.netMarginPct, dayVolume: r.dayVolume, trendPct: r.trendPct }); return (
+                      <td style={{ ...TD, textAlign: 'left', color: v.color, fontWeight: 700 }} title={v.reason}>{v.label}</td>
+                    ) })()}
                     <td style={TD}>{fmtISK(r.bestBuy)}</td>
                     <td style={TD}>{fmtISK(r.bestSell)}</td>
                     <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.spread)}</td>
@@ -416,7 +445,7 @@ export default function JitaScanner() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={mode === 'beste' ? 9 : 5} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>
+                  <tr><td colSpan={mode === 'beste' ? 10 : 5} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>
                     Geen items voldoen aan de filters.
                   </td></tr>
                 )}
@@ -507,6 +536,16 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
       {err && <div style={{ color: '#ff5c6c', fontSize: '0.72rem', marginTop: '0.5rem' }}>{err}</div>}
       {res && (
         <>
+          {(() => {
+            const marginPct = res.buy && margin !== null ? (margin / res.buy) * 100 : 0
+            const v = buyVerdict({ netMarginPct: marginPct, dayVolume: s?.dayVolume, trendPct: s?.trendPct, vsAvgPct: vsAvg })
+            return (
+              <div style={{ marginTop: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.9rem', borderRadius: 3, border: `1px solid ${v.color}`, background: 'var(--surface)' }}>
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: v.color, letterSpacing: '0.02em' }}>{v.label}</span>
+                {v.reason && <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>— {v.reason}</span>}
+              </div>
+            )
+          })()}
           <div style={{ marginTop: '0.8rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
             <button onClick={() => openMarket(res.typeId)} style={{ background: 'none', border: 0, padding: 0, color: 'var(--blue)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}>{res.name}</button>
             <span style={{ fontSize: '0.75rem' }}>Buy: <b>{res.buy !== null ? fmtISK(res.buy) : '—'}</b></span>
