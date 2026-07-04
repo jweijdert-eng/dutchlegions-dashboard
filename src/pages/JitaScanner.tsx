@@ -6,6 +6,7 @@ import {
   getAllRegionOrders, getRegionOrders, getRegionHistory, resolveNames, resolveTypeIds,
   openMarketWindow, type PublicMarketOrder, type RegionHistoryPoint,
 } from '../api/esi'
+import { addPosition } from '../utils/jitaPositions'
 
 // Alles draait om Jita 4-4.
 const THE_FORGE = 10000002
@@ -480,6 +481,10 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
   const [loading, setLoading] = useState(false)
   const [res, setRes] = useState<LookupRes | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  // Aankoop opslaan
+  const [saveQty, setSaveQty] = useState('1')
+  const [savePrice, setSavePrice] = useState('')
+  const [saved, setSaved] = useState(false)
 
   async function search() {
     const name = q.trim()
@@ -497,12 +502,14 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
       const orders = ordersAll.filter(o => o.location_id === JITA_STATION)
       const sells = orders.filter(o => !o.is_buy_order).map(o => o.price)
       const buys = orders.filter(o => o.is_buy_order).map(o => o.price)
+      const bestBuy = buys.length ? Math.max(...buys) : null
       setRes({
         name: names.get(typeId) ?? name, typeId,
-        buy: buys.length ? Math.max(...buys) : null,
+        buy: bestBuy,
         sell: sells.length ? Math.min(...sells) : null,
         hist, stats: historyStats(hist),
       })
+      setSavePrice(bestBuy !== null ? String(Math.round(bestBuy)) : ''); setSaved(false)
     } catch (e) { setErr(e instanceof Error ? e.message : 'Fout'); setRes(null) }
     finally { setLoading(false) }
   }
@@ -552,6 +559,28 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
             <span style={{ fontSize: '0.75rem' }}>Sell: <b>{res.sell !== null ? fmtISK(res.sell) : '—'}</b></span>
             <span style={{ fontSize: '0.75rem' }}>Verschil: <b style={{ color: '#4ade80' }}>{spread !== null ? fmtISK(spread) : '—'}</b></span>
             <span style={{ fontSize: '0.75rem' }}>Marge/stuk: <b style={{ color: margin !== null && margin > 0 ? '#4ade80' : '#ff5c6c' }}>{margin !== null ? fmtISK(margin) : '—'}</b></span>
+          </div>
+
+          {/* Aankoop bewaren → Mijn posities */}
+          <div style={{ marginTop: '0.7rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ width: 80 }}>
+              <div style={LABEL}>Aantal</div>
+              <input type="number" min={1} value={saveQty} onChange={e => setSaveQty(e.target.value)} style={{ ...INPUT, width: '100%' }} />
+            </div>
+            <div style={{ width: 120 }}>
+              <div style={LABEL}>Koopprijs/stuk</div>
+              <input value={savePrice} onChange={e => setSavePrice(e.target.value)} style={{ ...INPUT, width: '100%' }} />
+            </div>
+            <button
+              onClick={() => {
+                const qy = parseInt(saveQty) || 0, pr = parseFloat(savePrice.replace(',', '.')) || 0
+                if (qy < 1 || pr <= 0) return
+                addPosition({ typeId: res.typeId, name: res.name, qty: qy, buyPrice: pr })
+                setSaved(true)
+              }}
+              style={{ padding: '0.4rem 0.8rem', borderRadius: 2, border: 0, background: saved ? '#4ade80' : 'var(--blue)', color: '#04121f', fontWeight: 700, cursor: 'pointer', fontSize: '0.72rem' }}
+            >{saved ? '✓ Bewaard' : '+ Bewaar aankoop'}</button>
+            {saved && <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>Zie <b>Mijn posities</b> voor je winst/verlies</span>}
           </div>
 
           {/* Koop-laag/verkoop-hoog signaal */}
