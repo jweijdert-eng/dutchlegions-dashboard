@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import Layout, { PageHeader } from '../components/Layout'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -19,6 +20,14 @@ function fmtISK(v: number): string {
   return v.toLocaleString('nl-NL', { maximumFractionDigits: 2 })
 }
 
+// Trend-indicator uit trendPct: stijgend / stabiel / dalend.
+function trendBadge(pct: number | undefined) {
+  const p = pct ?? 0
+  if (p > 3) return { sym: '▲', color: '#4ade80', txt: `+${p.toFixed(0)}%` }
+  if (p < -3) return { sym: '▼', color: '#ff5c6c', txt: `${p.toFixed(0)}%` }
+  return { sym: '→', color: 'var(--text-dim)', txt: `${p >= 0 ? '+' : ''}${p.toFixed(0)}%` }
+}
+
 interface Fees { broker: number; tax: number } // fracties
 const PRESETS = [
   { label: 'Geen skills',  broker: 0.05,  tax: 0.08 },
@@ -33,6 +42,7 @@ interface Row {
   netMargin: number; netMarginPct: number
   tradeVolume: number
   dayVolume?: number; dayProfit?: number; pump?: boolean
+  trendPct?: number; volatilityPct?: number
 }
 
 function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] {
@@ -59,13 +69,27 @@ function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] 
   return rows
 }
 
-function dayMetrics(netMargin: number, bestSell: number, orderVol: number, hist: RegionHistoryPoint[]) {
-  const last = hist.slice(-14)
-  if (last.length === 0) return { dayVolume: 0, dayProfit: 0, pump: false }
-  const dayVolume = Math.round(last.reduce((s, h) => s + h.volume, 0) / last.length)
-  const avgPrice = last.reduce((s, h) => s + h.average, 0) / last.length
-  const capturable = Math.min(orderVol, Math.round(dayVolume * 0.3))
-  return { dayVolume, dayProfit: netMargin * capturable, pump: avgPrice > 0 && bestSell > avgPrice * 1.3 }
+// Stats uit de markt-historie: recent dagvolume, 30d gemiddelde/min/max,
+// trend (recente helft vs oudere helft, in %) en volatiliteit (variatie-
+// coëfficiënt = stdev/gemiddelde, in %).
+function historyStats(hist: RegionHistoryPoint[]) {
+  const h30 = hist.slice(-30)
+  const avgs = h30.map(h => h.average)
+  const n = avgs.length
+  if (n === 0) return { dayVolume: 0, avg30: 0, min30: 0, max30: 0, trendPct: 0, volatilityPct: 0 }
+  const last14 = hist.slice(-14)
+  const dayVolume = Math.round(last14.reduce((s, h) => s + h.volume, 0) / last14.length)
+  const avg30 = avgs.reduce((s, v) => s + v, 0) / n
+  const min30 = Math.min(...avgs)
+  const max30 = Math.max(...avgs)
+  const half = Math.floor(n / 2) || 1
+  const older = avgs.slice(0, half), recent = avgs.slice(-half)
+  const olderAvg = older.reduce((s, v) => s + v, 0) / older.length
+  const recentAvg = recent.reduce((s, v) => s + v, 0) / recent.length
+  const trendPct = olderAvg > 0 ? ((recentAvg - olderAvg) / olderAvg) * 100 : 0
+  const variance = avgs.reduce((s, v) => s + (v - avg30) ** 2, 0) / n
+  const volatilityPct = avg30 > 0 ? (Math.sqrt(variance) / avg30) * 100 : 0
+  return { dayVolume, avg30, min30, max30, trendPct, volatilityPct }
 }
 
 type SortKey = 'dayProfit' | 'netMarginPct' | 'netMargin' | 'spread' | 'tradeVolume' | 'bestSell' | 'name'
@@ -105,6 +129,7 @@ export default function JitaScanner() {
   const [maxPrice, setMaxPrice] = useState(0)
   const [sortKey, setSortKey] = useState<SortKey>('netMarginPct')
   const [showFilters, setShowFilters] = useState(false)
+  const [hideFalling, setHideFalling] = useState(false) // trend-filter: dalende markt verbergen
 
   // Strategie-planner
   const [budgetM, setBudgetM] = useState(500) // budget in miljoen ISK
@@ -138,7 +163,15 @@ export default function JitaScanner() {
         let done = 0; setProg({ done: 0, total: cands.length })
         await Promise.all(cands.map(async r => {
           const hist = await getRegionHistory(THE_FORGE, r.typeId)
-          enr.set(r.typeId, dayMetrics(r.netMargin, r.bestSell, r.tradeVolume, hist))
+          const st = historyStats(hist)
+          const capturable = Math.min(r.tradeVolume, Math.round(st.dayVolume * 0.3))
+          enr.set(r.typeId, {
+            dayVolume: st.dayVolume,
+            dayProfit: r.netMargin * capturable,
+            pump: st.avg30 > 0 && r.bestSell > st.avg30 * 1.3,
+            trendPct: st.trendPct,
+            volatilityPct: st.volatilityPct,
+          })
           setProg({ done: ++done, total: cands.length })
         }))
         withNames = withNames.map(r => ({ ...r, ...enr.get(r.typeId) }))
@@ -159,11 +192,12 @@ export default function JitaScanner() {
       r.tradeVolume >= minVolume && r.bestBuy >= minBuyPrice &&
       (maxPrice <= 0 || r.bestSell <= maxPrice))
     if (mode === 'beste') out = out.filter(r => (r.dayVolume ?? 0) >= 20 && !r.pump)
+    if (mode === 'beste' && hideFalling) out = out.filter(r => (r.trendPct ?? 0) >= -3)
     out.sort((a, b) => sortKey === 'name'
       ? a.name.localeCompare(b.name)
       : ((b[sortKey] as number) ?? 0) - ((a[sortKey] as number) ?? 0))
     return out.slice(0, 200)
-  }, [rows, mode, minMarginPct, maxMarginPct, minVolume, minBuyPrice, maxPrice, sortKey])
+  }, [rows, mode, minMarginPct, maxMarginPct, minVolume, minBuyPrice, maxPrice, sortKey, hideFalling])
 
   // Bouwt een concreet koop-portfolio: verdeel het budget over de beste items op
   // winst/dag, per item begrensd door budget/slots én ~30% van het dagvolume
@@ -272,6 +306,10 @@ export default function JitaScanner() {
         {mode === 'beste' && rows && !scanning && (
           <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginBottom: '0.6rem' }}>
             Gerangschikt op geschatte <b>winst/dag</b> (winst/stuk × haalbaar dagvolume). Prijs-pieken zijn eruit gefilterd.
+            <label style={{ marginLeft: '0.9rem', cursor: 'pointer', color: 'var(--text)' }}>
+              <input type="checkbox" checked={hideFalling} onChange={e => setHideFalling(e.target.checked)} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              Verberg dalende markt (trend ▼)
+            </label>
           </div>
         )}
 
@@ -352,6 +390,8 @@ export default function JitaScanner() {
                   <th style={TH}>Marge %</th>
                   {mode === 'beste' && <th style={TH}>Dag-volume</th>}
                   {mode === 'beste' && <th style={TH}>~Winst/dag</th>}
+                  {mode === 'beste' && <th style={TH}>Trend</th>}
+                  {mode === 'beste' && <th style={TH}>Volatiliteit</th>}
                 </tr>
               </thead>
               <tbody>
@@ -369,10 +409,14 @@ export default function JitaScanner() {
                     <td style={{ ...TD, color: '#4ade80' }}>{r.netMarginPct.toFixed(1)}%</td>
                     {mode === 'beste' && <td style={TD}>{(r.dayVolume ?? 0).toLocaleString('nl-NL')}</td>}
                     {mode === 'beste' && <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.dayProfit ?? 0)}</td>}
+                    {mode === 'beste' && (() => { const t = trendBadge(r.trendPct); return (
+                      <td style={{ ...TD, color: t.color }} title="Prijstrend: recente vs. oudere helft (30d)">{t.sym} {t.txt}</td>
+                    ) })()}
+                    {mode === 'beste' && <td style={{ ...TD, color: (r.volatilityPct ?? 0) > 15 ? '#ffce54' : 'var(--text)' }} title="Prijsschommeling (variatiecoëfficiënt, 30d)">{(r.volatilityPct ?? 0).toFixed(0)}%</td>}
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={mode === 'beste' ? 7 : 5} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>
+                  <tr><td colSpan={mode === 'beste' ? 9 : 5} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>
                     Geen items voldoen aan de filters.
                   </td></tr>
                 )}
@@ -395,11 +439,17 @@ export default function JitaScanner() {
   )
 }
 
-// Compacte los-item-opzoeker (zichtbaar vóór de eerste scan).
+// Los-item-opzoeker met prijshistorie: buy/sell/marge + koop-laag/verkoop-hoog-
+// signaal + grafiek van gemiddelde prijs & dagvolume (90 dagen).
+interface LookupRes {
+  name: string; typeId: number; buy: number | null; sell: number | null
+  hist: RegionHistoryPoint[]
+  stats: ReturnType<typeof historyStats>
+}
 function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) => void }) {
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(false)
-  const [res, setRes] = useState<{ name: string; typeId: number; buy: number | null; sell: number | null } | null>(null)
+  const [res, setRes] = useState<LookupRes | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   async function search() {
@@ -410,14 +460,19 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
       const ids = await resolveTypeIds([name])
       const typeId = ids.get(name.toLowerCase())
       if (!typeId) { setErr(`Geen item gevonden voor "${name}" (exacte naam).`); setRes(null); return }
-      const orders = (await getRegionOrders(THE_FORGE, typeId)).filter(o => o.location_id === JITA_STATION)
+      const [ordersAll, hist, names] = await Promise.all([
+        getRegionOrders(THE_FORGE, typeId),
+        getRegionHistory(THE_FORGE, typeId),
+        resolveNames([typeId]),
+      ])
+      const orders = ordersAll.filter(o => o.location_id === JITA_STATION)
       const sells = orders.filter(o => !o.is_buy_order).map(o => o.price)
       const buys = orders.filter(o => o.is_buy_order).map(o => o.price)
-      const names = await resolveNames([typeId])
       setRes({
         name: names.get(typeId) ?? name, typeId,
         buy: buys.length ? Math.max(...buys) : null,
         sell: sells.length ? Math.min(...sells) : null,
+        hist, stats: historyStats(hist),
       })
     } catch (e) { setErr(e instanceof Error ? e.message : 'Fout'); setRes(null) }
     finally { setLoading(false) }
@@ -427,9 +482,21 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
   const margin = res && res.buy !== null && res.sell !== null
     ? res.sell * (1 - fees.broker - fees.tax) - res.buy * (1 + fees.broker) : null
 
+  // Koop-laag/verkoop-hoog: huidige sell t.o.v. 30d-gemiddelde + positie in de band.
+  const s = res?.stats
+  const ref = res?.sell ?? null
+  const vsAvg = s && s.avg30 > 0 && ref !== null ? ((ref - s.avg30) / s.avg30) * 100 : null
+  const bandPos = s && ref !== null && s.max30 > s.min30 ? Math.max(0, Math.min(1, (ref - s.min30) / (s.max30 - s.min30))) : null
+  const signal = vsAvg === null ? null
+    : vsAvg < -5 ? { txt: 'LAAG — goedkoop t.o.v. 30d (goede instap)', color: '#4ade80' }
+    : vsAvg > 5 ? { txt: 'HOOG — duur t.o.v. 30d (voorzichtig kopen)', color: '#ffce54' }
+    : { txt: 'ROND GEMIDDELDE', color: 'var(--text-dim)' }
+
+  const chartData = (res?.hist ?? []).slice(-90).map(h => ({ date: h.date.slice(5), price: h.average, volume: h.volume }))
+
   return (
     <div style={{ marginTop: '1.5rem' }}>
-      <div style={LABEL}>OF ZOEK ÉÉN ITEM OP</div>
+      <div style={LABEL}>OF ZOEK ÉÉN ITEM OP (met prijshistorie)</div>
       <div style={{ display: 'flex', gap: '0.5rem', maxWidth: 460 }}>
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()}
           placeholder='Exacte itemnaam, bv. "PLEX"' style={INPUT} />
@@ -439,13 +506,56 @@ function ItemLookup({ fees, openMarket }: { fees: Fees; openMarket: (t: number) 
       </div>
       {err && <div style={{ color: '#ff5c6c', fontSize: '0.72rem', marginTop: '0.5rem' }}>{err}</div>}
       {res && (
-        <div style={{ marginTop: '0.8rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
-          <button onClick={() => openMarket(res.typeId)} style={{ background: 'none', border: 0, padding: 0, color: 'var(--blue)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}>{res.name}</button>
-          <span style={{ fontSize: '0.75rem' }}>Buy: <b>{res.buy !== null ? fmtISK(res.buy) : '—'}</b></span>
-          <span style={{ fontSize: '0.75rem' }}>Sell: <b>{res.sell !== null ? fmtISK(res.sell) : '—'}</b></span>
-          <span style={{ fontSize: '0.75rem' }}>Verschil: <b style={{ color: '#4ade80' }}>{spread !== null ? fmtISK(spread) : '—'}</b></span>
-          <span style={{ fontSize: '0.75rem' }}>Marge/stuk: <b style={{ color: margin !== null && margin > 0 ? '#4ade80' : '#ff5c6c' }}>{margin !== null ? fmtISK(margin) : '—'}</b></span>
-        </div>
+        <>
+          <div style={{ marginTop: '0.8rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <button onClick={() => openMarket(res.typeId)} style={{ background: 'none', border: 0, padding: 0, color: 'var(--blue)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}>{res.name}</button>
+            <span style={{ fontSize: '0.75rem' }}>Buy: <b>{res.buy !== null ? fmtISK(res.buy) : '—'}</b></span>
+            <span style={{ fontSize: '0.75rem' }}>Sell: <b>{res.sell !== null ? fmtISK(res.sell) : '—'}</b></span>
+            <span style={{ fontSize: '0.75rem' }}>Verschil: <b style={{ color: '#4ade80' }}>{spread !== null ? fmtISK(spread) : '—'}</b></span>
+            <span style={{ fontSize: '0.75rem' }}>Marge/stuk: <b style={{ color: margin !== null && margin > 0 ? '#4ade80' : '#ff5c6c' }}>{margin !== null ? fmtISK(margin) : '—'}</b></span>
+          </div>
+
+          {/* Koop-laag/verkoop-hoog signaal */}
+          {s && signal && (
+            <div style={{ marginTop: '0.9rem', padding: '0.7rem 0.85rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, maxWidth: 560 }}>
+              <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', alignItems: 'baseline', fontSize: '0.72rem' }}>
+                <span style={{ fontWeight: 700, color: signal.color }}>{signal.txt}</span>
+                <span>vs 30d-gem: <b style={{ color: signal.color }}>{vsAvg! >= 0 ? '+' : ''}{vsAvg!.toFixed(1)}%</b></span>
+                <span style={{ color: 'var(--text-dim)' }}>30d: {fmtISK(s.min30)} – {fmtISK(s.max30)} (gem {fmtISK(s.avg30)})</span>
+                <span>Volatiliteit: <b>{s.volatilityPct.toFixed(0)}%</b></span>
+              </div>
+              {/* Positie-balk in de 30d-bandbreedte */}
+              {bandPos !== null && (
+                <div style={{ marginTop: '0.5rem', position: 'relative', height: 6, background: 'linear-gradient(90deg,#4ade80,#ffce54,#ff5c6c)', borderRadius: 4, opacity: 0.85 }}>
+                  <div style={{ position: 'absolute', left: `${bandPos * 100}%`, top: -3, width: 3, height: 12, background: 'var(--text)', transform: 'translateX(-50%)', borderRadius: 2 }} />
+                </div>
+              )}
+              <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', marginTop: '0.35rem' }}>
+                Balk = waar de huidige sell-prijs staat binnen de 30-daagse bandbreedte (links laag/goedkoop, rechts hoog/duur).
+              </div>
+            </div>
+          )}
+
+          {/* Prijs- & volumegrafiek */}
+          {chartData.length > 1 && (
+            <div style={{ marginTop: '0.9rem', padding: '0.7rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, maxWidth: 720 }}>
+              <div style={LABEL}>GEM. PRIJS &amp; DAGVOLUME (90 DAGEN)</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={chartData} margin={{ top: 6, right: 6, left: 6, bottom: 0 }}>
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} minTickGap={28} />
+                  <YAxis yAxisId="price" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} tickFormatter={v => fmtISK(v)} width={52} />
+                  <YAxis yAxisId="vol" orientation="right" hide />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12 }}
+                    formatter={(val: number, n) => n === 'price' ? [`${fmtISK(val)} ISK`, 'Prijs'] : [val.toLocaleString('nl-NL'), 'Volume']} />
+                  <Bar yAxisId="vol" dataKey="volume" fill="var(--border)" />
+                  <Line yAxisId="price" dataKey="price" stroke="#00b4d8" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
