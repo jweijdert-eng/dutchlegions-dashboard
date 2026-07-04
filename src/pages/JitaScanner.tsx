@@ -4,9 +4,22 @@ import Layout, { PageHeader } from '../components/Layout'
 import { useAuth } from '../auth/AuthContext'
 import {
   getAllRegionOrders, getRegionOrders, getRegionHistory, resolveNames, resolveTypeIds,
-  openMarketWindow, type PublicMarketOrder, type RegionHistoryPoint,
+  openMarketWindow, getSkillsInfo, type PublicMarketOrder, type RegionHistoryPoint, type SkillEntry,
 } from '../api/esi'
 import { addPosition } from '../utils/jitaPositions'
+
+// EVE skill type-ids voor trading — voor het uitlezen van fees + order-slots.
+const SKILL = { accounting: 16622, brokerRelations: 3446, trade: 3443, retail: 3444, wholesale: 16596, tycoon: 18580 }
+function feesFromSkills(skills: SkillEntry[]) {
+  const lvl = (id: number) => skills.find(s => s.skill_id === id)?.active_skill_level ?? 0
+  const acc = lvl(SKILL.accounting), br = lvl(SKILL.brokerRelations)
+  return {
+    broker: Math.max(0.01, 0.03 - 0.003 * br),   // Broker Relations: −0,3%/lvl, min 1%
+    tax: 0.08 * (1 - 0.11 * acc),                  // Accounting: −11%/lvl van 8% basis
+    orders: 5 + 4 * lvl(SKILL.trade) + 8 * lvl(SKILL.retail) + 16 * lvl(SKILL.wholesale) + 32 * lvl(SKILL.tycoon),
+    acc, br,
+  }
+}
 
 // Alles draait om Jita 4-4.
 const THE_FORGE = 10000002
@@ -135,10 +148,15 @@ const TH: React.CSSProperties = {
 const TD: React.CSSProperties = { textAlign: 'right', padding: '0.35rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }
 
 export default function JitaScanner() {
-  const { activeTokens: tokens } = useAuth()
+  const { activeTokens: tokens, tokens: allTokens } = useAuth()
 
   const [presetIdx, setPresetIdx] = useState(2) // Max skills
-  const fees = PRESETS[presetIdx]
+  // Uit ESI berekende fees + order-slots (per gekozen character).
+  const [skill, setSkill] = useState<{ broker: number; tax: number; orders: number; name: string } | null>(null)
+  const [skillCharId, setSkillCharId] = useState<number | null>(null)
+  const [skillLoading, setSkillLoading] = useState(false)
+  const [skillErr, setSkillErr] = useState<string | null>(null)
+  const fees = skill ? { broker: skill.broker, tax: skill.tax } : PRESETS[presetIdx]
 
   const [rows, setRows] = useState<Row[] | null>(null)
   const [mode, setMode] = useState<Mode>('snel')
@@ -167,6 +185,21 @@ export default function JitaScanner() {
     if (!t) { setMsg('Log in om items in-game te openen.'); return }
     try { setMsg(null); await openMarketWindow(typeId, t.accessToken) }
     catch { setMsg('Kon marktvenster niet openen — draait de EVE-client?') }
+  }
+
+  // Lees trade-skills van een character → fees + order-slots automatisch invullen.
+  async function loadSkills(charId: number) {
+    const t = allTokens.find(x => x.characterId === charId)
+    if (!t) return
+    setSkillLoading(true); setSkillErr(null); setSkillCharId(charId)
+    try {
+      const info = await getSkillsInfo(charId, t.accessToken)
+      const f = feesFromSkills(info.skills ?? [])
+      setSkill({ broker: f.broker, tax: f.tax, orders: f.orders, name: t.characterName })
+      setSlots(f.orders)
+    } catch (e) {
+      setSkillErr(e instanceof Error ? e.message : 'Kon skills niet laden')
+    } finally { setSkillLoading(false) }
   }
 
   async function runScan(m: Mode) {
@@ -279,16 +312,40 @@ export default function JitaScanner() {
         {/* Fees */}
         <div style={{ marginBottom: '0.9rem' }}>
           <div style={LABEL}>FEES (BROKER / SALES TAX)</div>
-          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-            {PRESETS.map((p, i) => (
-              <button key={p.label} onClick={() => setPresetIdx(i)} style={{
-                padding: '0.25rem 0.55rem', borderRadius: 2, fontSize: '0.65rem', cursor: 'pointer', fontWeight: 600,
-                background: presetIdx === i ? 'rgba(0,180,216,0.15)' : 'transparent',
-                border: `1px solid ${presetIdx === i ? 'var(--blue)' : 'var(--border)'}`,
-                color: presetIdx === i ? 'var(--blue)' : 'var(--text-dim)',
-              }}>{p.label} ({(p.broker * 100).toFixed(1)}/{(p.tax * 100).toFixed(1)}%)</button>
-            ))}
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            {PRESETS.map((p, i) => {
+              const active = !skill && presetIdx === i
+              return (
+                <button key={p.label} onClick={() => { setPresetIdx(i); setSkill(null) }} style={{
+                  padding: '0.25rem 0.55rem', borderRadius: 2, fontSize: '0.65rem', cursor: 'pointer', fontWeight: 600,
+                  background: active ? 'rgba(0,180,216,0.15)' : 'transparent',
+                  border: `1px solid ${active ? 'var(--blue)' : 'var(--border)'}`,
+                  color: active ? 'var(--blue)' : 'var(--text-dim)',
+                }}>{p.label} ({(p.broker * 100).toFixed(1)}/{(p.tax * 100).toFixed(1)}%)</button>
+              )
+            })}
+            {allTokens.length > 0 && (
+              <span style={{ display: 'inline-flex', gap: '0.3rem', alignItems: 'center', marginLeft: '0.4rem', paddingLeft: '0.5rem', borderLeft: '1px solid var(--border)' }}>
+                {allTokens.length > 1 && (
+                  <select value={skillCharId ?? allTokens[0].characterId} onChange={e => setSkillCharId(+e.target.value)}
+                    style={{ ...INPUT, fontSize: '0.63rem', padding: '0.2rem 0.3rem' }}>
+                    {allTokens.map(t => <option key={t.characterId} value={t.characterId}>{t.characterName}</option>)}
+                  </select>
+                )}
+                <button onClick={() => loadSkills(skillCharId ?? allTokens[0].characterId)} disabled={skillLoading} style={{
+                  padding: '0.25rem 0.55rem', borderRadius: 2, fontSize: '0.65rem', cursor: 'pointer', fontWeight: 600,
+                  background: skill ? 'rgba(0,180,216,0.15)' : 'transparent',
+                  border: `1px solid ${skill ? 'var(--blue)' : 'var(--border)'}`, color: skill ? 'var(--blue)' : 'var(--text-dim)',
+                }}>{skillLoading ? '⏳ laden…' : '⚙ Uit mijn skills'}</button>
+              </span>
+            )}
           </div>
+          {skill && (
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', marginTop: '0.35rem' }}>
+              Uit <b style={{ color: 'var(--text)' }}>{skill.name}</b>: broker <b>{(skill.broker * 100).toFixed(1)}%</b> · tax <b>{(skill.tax * 100).toFixed(1)}%</b> · <b>{skill.orders}</b> order-slots (ingevuld in de strategie-planner)
+            </div>
+          )}
+          {skillErr && <div style={{ fontSize: '0.62rem', color: '#ff5c6c', marginTop: '0.35rem' }}>{skillErr}</div>}
         </div>
 
         {/* Scan-knoppen */}
