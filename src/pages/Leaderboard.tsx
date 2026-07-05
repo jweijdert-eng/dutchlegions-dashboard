@@ -1,25 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
-import { getKillmailDetail, resolveNames } from '../api/esi'
+import { resolveNames, type Killmail } from '../api/esi'
 
 const CORP_ID = 98652891   // Dutch Legions
 
 interface TopKiller { characterID: number; characterName: string; kills: number; losses?: number }
 interface ArchiveMonth { ym: string; rows: TopKiller[]; frozenAt: string }
-interface FeedEntry { killmail_id: number; zkb?: { hash?: string } }
-
-// Concurrency-begrensde map — voorkomt een burst van honderden ESI-fetches tegelijk
-// (die de ESI error-limit zou raken). Roept onDone na elke afgeronde taak.
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>, onDone?: () => void): Promise<R[]> {
-  const out: R[] = new Array(items.length)
-  let idx = 0
-  async function worker() {
-    while (idx < items.length) { const i = idx++; out[i] = await fn(items[i]); onDone?.() }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return out
-}
 
 const MAAND = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december']
 const monthLabel = (ym: string) => {
@@ -39,44 +26,35 @@ export default function Leaderboard() {
   const [rows, setRows] = useState<TopKiller[]>([])
   const [archive, setArchive] = useState<ArchiveMonth[]>([])
   const [loading, setLoading] = useState(true)
-  const [status, setStatus] = useState('')
   const [err, setErr] = useState('')
   usePageLoading(loading)
 
-  // Bouw de leaderboard van DEZE MAAND uit de echte kill-/loss-feed: tel per corp-lid
-  // hoe vaak het als aanvaller op een kill staat (en als slachtoffer op een loss).
-  // Zo verschijnt iederéén met een kill — niet alleen zKill's afgekapte top-10.
+  // Bouw de leaderboard van DEZE MAAND direct uit de kill-/loss-feed. De feed (via
+  // zkill.php) bevat al de VOLLEDIGE killmails (attackers, victim, tijd) → we tellen
+  // per corp-lid meteen de kills/losses, zonder elke killmail apart op te halen.
   useEffect(() => {
     let cancelled = false
     const ym = new Date().toISOString().slice(0, 7) // "2026-07"
-    const getFeed = (q: string) =>
+    const getFeed = (q: string): Promise<Killmail[]> =>
       fetch(`/api/zkill.php?type=corporationID&id=${CORP_ID}&${q}`).then(r => (r.ok ? r.json() : [])).catch(() => [])
 
     ;(async () => {
       try {
-        const [killFeed, lossFeed] = await Promise.all([getFeed('feed'), getFeed('losses')]) as [FeedEntry[], FeedEntry[]]
-        if (cancelled) return
-        const total = killFeed.length + lossFeed.length
-        let done = 0
-        const tick = () => { if (!cancelled && ++done % 15 === 0) setStatus(`kills verwerken… ${done}/${total}`) }
-        const [killMs, lossMs] = await Promise.all([
-          mapLimit(killFeed, 12, k => getKillmailDetail(k.killmail_id, k.zkb?.hash ?? ''), tick),
-          mapLimit(lossFeed, 12, k => getKillmailDetail(k.killmail_id, k.zkb?.hash ?? ''), tick),
-        ])
+        const [killFeed, lossFeed] = await Promise.all([getFeed('feed'), getFeed('losses')])
         if (cancelled) return
 
         const kills = new Map<number, number>(), losses = new Map<number, number>()
-        for (const km of killMs) {
-          if (!km || km.killmail_time?.slice(0, 7) !== ym) continue
+        for (const km of killFeed) {
+          if (km.killmail_time?.slice(0, 7) !== ym) continue
           const seen = new Set<number>()
-          for (const a of km.attackers) {
+          for (const a of (km.attackers ?? [])) {
             if (a.corporation_id === CORP_ID && a.character_id && !seen.has(a.character_id)) {
               seen.add(a.character_id); kills.set(a.character_id, (kills.get(a.character_id) ?? 0) + 1)
             }
           }
         }
-        for (const km of lossMs) {
-          if (!km || km.killmail_time?.slice(0, 7) !== ym) continue
+        for (const km of lossFeed) {
+          if (km.killmail_time?.slice(0, 7) !== ym) continue
           const v = km.victim
           if (v?.corporation_id === CORP_ID && v.character_id) losses.set(v.character_id, (losses.get(v.character_id) ?? 0) + 1)
         }
@@ -89,7 +67,7 @@ export default function Leaderboard() {
           .filter(r => r.kills > 0) // leaderboard = killers
           .sort((a, b) => b.kills - a.kills || (a.losses ?? 0) - (b.losses ?? 0))
         if (!list.length) setErr('Nog geen kills deze maand gevonden in de feed.')
-        setRows(list); setStatus(''); setLoading(false)
+        setRows(list); setLoading(false)
       } catch {
         if (!cancelled) { setErr('Kon de killboard niet opbouwen.'); setLoading(false) }
       }
@@ -112,7 +90,7 @@ export default function Leaderboard() {
   const rest = rows.slice(3)
 
   return (
-    <Layout header={<PageHeader title="Leaderboard" sub={loading ? (status || 'killboard opbouwen…') : `Dutch Legions · deze maand · ${rows.length} killers`} />}>
+    <Layout header={<PageHeader title="Leaderboard" sub={loading ? 'killboard laden…' : `Dutch Legions · deze maand · ${rows.length} killers`} />}>
       {err && <div style={{ ...card, color: 'var(--red)', marginBottom: '1rem' }}>{err}</div>}
 
       {/* Gekleurde totaal-kaarten */}
