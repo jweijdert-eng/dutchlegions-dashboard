@@ -69,7 +69,8 @@ if (isset($_GET['losses'])) {
 }
 
 $cacheFile = sys_get_temp_dir() . "/zkill_combo_{$type}_{$id}.json";
-if (is_file($cacheFile) && filesize($cacheFile) > 2 && (time() - filemtime($cacheFile)) < 300) {
+// 10 min cache: de feed-aggregatie (killmail-details) is zwaarder, dus minder vaak herrekenen.
+if (is_file($cacheFile) && filesize($cacheFile) > 2 && (time() - filemtime($cacheFile)) < 600) {
     echo file_get_contents($cacheFile);
     exit;
 }
@@ -91,13 +92,94 @@ function zfetch(string $url): ?string {
     return ($c === 200 && $r !== false && $r !== '') ? $r : null;
 }
 
+// Veel GET's parallel, in vensters (voorkomt honderden sockets tegelijk).
+// Geeft index => body (of null) terug.
+function esi_multi(array $urls, int $window = 25): array {
+    $out = [];
+    $n = count($urls);
+    for ($i = 0; $i < $n; $i += $window) {
+        $batch = array_slice($urls, $i, $window, true);
+        $mh = curl_multi_init();
+        $handles = [];
+        foreach ($batch as $k => $u) {
+            $ch = curl_init($u);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 15,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTPHEADER     => ['Accept: application/json', 'User-Agent: DutchLegionsDashboard/1.0 (j.weijdert@gmail.com)'],
+            ]);
+            curl_multi_add_handle($mh, $ch);
+            $handles[$k] = $ch;
+        }
+        do { $st = curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 1.0); } while ($running > 0 && $st === CURLM_OK);
+        foreach ($handles as $k => $ch) {
+            $out[$k] = (curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) ? curl_multi_getcontent($ch) : null;
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($mh);
+    }
+    return $out;
+}
+
 $killsRaw = zfetch("https://zkillboard.com/api/kills/{$type}/{$id}/");
 $statsRaw = zfetch("https://zkillboard.com/api/stats/{$type}/{$id}/");
 
 $kills = $killsRaw ? json_decode($killsRaw, true) : null;
 
-$killers = [];
-if ($statsRaw) {
+// Maand-leaderboard uit de ECHTE kill-feed: detail de (max 150 nieuwste) killmails en
+// tel per corp/alliance-lid de kills (als aanvaller) van DEZE MAAND. Zo verschijnt
+// iederéén met een kill — niet alleen zKill's afgekapte top-10 karakterlijst.
+$killers  = [];
+$matchKey = ($type === 'allianceID') ? 'alliance_id' : 'corporation_id';
+$ymDash   = date('Y-m'); // bv. "2026-07"
+
+$urls = [];
+foreach ((is_array($kills) ? array_slice($kills, 0, 150) : []) as $km) {
+    $kid  = (int)($km['killmail_id'] ?? 0);
+    $hash = (string)($km['zkb']['hash'] ?? '');
+    if ($kid && $hash) $urls[] = "https://esi.evetech.net/latest/killmails/{$kid}/{$hash}/?datasource=tranquility";
+}
+
+$kc = []; // characterID => kills deze maand
+foreach (esi_multi($urls, 25) as $b) {
+    if (!$b) continue;
+    $km = json_decode($b, true);
+    if (!is_array($km) || strpos((string)($km['killmail_time'] ?? ''), $ymDash) !== 0) continue;
+    $seen = [];
+    foreach (($km['attackers'] ?? []) as $a) {
+        $cid = (int)($a['character_id'] ?? 0);
+        if ($cid && (int)($a[$matchKey] ?? 0) === $id && empty($seen[$cid])) {
+            $seen[$cid] = true;
+            $kc[$cid] = ($kc[$cid] ?? 0) + 1;
+        }
+    }
+}
+
+// Per kandidaat (kills>0): naam + maand-losses uit zKill character-stats (parallel).
+if ($kc) {
+    $ym = date('Ym');
+    $statUrls = [];
+    foreach (array_keys($kc) as $cid) $statUrls[$cid] = "https://zkillboard.com/api/stats/characterID/{$cid}/";
+    $bodies = esi_multi($statUrls, 12);
+    foreach ($kc as $cid => $k) {
+        $cj   = (isset($bodies[$cid]) && $bodies[$cid]) ? json_decode($bodies[$cid], true) : null;
+        $name = is_array($cj) ? (string)($cj['info']['name'] ?? '') : '';
+        $loss = is_array($cj) ? (int)($cj['months'][$ym]['shipsLost'] ?? 0) : 0;
+        $killers[] = [
+            'characterID'   => $cid,
+            'characterName' => ($name !== '' ? $name : ('#' . $cid)),
+            'kills'         => $k,
+            'losses'        => $loss,
+        ];
+    }
+    usort($killers, fn($a, $b) => $b['kills'] <=> $a['kills']);
+}
+
+// FALLBACK: leverde de feed niks op (ESI/zKill-storing)? Val terug op zKill's top-10
+// karakterlijst zodat de killboard nooit leeg is.
+if (!$killers && $statsRaw) {
     $j = json_decode($statsRaw, true);
     foreach (($j['topLists'] ?? []) as $tl) {
         if (($tl['type'] ?? '') === 'character') {
@@ -114,45 +196,6 @@ if ($statsRaw) {
     }
 }
 
-// Per-pilot losses: haal voor elke top-killer z'n eigen character-stats op (parallel,
-// curl_multi) en pak shipsLost. zKill-stats per corp bevat geen per-pilot losses.
-if ($killers) {
-    $mh = curl_multi_init();
-    $handles = [];
-    foreach ($killers as $i => $k) {
-        $ch = curl_init("https://zkillboard.com/api/stats/characterID/{$k['characterID']}/");
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 12,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_HTTPHEADER     => [
-                'Accept: application/json',
-                'User-Agent: DutchLegionsDashboard/1.0 (j.weijdert@gmail.com)',
-            ],
-        ]);
-        curl_multi_add_handle($mh, $ch);
-        $handles[$i] = $ch;
-    }
-    do { $st = curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 1.0); } while ($running > 0 && $st === CURLM_OK);
-    $ym = date('Ym');   // huidige maand, bv. "202606"
-    foreach ($handles as $i => $ch) {
-        if (curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) {
-            $cj = json_decode(curl_multi_getcontent($ch), true);
-            if (is_array($cj)) {
-                // kills én losses van DEZE maand (consistente periode)
-                $mo = $cj['months'][$ym] ?? null;
-                $killers[$i]['kills']  = (int)($mo['shipsDestroyed'] ?? 0);
-                $killers[$i]['losses'] = (int)($mo['shipsLost'] ?? 0);
-            }
-        }
-        curl_multi_remove_handle($mh, $ch);
-        curl_close($ch);
-    }
-    curl_multi_close($mh);
-    // Her-sorteren op de kills van deze maand (de corp-topList was een ander venster).
-    usort($killers, fn($a, $b) => $b['kills'] <=> $a['kills']);
-}
-
 // Maand-snapshot wegschrijven: bij elke verse load bewaren we de huidige-maand-top-10
 // (server-side berekend, dus niet te vervalsen). Zodra de maand voorbij is komen er geen
 // updates meer met dat YYYYMM binnen → de snapshot bevriest en wordt het maand-archief.
@@ -164,7 +207,7 @@ if ($killers) {
             corp_id BIGINT NOT NULL, ym VARCHAR(6) NOT NULL,
             data MEDIUMTEXT, updated_at DATETIME,
             PRIMARY KEY (corp_id, ym))");
-        $top = array_slice($killers, 0, 10);
+        $top = array_slice($killers, 0, 50);
         $st = $pdo->prepare("INSERT INTO leaderboard_snapshots (corp_id, ym, data, updated_at)
             VALUES (?, ?, ?, NOW())
             ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = NOW()");

@@ -25,7 +25,7 @@ try {
         if (!is_array($rows) || !$rows) continue;
         $months[] = [
             'ym'       => $r['ym'],
-            'rows'     => array_slice($rows, 0, 10),
+            'rows'     => array_slice($rows, 0, 50),
             'frozenAt' => $r['updated_at'],
         ];
     }

@@ -194,7 +194,7 @@ export default function Leaderboard() {
 
 // Eén afgelopen maand: inklapbare kaart met de bevroren top 10 (medailles voor top 3).
 function ArchiveCard({ month, defaultOpen }: { month: ArchiveMonth; defaultOpen: boolean }) {
-  const rows = [...month.rows].sort((a, b) => b.kills - a.kills).slice(0, 10)
+  const rows = [...month.rows].sort((a, b) => b.kills - a.kills).slice(0, 50)
   const winner = rows[0]
   return (
     <details open={defaultOpen} style={{ ...card, padding: 0, overflow: 'hidden', marginBottom: '0.6rem' }}>
