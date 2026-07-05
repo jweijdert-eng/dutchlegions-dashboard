@@ -200,8 +200,10 @@ function LeafRow({ item, badgeCount, collapsed, nested, label }: { item: NavItem
         : { fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>{name}</span>}
       {!collapsed && (item.badge === 'ansiblex'
         ? (count > 0 && <span title="Lijst is bijgewerkt" style={{ fontSize: 12, lineHeight: 1, flexShrink: 0 }}>🔄</span>)
+        : item.badge === 'mail'
+        ? (count > 0 && <span title={`${count} ongelezen mail`} style={{ marginLeft: 'auto', width: 9, height: 9, borderRadius: '50%', background: '#ff7a00', boxShadow: '0 0 6px #ff7a00', flexShrink: 0 }} />)
         : <Badge count={count} />)}
-      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: item.badge === 'ansiblex' ? 'var(--gold)' : 'var(--red)' }} />}
+      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: item.badge === 'ansiblex' ? 'var(--gold)' : item.badge === 'mail' ? '#ff7a00' : 'var(--red)' }} />}
     </NavLink>
   )
 }
