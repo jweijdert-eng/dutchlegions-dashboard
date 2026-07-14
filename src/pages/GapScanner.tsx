@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { getAllRegionOrders, openMarketWindow, type PublicMarketOrder } from '../api/esi'
 import EveImage from '../components/EveImage'
+import Layout, { PageHeader } from '../components/Layout'
 
 // Jita / The Forge
 const THE_FORGE = 10000002
@@ -165,11 +166,8 @@ export default function GapScanner() {
   }
 
   return (
-    <div style={{ maxWidth: 1200 }}>
-      <h1 style={{ fontSize: '1.15rem', margin: '0 0 0.2rem' }}>🕳️ Jita Gap Scanner</h1>
-      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.9rem' }}>
-        Zoekt grote <b>prijs-gaten</b> in de Jita sell-orders — koop het goedkope cluster, verkoop net onder de volgende laag.
-      </div>
+    <Layout header={<PageHeader title="🕳️ Jita Gap Scanner" sub="Zoekt grote prijs-gaten in de Jita sell-orders — koop het goedkope cluster, verkoop net onder de volgende laag." />}>
+      <div style={{ maxWidth: 1200 }}>
 
       {/* Categorieën */}
       <div style={{ marginBottom: '0.7rem' }}>
@@ -279,6 +277,7 @@ export default function GapScanner() {
           </table>
         </div>
       )}
-    </div>
+      </div>
+    </Layout>
   )
 }
