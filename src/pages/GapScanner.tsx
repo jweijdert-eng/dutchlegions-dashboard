@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
-import { getAllRegionOrders, openMarketWindow, type PublicMarketOrder } from '../api/esi'
+import { getAllRegionOrders, getRegionHistory, openMarketWindow, type PublicMarketOrder, type RegionHistoryPoint } from '../api/esi'
 import EveImage from '../components/EveImage'
 import Layout, { PageHeader } from '../components/Layout'
 
@@ -39,6 +40,38 @@ function fmtISK(v: number): string {
   if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`
   if (a >= 1e3) return `${(v / 1e3).toFixed(1)}K`
   return v.toLocaleString('nl-NL', { maximumFractionDigits: 0 })
+}
+
+// Prijs-historie-grafiek (uitklap onder een rij)
+function HistoryChart({ data, cheapest }: { data: RegionHistoryPoint[]; cheapest: number }) {
+  const recent = data.slice(-120)
+  const chartData = recent.map(d => ({ date: d.date.slice(5), price: d.average, volume: d.volume }))
+  const prices = recent.map(d => d.average)
+  const min = Math.min(...prices), max = Math.max(...prices)
+  const avg = prices.reduce((s, x) => s + x, 0) / (prices.length || 1)
+  const vsAvg = avg > 0 ? (cheapest / avg - 1) * 100 : 0
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '1.1rem', flexWrap: 'wrap', fontSize: '0.66rem', color: 'var(--text-dim)', marginBottom: '0.4rem' }}>
+        <span>90d gem.: <b style={{ color: 'var(--text)' }}>{fmtISK(avg)}</b></span>
+        <span>laag: {fmtISK(min)}</span>
+        <span>hoog: {fmtISK(max)}</span>
+        <span>goedkoopste nu: <b style={{ color: vsAvg <= 0 ? '#4ade80' : '#ff5c6c' }}>{fmtISK(cheapest)}</b> ({vsAvg >= 0 ? '+' : ''}{vsAvg.toFixed(0)}% vs gem.)</span>
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <ComposedChart data={chartData} margin={{ top: 6, right: 6, left: 6, bottom: 0 }}>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="date" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} minTickGap={28} />
+          <YAxis yAxisId="price" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} width={52} tickFormatter={(v: number) => fmtISK(v)} />
+          <YAxis yAxisId="vol" orientation="right" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} width={40} />
+          <Tooltip contentStyle={{ background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: '0.7rem', borderRadius: 4 }}
+            formatter={(value: number, name: string) => name === 'price' ? [fmtISK(value), 'gem. prijs'] : [value.toLocaleString('nl-NL'), 'volume']} />
+          <Bar yAxisId="vol" dataKey="volume" fill="var(--border)" />
+          <Line yAxisId="price" dataKey="price" stroke="#00b4d8" strokeWidth={2} dot={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  )
 }
 
 interface GapRow {
@@ -169,6 +202,22 @@ export default function GapScanner() {
     if (!ok) setMsg('Kon het marktvenster niet openen — draait de EVE-client, en is het actieve character ingelogd?')
   }
 
+  // Prijs-historie per item (lazy, gecached)
+  const [expanded, setExpanded] = useState<number | null>(null)
+  const [histCache, setHistCache] = useState<Record<number, RegionHistoryPoint[]>>({})
+  const [histLoading, setHistLoading] = useState<number | null>(null)
+
+  const toggleHistory = async (typeId: number) => {
+    if (expanded === typeId) { setExpanded(null); return }
+    setExpanded(typeId)
+    if (!histCache[typeId]) {
+      setHistLoading(typeId)
+      const h = await getRegionHistory(THE_FORGE, typeId)
+      setHistCache(c => ({ ...c, [typeId]: h }))
+      setHistLoading(null)
+    }
+  }
+
   return (
     <Layout header={<PageHeader title="🕳️ Jita Gap Scanner" sub="Zoekt grote prijs-gaten in de Jita sell-orders — koop het goedkope cluster, verkoop net onder de volgende laag." />}>
       <div style={{ maxWidth: 1200 }}>
@@ -232,7 +281,7 @@ export default function GapScanner() {
 
       {orders && !loading && (
         <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>
-          {rows.length} flip-kans{rows.length === 1 ? '' : 'en'} gevonden — gesorteerd op potentieel.
+          {rows.length} flip-kans{rows.length === 1 ? '' : 'en'} gevonden — gesorteerd op potentieel · klik op een rij voor de prijs-historie.
         </div>
       )}
 
@@ -255,7 +304,9 @@ export default function GapScanner() {
             </thead>
             <tbody>
               {rows.slice(0, 200).map(r => (
-                <tr key={r.typeId} style={{ borderBottom: '1px solid var(--border)' }}>
+                <Fragment key={r.typeId}>
+                <tr onClick={() => toggleHistory(r.typeId)}
+                    style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', background: expanded === r.typeId ? 'var(--surface2)' : undefined }}>
                   <td style={{ ...TD, textAlign: 'left' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       <EveImage category="types" id={r.typeId} variation="icon" size={32} px={28} />
@@ -274,9 +325,21 @@ export default function GapScanner() {
                   <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.netPerUnit)}</td>
                   <td style={{ ...TD, fontWeight: 700 }}>{fmtISK(r.potential)}</td>
                   <td style={TD}>
-                    <button onClick={() => openInEve(r.typeId)} title="Open in EVE" style={{ ...INPUT, cursor: 'pointer', padding: '0.15rem 0.4rem' }}>⧉</button>
+                    <button onClick={e => { e.stopPropagation(); openInEve(r.typeId) }} title="Open in EVE" style={{ ...INPUT, cursor: 'pointer', padding: '0.15rem 0.4rem' }}>⧉</button>
                   </td>
                 </tr>
+                {expanded === r.typeId && (
+                  <tr>
+                    <td colSpan={10} style={{ padding: '0.7rem 1rem', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+                      {histLoading === r.typeId
+                        ? <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Prijs-historie laden…</div>
+                        : (histCache[r.typeId]?.length
+                          ? <HistoryChart data={histCache[r.typeId]} cheapest={r.cheapest} />
+                          : <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Geen historie beschikbaar.</div>)}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
