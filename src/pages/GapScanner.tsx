@@ -79,13 +79,14 @@ interface GapRow {
   name: string
   groupName: string
   cheapest: number
+  avgBuy: number     // gemiddelde werkelijke koopprijs van de op te kopen units
   buyUnder: number   // bovenkant van het goedkope cluster (koop hieronder)
   sellWall: number   // eerstvolgende order boven het gat
   gapISK: number
   gapPct: number
   units: number      // units ≤ buyUnder (op te kopen)
-  netPerUnit: number // na verkoop-fees
-  potential: number
+  netPerUnit: number // na verkoop-fees, o.b.v. echte koopkosten
+  potential: number  // echte totale winst (opbrengst − werkelijke koopkosten)
 }
 
 // Grootste prijs-gat onderin de sell-ladder van één item.
@@ -99,8 +100,10 @@ function bestGap(sell: { price: number; vol: number }[]) {
     if (!best || pct > best.pct) best = { i, cur, next, gap, pct }
   }
   if (!best) return null
-  const units = asc.slice(0, best.i + 1).reduce((s, o) => s + o.vol, 0)
-  return { cheapest: asc[0].price, buyUnder: best.cur, sellWall: best.next, gapISK: best.gap, gapPct: best.pct, units }
+  const below = asc.slice(0, best.i + 1) // alle orders t/m de koop<-prijs (die koop je op)
+  const units = below.reduce((s, o) => s + o.vol, 0)
+  const buyCost = below.reduce((s, o) => s + o.price * o.vol, 0) // echte kosten
+  return { cheapest: asc[0].price, buyUnder: best.cur, sellWall: best.next, gapISK: best.gap, gapPct: best.pct, units, buyCost }
 }
 
 export default function GapScanner() {
@@ -179,16 +182,19 @@ export default function GapScanner() {
       if (!g) continue
       if (g.gapPct * 100 < minGapPct) continue
       if (g.cheapest < minValue) continue
-      const netPerUnit = g.sellWall * (1 - fee) - g.buyUnder
-      if (netPerUnit <= 0) continue
+      // Echte koopkosten: elke op te kopen order tegen z'n eigen prijs
+      const revenue = g.units * g.sellWall * (1 - fee)
+      const netTotal = revenue - g.buyCost
+      if (netTotal <= 0) continue
+      const avgBuy = g.units > 0 ? g.buyCost / g.units : g.buyUnder
       const grp = bundles.groups[String(bundles.typeInfo[String(typeId)]?.[0])]
       out.push({
         typeId,
         name: bundles.names[String(typeId)] ?? `#${typeId}`,
         groupName: grp?.[0] ?? '',
-        cheapest: g.cheapest, buyUnder: g.buyUnder, sellWall: g.sellWall,
+        cheapest: g.cheapest, avgBuy, buyUnder: g.buyUnder, sellWall: g.sellWall,
         gapISK: g.gapISK, gapPct: g.gapPct, units: g.units,
-        netPerUnit, potential: netPerUnit * g.units,
+        netPerUnit: netTotal / g.units, potential: netTotal,
       })
     }
     return out.sort((a, b) => b.potential - a.potential)
@@ -292,7 +298,7 @@ export default function GapScanner() {
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
                 <th style={{ ...TH, textAlign: 'left' }}>Item</th>
                 <th style={TH}>Goedkoopste</th>
-                <th style={TH}>Koop &lt;</th>
+                <th style={TH}>Gem. koop</th>
                 <th style={TH}>Muur</th>
                 <th style={TH}>Gat %</th>
                 <th style={TH}>Gat ISK</th>
@@ -317,7 +323,7 @@ export default function GapScanner() {
                     </div>
                   </td>
                   <td style={TD}>{fmtISK(r.cheapest)}</td>
-                  <td style={TD}>{fmtISK(r.buyUnder)}</td>
+                  <td style={TD} title={`t/m ${fmtISK(r.buyUnder)}`}>{fmtISK(r.avgBuy)}</td>
                   <td style={TD}>{fmtISK(r.sellWall)}</td>
                   <td style={{ ...TD, color: '#4ade80', fontWeight: 700 }}>{(r.gapPct * 100).toFixed(0)}%</td>
                   <td style={TD}>{fmtISK(r.gapISK)}</td>
