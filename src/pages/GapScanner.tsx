@@ -179,9 +179,9 @@ export default function GapScanner() {
             <button key={c.key} onClick={() => setCats(s => ({ ...s, [c.key]: !s[c.key] }))}
               style={{
                 ...INPUT, cursor: 'pointer', fontWeight: 600,
-                background: cats[c.key] ? 'var(--accent)' : 'var(--surface2)',
+                background: cats[c.key] ? 'var(--blue)' : 'var(--surface2)',
                 color: cats[c.key] ? '#0a0a12' : 'var(--text)',
-                borderColor: cats[c.key] ? 'var(--accent)' : 'var(--border)',
+                borderColor: cats[c.key] ? 'var(--blue)' : 'var(--border)',
               }}>
               {c.label}
             </button>
@@ -205,7 +205,7 @@ export default function GapScanner() {
         </div>
         <button onClick={scan} disabled={loading || typeSet.size === 0} style={{
           ...INPUT, cursor: loading ? 'wait' : 'pointer', fontWeight: 700,
-          background: 'var(--accent)', color: '#0a0a12', borderColor: 'var(--accent)', padding: '0.4rem 1rem',
+          background: 'var(--blue)', color: '#0a0a12', borderColor: 'var(--blue)', padding: '0.4rem 1rem',
         }}>
           {loading ? 'Scannen…' : orders ? 'Opnieuw scannen' : 'Scan Jita'}
         </button>
@@ -217,7 +217,7 @@ export default function GapScanner() {
       {progress && (
         <div style={{ marginBottom: '0.8rem' }}>
           <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${Math.round((progress.done / progress.total) * 100)}%`, background: 'var(--accent)', transition: 'width .2s' }} />
+            <div style={{ height: '100%', width: `${Math.round((progress.done / progress.total) * 100)}%`, background: 'var(--blue)', transition: 'width .2s' }} />
           </div>
           <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>
             Orders ophalen… pagina {progress.done}/{progress.total}
