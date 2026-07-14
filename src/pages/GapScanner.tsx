@@ -89,21 +89,21 @@ interface GapRow {
   potential: number  // echte totale winst (opbrengst − werkelijke koopkosten)
 }
 
-// Grootste prijs-gat onderin de sell-ladder van één item.
-function bestGap(sell: { price: number; vol: number }[]) {
+// De EERSTE significante sprong (≥ minGapPct) vanaf de goedkoopste kant: dáár eindigt
+// het goedkope cluster en zit de "muur". De vele kleine stapjes eronder koop je op.
+function bestGap(sell: { price: number; vol: number }[], minGapPct: number) {
   const asc = [...sell].sort((a, b) => a.price - b.price)
-  const N = Math.min(asc.length, 25)
-  let best: { i: number; cur: number; next: number; gap: number; pct: number } | null = null
-  for (let i = 0; i < N - 1; i++) {
+  for (let i = 0; i < asc.length - 1; i++) {
     const cur = asc[i].price, next = asc[i + 1].price
-    const gap = next - cur, pct = cur > 0 ? gap / cur : 0
-    if (!best || pct > best.pct) best = { i, cur, next, gap, pct }
+    const pct = cur > 0 ? (next - cur) / cur : 0
+    if (pct * 100 >= minGapPct) {
+      const below = asc.slice(0, i + 1) // alle orders t/m de koop<-prijs (die koop je op)
+      const units = below.reduce((s, o) => s + o.vol, 0)
+      const buyCost = below.reduce((s, o) => s + o.price * o.vol, 0) // echte kosten
+      return { cheapest: asc[0].price, buyUnder: cur, sellWall: next, gapISK: next - cur, gapPct: pct, units, buyCost }
+    }
   }
-  if (!best) return null
-  const below = asc.slice(0, best.i + 1) // alle orders t/m de koop<-prijs (die koop je op)
-  const units = below.reduce((s, o) => s + o.vol, 0)
-  const buyCost = below.reduce((s, o) => s + o.price * o.vol, 0) // echte kosten
-  return { cheapest: asc[0].price, buyUnder: best.cur, sellWall: best.next, gapISK: best.gap, gapPct: best.pct, units, buyCost }
+  return null
 }
 
 export default function GapScanner() {
@@ -178,9 +178,8 @@ export default function GapScanner() {
     const out: GapRow[] = []
     for (const [typeId, sell] of byType) {
       if (sell.length < 2) continue
-      const g = bestGap(sell)
+      const g = bestGap(sell, minGapPct) // eerste sprong ≥ drempel = de muur na het cluster
       if (!g) continue
-      if (g.gapPct * 100 < minGapPct) continue
       if (g.cheapest < minValue) continue
       // Echte koopkosten: elke op te kopen order tegen z'n eigen prijs
       const revenue = g.units * g.sellWall * (1 - fee)
