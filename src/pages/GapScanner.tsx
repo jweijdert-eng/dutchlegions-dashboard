@@ -10,12 +10,14 @@ const THE_FORGE = 10000002
 const JITA_44 = 60003760
 
 // ── Categorie-definities (via inventory-groepen/categorieën uit de SDE-bundel) ──
-type CatKey = 'ships' | 'shield' | 'turrets'
-const CATS: { key: CatKey; label: string; test: (groupName: string, categoryId: number) => boolean }[] = [
+type CatKey = 'ships' | 'equipment' | 'shield' | 'turrets'
+const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: string, categoryId: number) => boolean }[] = [
   { key: 'ships', label: 'Ships', test: (_n, cat) => cat === 6 },
-  { key: 'shield', label: 'Shield', test: (n, cat) => cat === 7 && /shield/i.test(n) },
+  // Ship Equipment = alle fitting-modules (categorie 7). Shield en Turrets vallen hieronder.
+  { key: 'equipment', label: 'Ship Equipment', test: (_n, cat) => cat === 7 },
+  { key: 'shield', label: 'Shield', parent: 'equipment', test: (n, cat) => cat === 7 && /shield/i.test(n) },
   {
-    key: 'turrets', label: 'Turrets & Launchers',
+    key: 'turrets', label: 'Turrets & Launchers', parent: 'equipment',
     test: (n, cat) => cat === 7 && (/(energy|hybrid|projectile)\s*weapon/i.test(n) || /missile launcher/i.test(n)),
   },
 ]
@@ -126,7 +128,7 @@ export default function GapScanner() {
     names: Record<string, string>
   } | null>(null)
 
-  const [cats, setCats] = useState<Record<CatKey, boolean>>({ ships: true, shield: false, turrets: false })
+  const [cats, setCats] = useState<Record<CatKey, boolean>>({ ships: true, equipment: false, shield: false, turrets: false })
   const [minGapPct, setMinGapPct] = useState(15)
   const [minValue, setMinValue] = useState(100_000_000)
   const [feePct, setFeePct] = useState(8)
@@ -275,7 +277,7 @@ export default function GapScanner() {
       <div style={{ marginBottom: '0.7rem' }}>
         <div style={LABEL}>CATEGORIEËN</div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          {CATS.map(c => (
+          {CATS.filter(c => !c.parent).map(c => (
             <button key={c.key} onClick={() => setCats(s => ({ ...s, [c.key]: !s[c.key] }))}
               style={{
                 ...INPUT, cursor: 'pointer', fontWeight: 600,
@@ -286,6 +288,26 @@ export default function GapScanner() {
               {c.label}
             </button>
           ))}
+        </div>
+        {/* Sub-categorieën van Ship Equipment */}
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.35rem', paddingLeft: '0.5rem' }}>
+          <span style={{ fontSize: '0.58rem', color: 'var(--text-dim)' }}>↳ onderdeel van Ship Equipment:</span>
+          {CATS.filter(c => c.parent === 'equipment').map(c => {
+            const on = cats[c.key] || cats.equipment
+            return (
+              <button key={c.key} onClick={() => setCats(s => ({ ...s, [c.key]: !s[c.key] }))}
+                title={cats.equipment ? 'Zit al in Ship Equipment' : undefined}
+                style={{
+                  ...INPUT, cursor: 'pointer', fontWeight: 600, fontSize: '0.68rem', padding: '0.25rem 0.55rem',
+                  background: on ? 'var(--blue)' : 'var(--surface2)',
+                  color: on ? '#0a0a12' : 'var(--text)',
+                  borderColor: on ? 'var(--blue)' : 'var(--border)',
+                  opacity: cats.equipment && !cats[c.key] ? 0.75 : 1,
+                }}>
+                {c.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
