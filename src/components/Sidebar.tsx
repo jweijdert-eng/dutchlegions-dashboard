@@ -64,6 +64,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Market',       path: '/market',     icon: '🛒', badge: null },
   { label: 'Trade Vandaag', path: '/jita-today', icon: '✅', badge: null },
   { label: 'Jita Scanner', path: '/jita-scanner', icon: '📈', badge: null },
+  { label: 'Gap Scanner',  path: '/gap-scanner', icon: '🕳️', badge: null },
   { label: 'Order-monitor', path: '/jita-monitor', icon: '🔔', badge: null },
   { label: 'Mijn posities', path: '/jita-positions', icon: '💼', badge: null },
   { label: 'Contracts',    path: '/contracts',  icon: '🤝', badge: null },
