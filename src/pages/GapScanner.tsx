@@ -71,7 +71,8 @@ function bestGap(sell: { price: number; vol: number }[]) {
 }
 
 export default function GapScanner() {
-  const { tokens } = useAuth()
+  const { tokens, activeTokens } = useAuth()
+  const [msg, setMsg] = useState<string | null>(null)
 
   const [bundles, setBundles] = useState<{
     typeInfo: Record<string, [number, number, number]>
@@ -160,9 +161,12 @@ export default function GapScanner() {
     return out.sort((a, b) => b.potential - a.potential)
   }, [orders, bundles, typeSet, minGapPct, minValue, feePct])
 
-  const openInEve = (typeId: number) => {
-    const t = tokens[0]
-    if (t) openMarketWindow(typeId, t.accessToken).catch(() => {})
+  const openInEve = async (typeId: number) => {
+    const t = activeTokens[0] ?? tokens[0]
+    if (!t) { setMsg('Log in / selecteer een character om items in-game te openen.'); return }
+    setMsg(null)
+    const ok = await openMarketWindow(typeId, t.accessToken)
+    if (!ok) setMsg('Kon het marktvenster niet openen — draait de EVE-client, en is het actieve character ingelogd?')
   }
 
   return (
@@ -224,6 +228,7 @@ export default function GapScanner() {
       )}
 
       {err && <div style={{ color: '#ff5c6c', fontSize: '0.72rem', marginBottom: '0.6rem' }}>{err}</div>}
+      {msg && <div style={{ color: 'var(--blue)', fontSize: '0.72rem', marginBottom: '0.6rem' }}>{msg}</div>}
 
       {orders && !loading && (
         <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>
