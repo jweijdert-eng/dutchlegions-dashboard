@@ -89,21 +89,31 @@ interface GapRow {
   potential: number  // echte totale winst (opbrengst − werkelijke koopkosten)
 }
 
-// De EERSTE significante sprong (≥ minGapPct) vanaf de goedkoopste kant: dáár eindigt
-// het goedkope cluster en zit de "muur". De vele kleine stapjes eronder koop je op.
+// Grootste sprong (≥ minGapPct) BINNEN de ~5 goedkoopste orders: een snelle flip —
+// koop de paar goedkoopste, verkoop net onder de eerstvolgende. De rest van de ladder
+// negeren we (het gaat om de goedkope kant + snelle omzet, niet om alles opkopen).
+const GAP_WINDOW = 5
 function bestGap(sell: { price: number; vol: number }[], minGapPct: number) {
   const asc = [...sell].sort((a, b) => a.price - b.price)
-  for (let i = 0; i < asc.length - 1; i++) {
+  const N = Math.min(GAP_WINDOW, asc.length)
+  let best: { i: number; cur: number; next: number; pct: number } | null = null
+  for (let i = 0; i < N - 1; i++) {
     const cur = asc[i].price, next = asc[i + 1].price
     const pct = cur > 0 ? (next - cur) / cur : 0
-    if (pct * 100 >= minGapPct) {
-      const below = asc.slice(0, i + 1) // alle orders t/m de koop<-prijs (die koop je op)
-      const units = below.reduce((s, o) => s + o.vol, 0)
-      const buyCost = below.reduce((s, o) => s + o.price * o.vol, 0) // echte kosten
-      return { cheapest: asc[0].price, buyUnder: cur, sellWall: next, gapISK: next - cur, gapPct: pct, units, buyCost }
-    }
+    if (pct * 100 >= minGapPct && (!best || pct > best.pct)) best = { i, cur, next, pct }
   }
-  return null
+  if (!best) return null
+  const below = asc.slice(0, best.i + 1) // de goedkoopste orders t/m de sprong (die koop je op)
+  const units = below.reduce((s, o) => s + o.vol, 0)
+  const buyCost = below.reduce((s, o) => s + o.price * o.vol, 0) // echte kosten
+  return { cheapest: asc[0].price, buyUnder: best.cur, sellWall: best.next, gapISK: best.next - best.cur, gapPct: best.pct, units, buyCost }
+}
+
+// Gemiddeld dagelijks handelsvolume (laatste ~20 dagen) — maat voor "snelle verkoper".
+function avgDailyVolume(hist: RegionHistoryPoint[]): number {
+  const recent = hist.slice(-20)
+  if (recent.length === 0) return 0
+  return recent.reduce((s, d) => s + d.volume, 0) / recent.length
 }
 
 export default function GapScanner() {
@@ -120,11 +130,18 @@ export default function GapScanner() {
   const [minGapPct, setMinGapPct] = useState(15)
   const [minValue, setMinValue] = useState(100_000_000)
   const [feePct, setFeePct] = useState(8)
+  const [minVolume, setMinVolume] = useState(1)
 
   const [orders, setOrders] = useState<PublicMarketOrder[] | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+
+  // Prijs-historie per item (lazy, gecached) — ook gebruikt voor het dagvolume
+  const [expanded, setExpanded] = useState<number | null>(null)
+  const [histCache, setHistCache] = useState<Record<number, RegionHistoryPoint[]>>({})
+  const [histLoading, setHistLoading] = useState<number | null>(null)
+  const [volProgress, setVolProgress] = useState<{ done: number; total: number } | null>(null)
 
   // Bundels laden
   useEffect(() => {
@@ -165,7 +182,7 @@ export default function GapScanner() {
   }
 
   // Gaten berekenen (herberekent direct bij het aanpassen van filters/categorieën)
-  const rows = useMemo<GapRow[]>(() => {
+  const gapRows = useMemo<GapRow[]>(() => {
     if (!orders || !bundles || typeSet.size === 0) return []
     const byType = new Map<number, { price: number; vol: number }[]>()
     for (const o of orders) {
@@ -199,6 +216,38 @@ export default function GapScanner() {
     return out.sort((a, b) => b.potential - a.potential)
   }, [orders, bundles, typeSet, minGapPct, minValue, feePct])
 
+  // Voor de gap-kandidaten de markt-historie ophalen (voor het dagvolume), parallel + gecached.
+  useEffect(() => {
+    const missing = gapRows.map(r => r.typeId).filter(id => !(id in histCache)).slice(0, 250)
+    if (missing.length === 0) { setVolProgress(null); return }
+    let cancelled = false
+    setVolProgress({ done: 0, total: missing.length })
+    ;(async () => {
+      const batch = 15
+      for (let i = 0; i < missing.length && !cancelled; i += batch) {
+        const slice = missing.slice(i, i + batch)
+        const res = await Promise.all(slice.map(id => getRegionHistory(THE_FORGE, id).then(h => [id, h] as const)))
+        if (cancelled) return
+        setHistCache(c => { const n = { ...c }; for (const [id, h] of res) n[id] = h; return n })
+        setVolProgress({ done: Math.min(i + batch, missing.length), total: missing.length })
+      }
+      if (!cancelled) setVolProgress(null)
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gapRows])
+
+  // Dagvolume erbij + filter op "snelle verkopers" + sortering
+  const rows = useMemo(() => {
+    return gapRows
+      .map(r => {
+        const h = histCache[r.typeId]
+        return { ...r, dailyVolume: h ? avgDailyVolume(h) : -1 } // -1 = nog onbekend
+      })
+      .filter(r => r.dailyVolume < 0 || r.dailyVolume >= minVolume)
+      .sort((a, b) => b.potential - a.potential)
+  }, [gapRows, histCache, minVolume])
+
   const openInEve = async (typeId: number) => {
     const t = activeTokens[0] ?? tokens[0]
     if (!t) { setMsg('Log in / selecteer een character om items in-game te openen.'); return }
@@ -206,11 +255,6 @@ export default function GapScanner() {
     const ok = await openMarketWindow(typeId, t.accessToken)
     if (!ok) setMsg('Kon het marktvenster niet openen — draait de EVE-client, en is het actieve character ingelogd?')
   }
-
-  // Prijs-historie per item (lazy, gecached)
-  const [expanded, setExpanded] = useState<number | null>(null)
-  const [histCache, setHistCache] = useState<Record<number, RegionHistoryPoint[]>>({})
-  const [histLoading, setHistLoading] = useState<number | null>(null)
 
   const toggleHistory = async (typeId: number) => {
     if (expanded === typeId) { setExpanded(null); return }
@@ -224,7 +268,7 @@ export default function GapScanner() {
   }
 
   return (
-    <Layout header={<PageHeader title="🕳️ Jita Gap Scanner" sub="Zoekt grote prijs-gaten in de Jita sell-orders — koop het goedkope cluster, verkoop net onder de volgende laag." />}>
+    <Layout header={<PageHeader title="🕳️ Jita Gap Scanner" sub="Snelle flips in Jita: een prijs-gat in de goedkoopste orders, gefilterd op dagelijks handelsvolume (snelle verkopers)." />}>
       <div style={{ maxWidth: 1200 }}>
 
       {/* Categorieën */}
@@ -259,6 +303,10 @@ export default function GapScanner() {
           <div style={LABEL}>VERKOOP-FEES %</div>
           <input type="number" value={feePct} min={0} step={0.5} onChange={e => setFeePct(+e.target.value)} style={{ ...INPUT, width: 90 }} />
         </div>
+        <div>
+          <div style={LABEL}>MIN. VOL/DAG</div>
+          <input type="number" value={minVolume} min={0} onChange={e => setMinVolume(+e.target.value)} style={{ ...INPUT, width: 90 }} />
+        </div>
         <button onClick={scan} disabled={loading || typeSet.size === 0} style={{
           ...INPUT, cursor: loading ? 'wait' : 'pointer', fontWeight: 700,
           background: 'var(--blue)', color: '#0a0a12', borderColor: 'var(--blue)', padding: '0.4rem 1rem',
@@ -286,7 +334,7 @@ export default function GapScanner() {
 
       {orders && !loading && (
         <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>
-          {rows.length} flip-kans{rows.length === 1 ? '' : 'en'} gevonden — gesorteerd op potentieel · klik op een rij voor de prijs-historie.
+          {rows.length} flip-kans{rows.length === 1 ? '' : 'en'} — gesorteerd op potentieel · klik op een rij voor de prijs-historie{volProgress ? ` · dagvolume laden ${volProgress.done}/${volProgress.total}…` : ''}
         </div>
       )}
 
@@ -302,6 +350,7 @@ export default function GapScanner() {
                 <th style={TH}>Gat %</th>
                 <th style={TH}>Gat ISK</th>
                 <th style={TH}>Units</th>
+                <th style={TH}>Vol/dag</th>
                 <th style={TH}>Net/stuk</th>
                 <th style={TH}>Potentieel</th>
                 <th style={TH}></th>
@@ -327,6 +376,9 @@ export default function GapScanner() {
                   <td style={{ ...TD, color: '#4ade80', fontWeight: 700 }}>{(r.gapPct * 100).toFixed(0)}%</td>
                   <td style={TD}>{fmtISK(r.gapISK)}</td>
                   <td style={TD}>{r.units.toLocaleString('nl-NL')}</td>
+                  <td style={{ ...TD, color: r.dailyVolume < 0 ? 'var(--text-dim)' : (r.dailyVolume >= 10 ? '#4ade80' : 'var(--text)') }}>
+                    {r.dailyVolume < 0 ? '…' : Math.round(r.dailyVolume).toLocaleString('nl-NL')}
+                  </td>
                   <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.netPerUnit)}</td>
                   <td style={{ ...TD, fontWeight: 700 }}>{fmtISK(r.potential)}</td>
                   <td style={TD}>
@@ -335,7 +387,7 @@ export default function GapScanner() {
                 </tr>
                 {expanded === r.typeId && (
                   <tr>
-                    <td colSpan={10} style={{ padding: '0.7rem 1rem', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+                    <td colSpan={11} style={{ padding: '0.7rem 1rem', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
                       {histLoading === r.typeId
                         ? <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Prijs-historie laden…</div>
                         : (histCache[r.typeId]?.length
