@@ -10,23 +10,38 @@ const THE_FORGE = 10000002
 const JITA_44 = 60003760
 
 // ── Categorie-definities (via inventory-groepen/categorieën uit de SDE-bundel) ──
-type CatKey = 'ships' | 'equipment' | 'implants' | 'drones' | 'mods' | 'shield' | 'turrets'
+type CatKey = string
 const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: string, categoryId: number) => boolean }[] = [
-  { key: 'ships', label: 'Ships', test: (_n, cat) => cat === 6 },
+  { key: 'ships', label: 'Ships', test: (_n, c) => c === 6 },
   // Ship Equipment = alle fitting-modules (categorie 7). Shield en Turrets vallen hieronder.
-  { key: 'equipment', label: 'Ship Equipment', test: (_n, cat) => cat === 7 },
-  { key: 'implants', label: 'Implants & Boosters', test: (_n, cat) => cat === 20 },
-  { key: 'drones', label: 'Drones', test: (_n, cat) => cat === 18 },
+  { key: 'equipment', label: 'Ship Equipment', test: (_n, c) => c === 7 },
+  { key: 'implants', label: 'Implants & Boosters', test: (_n, c) => c === 20 },
+  { key: 'drones', label: 'Drones', test: (_n, c) => c === 18 || c === 87 },   // drones + fighters
   {
-    key: 'mods', label: 'Ship & Module Modifications',        // rigs + mutaplasmids
-    test: (n, cat) => (cat === 7 && /^rig\s/i.test(n)) || (cat === 17 && /mutaplasmid/i.test(n)),
+    key: 'mods', label: 'Ship & Module Modifications',          // rigs + mutaplasmids
+    test: (n, c) => (c === 7 && /^rig\s/i.test(n)) || (c === 17 && /mutaplasmid/i.test(n)),
   },
-  { key: 'shield', label: 'Shield', parent: 'equipment', test: (n, cat) => cat === 7 && /shield/i.test(n) },
+  { key: 'ammo', label: 'Ammunition & Charges', test: (_n, c) => c === 8 },
+  { key: 'blueprints', label: 'Blueprints & Reactions', test: (_n, c) => c === 9 || c === 24 },
+  { key: 'skills', label: 'Skills', test: (_n, c) => c === 16 },
+  { key: 'manufacture', label: 'Manufacture & Research', test: (_n, c) => c === 4 || c === 34 || c === 35 },
+  { key: 'tradegoods', label: 'Trade Goods', test: (_n, c) => c === 17 },
+  { key: 'pi', label: 'Planetary Infrastructure', test: (_n, c) => c === 41 || c === 42 || c === 43 || c === 46 },
+  { key: 'apparel', label: 'Apparel', test: (_n, c) => c === 30 },
+  { key: 'skins', label: 'Ship SKINs', test: (_n, c) => c === 91 },
+  { key: 'personalization', label: 'Personalization', test: (_n, c) => c === 2118 },
+  { key: 'special', label: 'Special Edition Assets', test: (_n, c) => c === 63 },
+  { key: 'structeq', label: 'Structure Equipment', test: (n, c) => c === 66 && !/rig/i.test(n) },
+  { key: 'structmods', label: 'Structure Modifications', test: (n, c) => c === 66 && /rig/i.test(n) },
+  { key: 'structures', label: 'Structures', test: (_n, c) => c === 65 },
+  { key: 'shield', label: 'Shield', parent: 'equipment', test: (n, c) => c === 7 && /shield/i.test(n) },
   {
     key: 'turrets', label: 'Turrets & Launchers', parent: 'equipment',
-    test: (n, cat) => cat === 7 && (/(energy|hybrid|projectile)\s*weapon/i.test(n) || /missile launcher/i.test(n)),
+    test: (n, c) => c === 7 && (/(energy|hybrid|projectile)\s*weapon/i.test(n) || /missile launcher/i.test(n)),
   },
 ]
+// Standaard: alleen Ships aan, de rest uit.
+const DEFAULT_CATS: Record<string, boolean> = Object.fromEntries(CATS.map(c => [c.key, c.key === 'ships']))
 
 // ── Stijl (zelfde look als de andere pagina's) ──
 const INPUT: React.CSSProperties = {
@@ -134,9 +149,7 @@ export default function GapScanner() {
     names: Record<string, string>
   } | null>(null)
 
-  const [cats, setCats] = useState<Record<CatKey, boolean>>({
-    ships: true, equipment: false, implants: false, drones: false, mods: false, shield: false, turrets: false,
-  })
+  const [cats, setCats] = useState<Record<string, boolean>>({ ...DEFAULT_CATS })
   const [minGapPct, setMinGapPct] = useState(15)
   const [minValue, setMinValue] = useState(100_000_000)
   const [feePct, setFeePct] = useState(8)
