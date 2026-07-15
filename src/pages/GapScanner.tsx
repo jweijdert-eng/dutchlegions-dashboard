@@ -10,11 +10,17 @@ const THE_FORGE = 10000002
 const JITA_44 = 60003760
 
 // ── Categorie-definities (via inventory-groepen/categorieën uit de SDE-bundel) ──
-type CatKey = 'ships' | 'equipment' | 'shield' | 'turrets'
+type CatKey = 'ships' | 'equipment' | 'implants' | 'drones' | 'mods' | 'shield' | 'turrets'
 const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: string, categoryId: number) => boolean }[] = [
   { key: 'ships', label: 'Ships', test: (_n, cat) => cat === 6 },
   // Ship Equipment = alle fitting-modules (categorie 7). Shield en Turrets vallen hieronder.
   { key: 'equipment', label: 'Ship Equipment', test: (_n, cat) => cat === 7 },
+  { key: 'implants', label: 'Implants & Boosters', test: (_n, cat) => cat === 20 },
+  { key: 'drones', label: 'Drones', test: (_n, cat) => cat === 18 },
+  {
+    key: 'mods', label: 'Ship & Module Modifications',        // rigs + mutaplasmids
+    test: (n, cat) => (cat === 7 && /^rig\s/i.test(n)) || (cat === 17 && /mutaplasmid/i.test(n)),
+  },
   { key: 'shield', label: 'Shield', parent: 'equipment', test: (n, cat) => cat === 7 && /shield/i.test(n) },
   {
     key: 'turrets', label: 'Turrets & Launchers', parent: 'equipment',
@@ -128,7 +134,9 @@ export default function GapScanner() {
     names: Record<string, string>
   } | null>(null)
 
-  const [cats, setCats] = useState<Record<CatKey, boolean>>({ ships: true, equipment: false, shield: false, turrets: false })
+  const [cats, setCats] = useState<Record<CatKey, boolean>>({
+    ships: true, equipment: false, implants: false, drones: false, mods: false, shield: false, turrets: false,
+  })
   const [minGapPct, setMinGapPct] = useState(15)
   const [minValue, setMinValue] = useState(100_000_000)
   const [feePct, setFeePct] = useState(8)
