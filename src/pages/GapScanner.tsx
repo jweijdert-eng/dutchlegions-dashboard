@@ -34,11 +34,6 @@ const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: str
   { key: 'structeq', label: 'Structure Equipment', test: (n, c) => c === 66 && !/rig/i.test(n) },
   { key: 'structmods', label: 'Structure Modifications', test: (n, c) => c === 66 && /rig/i.test(n) },
   { key: 'structures', label: 'Structures', test: (_n, c) => c === 65 },
-  { key: 'shield', label: 'Shield', parent: 'equipment', test: (n, c) => c === 7 && /shield/i.test(n) },
-  {
-    key: 'turrets', label: 'Turrets & Launchers', parent: 'equipment',
-    test: (n, c) => c === 7 && (/(energy|hybrid|projectile)\s*weapon/i.test(n) || /missile launcher/i.test(n)),
-  },
 ]
 // Standaard: alleen Ships aan, de rest uit.
 const DEFAULT_CATS: Record<string, boolean> = Object.fromEntries(CATS.map(c => [c.key, c.key === 'ships']))
@@ -309,26 +304,6 @@ export default function GapScanner() {
               {c.label}
             </button>
           ))}
-        </div>
-        {/* Sub-categorieën van Ship Equipment */}
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.35rem', paddingLeft: '0.5rem' }}>
-          <span style={{ fontSize: '0.58rem', color: 'var(--text-dim)' }}>↳ onderdeel van Ship Equipment:</span>
-          {CATS.filter(c => c.parent === 'equipment').map(c => {
-            const on = cats[c.key] || cats.equipment
-            return (
-              <button key={c.key} onClick={() => setCats(s => ({ ...s, [c.key]: !s[c.key] }))}
-                title={cats.equipment ? 'Zit al in Ship Equipment' : undefined}
-                style={{
-                  ...INPUT, cursor: 'pointer', fontWeight: 600, fontSize: '0.68rem', padding: '0.25rem 0.55rem',
-                  background: on ? 'var(--blue)' : 'var(--surface2)',
-                  color: on ? '#0a0a12' : 'var(--text)',
-                  borderColor: on ? 'var(--blue)' : 'var(--border)',
-                  opacity: cats.equipment && !cats[c.key] ? 0.75 : 1,
-                }}>
-                {c.label}
-              </button>
-            )
-          })}
         </div>
       </div>
 
