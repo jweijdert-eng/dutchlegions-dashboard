@@ -127,9 +127,9 @@ function bestGap(sell: { price: number; vol: number }[], minGapPct: number) {
   return { cheapest: asc[0].price, buyUnder: best.cur, sellWall: best.next, gapISK: best.next - best.cur, gapPct: best.pct, units, buyCost }
 }
 
-// Gemiddeld dagelijks handelsvolume (laatste ~20 dagen) — maat voor "snelle verkoper".
+// Gemiddeld dagelijks handelsvolume (laatste 7 dagen) — maat voor "snelle verkoper".
 function avgDailyVolume(hist: RegionHistoryPoint[]): number {
-  const recent = hist.slice(-20)
+  const recent = hist.slice(-7)
   if (recent.length === 0) return 0
   return recent.reduce((s, d) => s + d.volume, 0) / recent.length
 }
