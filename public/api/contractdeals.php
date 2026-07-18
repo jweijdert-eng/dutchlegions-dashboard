@@ -89,10 +89,17 @@ function cdHttp(string $url, array $headers = [], ?string $post = null): array {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 20,
         CURLOPT_HTTPHEADER     => array_merge(['User-Agent: dutchlegions-dashboard (contract-deals)'], $headers),
-        CURLOPT_POST           => $post !== null,
-        CURLOPT_POSTFIELDS     => $post ?? '',
         CURLOPT_HEADER         => true,
     ]);
+    // Let op: CURLOPT_POSTFIELDS zetten maakt er sowieso een POST van, óók met
+    // CURLOPT_POST => false. Bij een GET moeten we de handle dus expliciet
+    // terugzetten, anders krijgt ESI een POST en antwoordt het niet.
+    if ($post !== null) {
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+    } else {
+        curl_setopt($ch, CURLOPT_HTTPGET, true);
+    }
     $raw = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $hlen = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
