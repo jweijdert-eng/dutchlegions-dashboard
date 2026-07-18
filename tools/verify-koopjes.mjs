@@ -22,13 +22,15 @@ const FEED = {
       nettoBuy: 3.1e8, marge: 43.5, aantalItems: 4, dunneMarkt: false, heeftBpc: false,
       prijsOnbekend: false, uitgegeven: new Date().toISOString(),
       verlooptOp: new Date(Date.now() + 5 * 86400000).toISOString(), locatieId: 60003760,
+      locatie: 'Jita IV - Moon 4 - Caldari Navy Assembly Plant',
       items: [{ typeId: 54732, naam: 'Stormbringer', aantal: 1, isBpc: false, waarde: 1.4e9 },
               { typeId: 34, naam: 'Tritanium', aantal: 1000, isBpc: false, waarde: 4000 }] },
     { id: 2, titel: 'Officer mod bundel', prijs: 3e8, beloning: 0, betaalt: 3e8,
       volume: 50, waardeSell: 4.96e8, waardeBuy: 4.1e8, nettoSell: 1.96e8, nettoBuy: 1.1e8,
       marge: 65.3, aantalItems: 2, dunneMarkt: true, heeftBpc: true, prijsOnbekend: true,
       uitgegeven: new Date(Date.now() - 3600000).toISOString(),
-      verlooptOp: new Date(Date.now() + 2 * 86400000).toISOString(), locatieId: 60003760,
+      verlooptOp: new Date(Date.now() + 2 * 86400000).toISOString(), locatieId: 1035466617946,
+      locatie: '',
       items: [{ typeId: 47757, naam: 'Vepas Modified BCS', aantal: 1, isBpc: false, waarde: 4.96e8 }] },
   ],
 }
@@ -97,6 +99,8 @@ const checks = {
   'badge bpc':              await heeft('bpc'),
   'voortgang gewaardeerd':  await heeft('812 / 4000'),
   'melding nog te scannen': await heeft('Nog 3188 contracten te scannen'),
+  'stationnaam getoond':    await heeft('Jita IV - Moon 4 - Caldari Navy Assembly Plant'),
+  'structure zonder naam':  await heeft('locatie #1035466617946'),
 }
 for (const [k, v] of Object.entries(checks)) console.log(`  ${v ? 'OK ' : 'MIS'} ${k}`)
 await page.screenshot({ path: SHOT + 'koopjes-lijst.png', fullPage: true })

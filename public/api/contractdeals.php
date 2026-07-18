@@ -61,6 +61,52 @@ function cdSchema(PDO $pdo): void {
         v LONGTEXT NOT NULL,
         updated_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cc_locaties (
+        id BIGINT PRIMARY KEY,
+        naam VARCHAR(255) NOT NULL DEFAULT '',
+        updated_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+/**
+ * {id: stationnaam} voor de opgegeven locatie-ids.
+ *
+ * NPC-stations zijn publiek op te zoeken via /universe/names (de naam bevat
+ * meteen het systeem, bv. "Jita IV - Moon 4 - Caldari Navy Assembly Plant").
+ * Player-structures (Upwell) hebben een token nodig, dus die laten we hier leeg
+ * — de frontend vult ze aan met het token van de ingelogde gebruiker.
+ */
+function cdLocaties(PDO $pdo, array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) return [];
+
+    $uit = [];
+    foreach (array_chunk($ids, 500) as $chunk) {
+        $in = implode(',', array_fill(0, count($chunk), '?'));
+        $st = $pdo->prepare("SELECT id, naam FROM cc_locaties WHERE id IN ($in)");
+        $st->execute($chunk);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $uit[(int)$r['id']] = $r['naam'];
+    }
+
+    // Alleen stations opzoeken; structures (ids ver boven de 2^31) kan ESI
+    // zonder token niet prijsgeven.
+    $todo = array_values(array_filter($ids, fn($i) => !isset($uit[$i]) && $i < 100000000));
+    if (!$todo) return $uit;
+
+    $ins = $pdo->prepare('INSERT INTO cc_locaties (id, naam, updated_at) VALUES (?, ?, NOW())
+                          ON DUPLICATE KEY UPDATE naam = VALUES(naam), updated_at = NOW()');
+    foreach (array_chunk($todo, 500) as $chunk) {
+        [$status, $body] = cdHttp('https://esi.evetech.net/latest/universe/names/?datasource=tranquility',
+                                  ['Content-Type: application/json'], json_encode(array_values($chunk)));
+        if ($status !== 200) continue;
+        foreach ((json_decode($body, true) ?: []) as $r) {
+            if (!isset($r['id'], $r['name'])) continue;
+            $uit[(int)$r['id']] = $r['name'];
+            $ins->execute([(int)$r['id'], $r['name']]);
+        }
+    }
+    return $uit;
 }
 
 function cdCacheGet(PDO $pdo, string $key, int $maxAge): ?array {
@@ -343,6 +389,15 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
     }
 
     usort($rijen, fn($a, $b) => $b['nettoSell'] <=> $a['nettoSell']);
+
+    // Stationnamen erbij (alleen voor wat we tonen — scheelt lookups).
+    $tonen = array_slice($rijen, 0, CD_TOON);
+    $locaties = cdLocaties($pdo, array_column($tonen, 'locatieId'));
+    foreach ($rijen as &$r) {
+        $r['locatie'] = $locaties[$r['locatieId']] ?? '';
+    }
+    unset($r);
+
     return $rijen;
 }
 

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import EveImage from './EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
+import { useAuth } from '../auth/AuthContext'
+import { getStructureName } from '../api/esi'
 
 // Publieke item-exchange-contracten die onder de Jita-prijs staan.
 //
@@ -37,6 +39,7 @@ interface Row {
   verlooptOp: string
   uitgegeven: string
   locatieId: number
+  locatie: string      // stationnaam; leeg bij een player-structure
 }
 
 interface Feed {
@@ -87,7 +90,11 @@ function fmtVerloopt(iso: string) {
 }
 
 export default function ContractDeals() {
+  const { activeTokens: tokens } = useAuth()
   const [feed, setFeed] = useState<Feed | null>(null)
+  // Player-structures kan de server niet opzoeken (dat vereist een token);
+  // die vullen we hier aan met het token van de ingelogde gebruiker.
+  const [structuren, setStructuren] = useState<Record<number, string>>({})
   const [laden, setLaden] = useState(true)
   const [fout, setFout] = useState('')
   const [sort, setSort] = useState<Sort>('netto')
@@ -111,6 +118,24 @@ export default function ContractDeals() {
   }, [])
 
   useEffect(() => { void haal() }, [haal])
+
+  useEffect(() => {
+    const open = [...new Set((feed?.rows ?? [])
+      .filter(r => !r.locatie && r.locatieId > 2_147_483_647)
+      .map(r => r.locatieId))]
+    if (!open.length || !tokens.length) return
+    let afgebroken = false
+    void Promise.all(open.map(async id => {
+      const naam = await getStructureName(id, tokens).catch(() => null)
+      return [id, naam] as const
+    })).then(paren => {
+      if (afgebroken) return
+      const nieuw: Record<number, string> = {}
+      for (const [id, naam] of paren) if (naam) nieuw[id] = naam
+      if (Object.keys(nieuw).length) setStructuren(prev => ({ ...prev, ...nieuw }))
+    })
+    return () => { afgebroken = true }
+  }, [feed, tokens])
 
   const rows = useMemo(() => {
     const r = [...(feed?.rows ?? [])]
@@ -221,6 +246,9 @@ export default function ContractDeals() {
                   )}
                 </div>
                 <div style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '.2rem' }}>
+                  📍 {r.locatie || structuren[r.locatieId] || `locatie #${r.locatieId}`}
+                </div>
+                <div style={{ color: 'var(--text-dim)', fontSize: '.76rem' }}>
                   verloopt over {fmtVerloopt(r.verlooptOp)}
                   {r.volume > 0 && ` · ${r.volume.toLocaleString('nl-NL')} m³`}
                 </div>
