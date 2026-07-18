@@ -1,5 +1,5 @@
-// Live-verificatie: de Contracts-pagina heeft een MIJN/KOOPJES-schakelaar, en onder
-// KOOPJES staat het publieke item-exchange-blok met Jita-waardering. Token gefaket; de
+// Live-verificatie: de losse pagina /koopjes toont de publieke
+// item-exchange-contracten onder de Jita-prijs met Jita-waardering. Token gefaket; de
 // corpcontracts-feed wordt gemockt zodat we niet van de echte corp afhankelijk zijn.
 import { chromium } from 'playwright-core'
 import fs from 'fs'
@@ -59,31 +59,36 @@ const page = await ctx.newPage()
 const fouten = []
 page.on('pageerror', e => { fouten.push(e.message); console.log('PAGE ERROR:', e.message) })
 
-console.log('--- Contracts-pagina laden ---')
-await page.goto(`${APP}/contracts`, { waitUntil: 'domcontentloaded' }).catch(() => {})
-await page.waitForSelector('text=Contracts', { timeout: 20000 })
+console.log('--- Koopjes-pagina laden ---')
+await page.goto(`${APP}/koopjes`, { waitUntil: 'domcontentloaded' }).catch(() => {})
+await page.waitForSelector('text=Koopjes', { timeout: 20000 })
 await page.waitForTimeout(1200)
 
-const knopMijn = await page.locator('button', { hasText: /^MIJN$/ }).count()
-const knopCorp = await page.locator('button', { hasText: /^KOOPJES$/ }).count()
-console.log('MIJN-knop aanwezig:', knopMijn, '| KOOPJES-knop aanwezig:', knopCorp)
-await page.screenshot({ path: SHOT + 'deals-mijn.png' })
+console.log('--- Sidebar-link aanwezig? ---')
+const sidebarLink = await page.locator('a[href="/koopjes"]').count()
+// Moet in de Finance-groep staan, niet onderaan bij "Links" (items die in geen
+// enkele groep van DEFAULT_LAYOUT staan belanden daar automatisch).
+const inFinance = await page.locator('a[href="/koopjes"]').isVisible().catch(() => false)
+console.log('  sidebar-link /koopjes:', sidebarLink, '| zichtbaar in de nav:', inFinance)
 
-console.log('--- Losse pagina /corp-contracts hoort weg te zijn ---')
-await page.goto(`${APP}/corp-contracts`, { waitUntil: 'domcontentloaded' }).catch(() => {})
+console.log('--- Contracts-pagina heeft GEEN scope-schakelaar meer ---')
+await page.goto(`${APP}/contracts`, { waitUntil: 'domcontentloaded' }).catch(() => {})
 await page.waitForTimeout(900)
-const corpPaginaWeg = !(await page.locator('text=open item exchange').count())
-console.log('/corp-contracts toont GEEN eigen pagina meer:', corpPaginaWeg)
+const geenSchakelaar = (await page.locator('button', { hasText: /^KOOPJES$/ }).count()) === 0
+console.log('  geen KOOPJES-knop op /contracts:', geenSchakelaar)
 
-console.log('--- Terug naar Contracts en op CORP klikken ---')
-await page.goto(`${APP}/contracts`, { waitUntil: 'domcontentloaded' }).catch(() => {})
-await page.waitForSelector('button:has-text("KOOPJES")', { timeout: 20000 })
-await page.click('button:has-text("KOOPJES")')
-await page.waitForTimeout(1200)
+console.log('--- Terug naar /koopjes voor de inhoud ---')
+await page.goto(`${APP}/koopjes`, { waitUntil: 'domcontentloaded' }).catch(() => {})
+await page.waitForSelector('text=The Forge', { timeout: 20000 })
+await page.waitForTimeout(800)
 
 const heeft = async (t) => (await page.locator(`text=${t}`).count()) > 0
 const checks = {
+  'paginatitel Koopjes':    await heeft('Koopjes'),
   'regio The Forge':        await heeft('The Forge'),
+  'sidebar-link':           sidebarLink > 0,
+  'staat in de nav-groep':  inFinance,
+  'schakelaar weg':         geenSchakelaar,
   'contract Stormbringer':  await heeft('Stormbringer'),
   'winst 473.93 mln':       await heeft('473.93 mln'),
   'marge +44%':             await heeft('+44%'),
@@ -94,7 +99,7 @@ const checks = {
   'melding nog te scannen': await heeft('Nog 3188 contracten te scannen'),
 }
 for (const [k, v] of Object.entries(checks)) console.log(`  ${v ? 'OK ' : 'MIS'} ${k}`)
-await page.screenshot({ path: SHOT + 'deals-koopjes.png', fullPage: true })
+await page.screenshot({ path: SHOT + 'koopjes-lijst.png', fullPage: true })
 
 console.log('--- Sorteren op Marge % ---')
 await page.click('button:has-text("Marge %")').catch(() => console.log('  (sorteerknop niet gevonden)'))

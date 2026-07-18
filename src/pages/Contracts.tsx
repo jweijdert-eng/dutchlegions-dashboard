@@ -5,7 +5,6 @@ import {
   type Contract, type ContractItem, type ContractBid,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
-import ContractDeals from '../components/ContractDeals'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
 
@@ -183,7 +182,6 @@ export default function Contracts() {
   const [filter, setFilter]         = useState<'all' | 'outstanding' | 'finished' | 'other'>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'item_exchange' | 'auction' | 'courier'>('all')
   const [search, setSearch]         = useState('')
-  const [scope, setScope]           = useState<'mine' | 'deals'>('mine')
   const [expanded, setExpanded]     = useState<Set<number>>(new Set())
   usePageLoading(loading)
   const fetchId = useRef(0)
@@ -265,24 +263,10 @@ export default function Contracts() {
     <Layout header={
       <PageHeader
         title="Contracts"
-        sub={scope === 'deals'
-          ? 'publieke item exchange — koopjes'
-          : loading ? 'Laden...' : `${contracts.length} totaal · ${outstanding.length} actief`}
+        sub={loading ? 'Laden...' : `${contracts.length} totaal · ${outstanding.length} actief`}
         right={
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Mijn contracten (uit eigen token) vs. publieke koopjes (via de PHP-feed) */}
-            {(['mine', 'deals'] as const).map(sc => (
-              <button key={sc} onClick={() => setScope(sc)} style={{
-                background: scope === sc ? 'rgba(0,180,216,0.15)' : 'none',
-                border: `1px solid ${scope === sc ? 'var(--blue)' : 'var(--border)'}`,
-                color: scope === sc ? 'var(--blue)' : 'var(--text-dim)',
-                borderRadius: 2, fontSize: '0.62rem', fontWeight: 700, padding: '0.2rem 0.45rem', cursor: 'pointer',
-              }}>
-                {sc === 'mine' ? 'MIJN' : 'KOOPJES'}
-              </button>
-            ))}
-            <span style={{ color: 'var(--border)', fontSize: '0.7rem' }}>|</span>
-            {scope === 'mine' && (['all', 'outstanding', 'finished', 'other'] as const).map(f => (
+            {(['all', 'outstanding', 'finished', 'other'] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)} style={{
                 background: filter === f ? 'rgba(0,180,216,0.15)' : 'none',
                 border: `1px solid ${filter === f ? 'var(--blue)' : 'var(--border)'}`,
@@ -292,7 +276,8 @@ export default function Contracts() {
                 {f === 'all' ? 'ALLES' : f === 'outstanding' ? 'ACTIEF' : f === 'finished' ? 'KLAAR' : 'OVERIG'}
               </button>
             ))}
-            {scope === 'mine' && (['all', 'item_exchange', 'auction', 'courier'] as const).map(t => (
+            <span style={{ color: 'var(--border)', fontSize: '0.7rem' }}>|</span>
+            {(['all', 'item_exchange', 'auction', 'courier'] as const).map(t => (
               <button key={t} onClick={() => setTypeFilter(t)} style={{
                 background: typeFilter === t ? `${TYPE_COLOR[t] ?? 'rgba(0,180,216,0.15)'}22` : 'none',
                 border: `1px solid ${typeFilter === t ? (TYPE_COLOR[t] ?? 'var(--blue)') : 'var(--border)'}`,
@@ -302,19 +287,17 @@ export default function Contracts() {
                 {t === 'all' ? 'TYPE' : TYPE_ICON[t]} {t === 'all' ? 'ALLES' : t === 'item_exchange' ? 'ITEM' : t === 'auction' ? 'VEILING' : 'KOERIER'}
               </button>
             ))}
-            {scope === 'mine' && <input
+            <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Zoeken..."
               style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2, padding: '0.28rem 0.6rem', color: 'var(--text)', fontSize: '0.72rem', outline: 'none', width: 150 }}
-            />}
+            />
           </div>
         }
       />
     }>
-      {scope === 'deals' && <ContractDeals />}
-
       {/* Stat cards */}
-      {scope === 'mine' && !loading && contracts.length > 0 && (
+      {!loading && contracts.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
           <StatCard label="ACTIEF"      value={`${outstanding.length}`}        color="var(--blue)" />
           <StatCard label="TOTALE WAARDE" value={totalValue > 0 ? `${fmtISK(totalValue)} ISK` : '—'} color="var(--gold)" />
@@ -323,10 +306,10 @@ export default function Contracts() {
         </div>
       )}
 
-      {scope === 'mine' && loading && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Contracts laden...</div>}
-      {scope === 'mine' && !loading && filtered.length === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Geen contracts gevonden</div>}
+      {loading && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Contracts laden...</div>}
+      {!loading && filtered.length === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>Geen contracts gevonden</div>}
 
-      {scope === 'mine' && !loading && filtered.length > 0 && (
+      {!loading && filtered.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>
           {filtered.map((c, i) => {
             const isExpanded = expanded.has(c.contract_id)
