@@ -1,5 +1,5 @@
-// Live-verificatie: de Contracts-pagina heeft een MIJN/CORP-schakelaar, en onder
-// CORP staat het item-exchange-blok met Jita-waardering. Token gefaket; de
+// Live-verificatie: de Contracts-pagina heeft een MIJN/KOOPJES-schakelaar, en onder
+// KOOPJES staat het publieke item-exchange-blok met Jita-waardering. Token gefaket; de
 // corpcontracts-feed wordt gemockt zodat we niet van de echte corp afhankelijk zijn.
 import { chromium } from 'playwright-core'
 import fs from 'fs'
@@ -12,28 +12,24 @@ fs.mkdirSync(SHOT, { recursive: true })
 // Nep-feed: één koopje, één te duur contract, één waarvan de inhoud onbekend is.
 const FEED = {
   ok: true,
-  corp: { id: 98652891, naam: 'Dutch Legions' },
+  regio: { id: 10000002, naam: 'The Forge' },
   bijgewerkt: new Date().toISOString(),
-  totalen: { aantal: 3, onbekend: 1, koopjes: 1, waarde: 1.56e9, vraagprijs: 1.79e9,
-             netto: 4.74e8, beste: 4.7393e8 },
+  totalen: { kandidaten: 4000, gewaardeerd: 812, nog_te_gaan: 3188, koopjes: 2,
+             beste: 4.7393e8, waarde: 2.06e9, vraagprijs: 1.39e9 },
   rows: [
-    { id: 1, titel: 'Stormbringer', uitgever: 'Test Piloot', prijs: 1.09e9, beloning: 0,
-      betaalt: 1.09e9, waardeSell: 1.564e9, waardeBuy: 1.4e9, nettoSell: 4.7393e8,
-      nettoBuy: 3.1e8, marge: 43.5, aantalItems: 4, onbekend: false, leeg: false,
-      dunneMarkt: false, heeftBpc: false, prijsOnbekend: false,
+    { id: 1, titel: 'Stormbringer fit', prijs: 1.09e9, beloning: 0, betaalt: 1.09e9,
+      volume: 12500, waardeSell: 1.564e9, waardeBuy: 1.4e9, nettoSell: 4.7393e8,
+      nettoBuy: 3.1e8, marge: 43.5, aantalItems: 4, dunneMarkt: false, heeftBpc: false,
+      prijsOnbekend: false, uitgegeven: new Date().toISOString(),
       verlooptOp: new Date(Date.now() + 5 * 86400000).toISOString(), locatieId: 60003760,
       items: [{ typeId: 54732, naam: 'Stormbringer', aantal: 1, isBpc: false, waarde: 1.4e9 },
               { typeId: 34, naam: 'Tritanium', aantal: 1000, isBpc: false, waarde: 4000 }] },
-    { id: 2, titel: 'June Ratting Taxes', uitgever: 'Andere Piloot', prijs: 1.66e9, beloning: 0,
-      betaalt: 1.66e9, waardeSell: 0, waardeBuy: 0, nettoSell: -1.66e9, nettoBuy: -1.66e9,
-      marge: -100, aantalItems: 0, onbekend: false, leeg: true, dunneMarkt: false,
-      heeftBpc: false, prijsOnbekend: false,
-      verlooptOp: new Date(Date.now() + 2 * 86400000).toISOString(), locatieId: 60003760, items: [] },
-    { id: 3, titel: 'Nog niet opgehaald', uitgever: 'Derde Piloot', prijs: 5e8, beloning: 0,
-      betaalt: 5e8, waardeSell: null, waardeBuy: null, nettoSell: null, nettoBuy: null,
-      marge: null, aantalItems: 0, onbekend: true, leeg: false, dunneMarkt: false,
-      heeftBpc: false, prijsOnbekend: false,
-      verlooptOp: new Date(Date.now() + 9 * 86400000).toISOString(), locatieId: 60003760, items: [] },
+    { id: 2, titel: 'Officer mod bundel', prijs: 3e8, beloning: 0, betaalt: 3e8,
+      volume: 50, waardeSell: 4.96e8, waardeBuy: 4.1e8, nettoSell: 1.96e8, nettoBuy: 1.1e8,
+      marge: 65.3, aantalItems: 2, dunneMarkt: true, heeftBpc: true, prijsOnbekend: true,
+      uitgegeven: new Date(Date.now() - 3600000).toISOString(),
+      verlooptOp: new Date(Date.now() + 2 * 86400000).toISOString(), locatieId: 60003760,
+      items: [{ typeId: 47757, naam: 'Vepas Modified BCS', aantal: 1, isBpc: false, waarde: 4.96e8 }] },
   ],
 }
 
@@ -46,7 +42,7 @@ await ctx.addInitScript(({ charId }) => {
   }]))
 }, { charId: CHAR_ID })
 
-await ctx.route('**/api/corpcontracts.php*', r => r.fulfill({
+await ctx.route('**/api/contractdeals.php*', r => r.fulfill({
   status: 200, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
   body: JSON.stringify(FEED),
 }))
@@ -69,9 +65,9 @@ await page.waitForSelector('text=Contracts', { timeout: 20000 })
 await page.waitForTimeout(1200)
 
 const knopMijn = await page.locator('button', { hasText: /^MIJN$/ }).count()
-const knopCorp = await page.locator('button', { hasText: /^CORP$/ }).count()
-console.log('MIJN-knop aanwezig:', knopMijn, '| CORP-knop aanwezig:', knopCorp)
-await page.screenshot({ path: SHOT + 'contracts-mijn.png' })
+const knopCorp = await page.locator('button', { hasText: /^KOOPJES$/ }).count()
+console.log('MIJN-knop aanwezig:', knopMijn, '| KOOPJES-knop aanwezig:', knopCorp)
+await page.screenshot({ path: SHOT + 'deals-mijn.png' })
 
 console.log('--- Losse pagina /corp-contracts hoort weg te zijn ---')
 await page.goto(`${APP}/corp-contracts`, { waitUntil: 'domcontentloaded' }).catch(() => {})
@@ -81,34 +77,29 @@ console.log('/corp-contracts toont GEEN eigen pagina meer:', corpPaginaWeg)
 
 console.log('--- Terug naar Contracts en op CORP klikken ---')
 await page.goto(`${APP}/contracts`, { waitUntil: 'domcontentloaded' }).catch(() => {})
-await page.waitForSelector('button:has-text("CORP")', { timeout: 20000 })
-await page.click('button:has-text("CORP")')
+await page.waitForSelector('button:has-text("KOOPJES")', { timeout: 20000 })
+await page.click('button:has-text("KOOPJES")')
 await page.waitForTimeout(1200)
 
 const heeft = async (t) => (await page.locator(`text=${t}`).count()) > 0
 const checks = {
-  'corpnaam Dutch Legions':      await heeft('Dutch Legions'),
-  'contract Stormbringer':       await heeft('Stormbringer'),
-  'winst 473.93 mln':            await heeft('473.93 mln'),
-  'marge +44%':                  await heeft('+44%'),
-  'badge inhoud onbekend':       await heeft('inhoud onbekend'),
-  'badge leeg':                  await heeft('leeg'),
-  'melding over onbekende inhoud': await heeft('tellen niet mee in de totalen'),
-  'uitleg dunne markt':          await heeft('dunne markt'),
+  'regio The Forge':        await heeft('The Forge'),
+  'contract Stormbringer':  await heeft('Stormbringer'),
+  'winst 473.93 mln':       await heeft('473.93 mln'),
+  'marge +44%':             await heeft('+44%'),
+  'tweede koopje':          await heeft('Officer mod bundel'),
+  'badge dunne markt':      await heeft('dunne markt'),
+  'badge bpc':              await heeft('bpc'),
+  'voortgang gewaardeerd':  await heeft('812 / 4000'),
+  'melding nog te scannen': await heeft('Nog 3188 contracten te scannen'),
 }
 for (const [k, v] of Object.entries(checks)) console.log(`  ${v ? 'OK ' : 'MIS'} ${k}`)
-await page.screenshot({ path: SHOT + 'contracts-corp.png', fullPage: true })
+await page.screenshot({ path: SHOT + 'deals-koopjes.png', fullPage: true })
 
 console.log('--- Sorteren op Marge % ---')
 await page.click('button:has-text("Marge %")').catch(() => console.log('  (sorteerknop niet gevonden)'))
 await page.waitForTimeout(600)
 
-console.log('--- Filter "alleen koopjes" ---')
-await page.locator('input[type=checkbox]').first().check().catch(() => {})
-await page.waitForTimeout(600)
-const naFilter = await page.locator('text=June Ratting Taxes').count()
-console.log('  verliescontract verborgen na filter:', naFilter === 0)
-await page.screenshot({ path: SHOT + 'contracts-corp-koopjes.png' })
 
 console.log('\nJS-fouten:', fouten.length ? fouten : 'geen')
 const gezakt = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k)

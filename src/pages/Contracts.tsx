@@ -5,7 +5,7 @@ import {
   type Contract, type ContractItem, type ContractBid,
 } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
-import CorpItemExchange from '../components/CorpItemExchange'
+import ContractDeals from '../components/ContractDeals'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
 
@@ -183,7 +183,7 @@ export default function Contracts() {
   const [filter, setFilter]         = useState<'all' | 'outstanding' | 'finished' | 'other'>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'item_exchange' | 'auction' | 'courier'>('all')
   const [search, setSearch]         = useState('')
-  const [scope, setScope]           = useState<'mine' | 'corp'>('mine')
+  const [scope, setScope]           = useState<'mine' | 'deals'>('mine')
   const [expanded, setExpanded]     = useState<Set<number>>(new Set())
   usePageLoading(loading)
   const fetchId = useRef(0)
@@ -265,20 +265,20 @@ export default function Contracts() {
     <Layout header={
       <PageHeader
         title="Contracts"
-        sub={scope === 'corp'
-          ? 'corp — item exchange'
+        sub={scope === 'deals'
+          ? 'publieke item exchange — koopjes'
           : loading ? 'Laden...' : `${contracts.length} totaal · ${outstanding.length} actief`}
         right={
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Mijn contracten (uit eigen token) vs. de corp-contracten (via de PHP-feed) */}
-            {(['mine', 'corp'] as const).map(sc => (
+            {/* Mijn contracten (uit eigen token) vs. publieke koopjes (via de PHP-feed) */}
+            {(['mine', 'deals'] as const).map(sc => (
               <button key={sc} onClick={() => setScope(sc)} style={{
                 background: scope === sc ? 'rgba(0,180,216,0.15)' : 'none',
                 border: `1px solid ${scope === sc ? 'var(--blue)' : 'var(--border)'}`,
                 color: scope === sc ? 'var(--blue)' : 'var(--text-dim)',
                 borderRadius: 2, fontSize: '0.62rem', fontWeight: 700, padding: '0.2rem 0.45rem', cursor: 'pointer',
               }}>
-                {sc === 'mine' ? 'MIJN' : 'CORP'}
+                {sc === 'mine' ? 'MIJN' : 'KOOPJES'}
               </button>
             ))}
             <span style={{ color: 'var(--border)', fontSize: '0.7rem' }}>|</span>
@@ -311,7 +311,7 @@ export default function Contracts() {
         }
       />
     }>
-      {scope === 'corp' && <CorpItemExchange />}
+      {scope === 'deals' && <ContractDeals />}
 
       {/* Stat cards */}
       {scope === 'mine' && !loading && contracts.length > 0 && (

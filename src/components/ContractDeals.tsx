@@ -1,0 +1,323 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import EveImage from './EveImage'
+import { usePageLoading } from '../hooks/usePageLoading'
+
+// Publieke item-exchange-contracten die onder de Jita-prijs staan.
+//
+// De data komt van api/contractdeals.php: dat scant de publieke contracten van
+// The Forge (geen token nodig) en waardeert de inhoud tegen Jita. Omdat het er
+// tienduizenden zijn wordt de nieuwste lading eerst gescand en groeit de dekking
+// met elk bezoek — vandaar de voortgangsregel.
+
+interface DealItem {
+  typeId: number
+  naam: string
+  aantal: number
+  isBpc: boolean
+  waarde: number
+}
+
+interface Row {
+  id: number
+  titel: string
+  prijs: number
+  beloning: number
+  betaalt: number
+  volume: number
+  waardeSell: number
+  waardeBuy: number
+  nettoSell: number
+  nettoBuy: number
+  marge: number | null
+  items: DealItem[]
+  aantalItems: number
+  dunneMarkt: boolean
+  heeftBpc: boolean
+  prijsOnbekend: boolean
+  verlooptOp: string
+  uitgegeven: string
+  locatieId: number
+}
+
+interface Feed {
+  ok?: boolean
+  regio?: { id: number; naam: string }
+  rows?: Row[]
+  totalen?: {
+    kandidaten: number
+    gewaardeerd: number
+    nog_te_gaan: number
+    koopjes: number
+    beste: number
+    waarde: number
+    vraagprijs: number
+  }
+  bijgewerkt?: string
+}
+
+type Sort = 'netto' | 'marge' | 'waarde' | 'prijs' | 'nieuw'
+
+const SORTS: { key: Sort; label: string }[] = [
+  { key: 'netto',  label: 'Winst' },
+  { key: 'marge',  label: 'Marge %' },
+  { key: 'waarde', label: 'Marktwaarde' },
+  { key: 'prijs',  label: 'Vraagprijs' },
+  { key: 'nieuw',  label: 'Nieuwste' },
+]
+
+function fmtISK(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return '—'
+  const abs = Math.abs(v)
+  if (abs >= 1e12) return `${(v / 1e12).toFixed(2)} bln`
+  if (abs >= 1e9)  return `${(v / 1e9).toFixed(2)} mrd`
+  if (abs >= 1e6)  return `${(v / 1e6).toFixed(2)} mln`
+  if (abs >= 1e3)  return `${(v / 1e3).toFixed(0)}k`
+  return `${Math.round(v)}`
+}
+
+function fmtVerloopt(iso: string) {
+  if (!iso) return '—'
+  const ms = new Date(iso).getTime() - Date.now()
+  if (!isFinite(ms)) return '—'
+  if (ms <= 0) return 'verlopen'
+  const dagen = Math.floor(ms / 86_400_000)
+  if (dagen >= 1) return `${dagen} dg`
+  const uren = Math.floor(ms / 3_600_000)
+  return uren >= 1 ? `${uren} uur` : `${Math.floor(ms / 60_000)} min`
+}
+
+export default function ContractDeals() {
+  const [feed, setFeed] = useState<Feed | null>(null)
+  const [laden, setLaden] = useState(true)
+  const [fout, setFout] = useState('')
+  const [sort, setSort] = useState<Sort>('netto')
+  const [open, setOpen] = useState<number | null>(null)
+
+  usePageLoading(laden)
+
+  const haal = useCallback(async (ververs = false) => {
+    setLaden(true)
+    setFout('')
+    try {
+      const res = await fetch(`/api/contractdeals.php?action=list${ververs ? '&refresh=1' : ''}`)
+      const data = await res.json() as Feed
+      if (!res.ok) setFout('Ophalen mislukt.')
+      else setFeed(data)
+    } catch {
+      setFout('Kon de contracten niet ophalen.')
+    } finally {
+      setLaden(false)
+    }
+  }, [])
+
+  useEffect(() => { void haal() }, [haal])
+
+  const rows = useMemo(() => {
+    const r = [...(feed?.rows ?? [])]
+    r.sort((a, b) => {
+      switch (sort) {
+        case 'marge':  return (b.marge ?? -Infinity) - (a.marge ?? -Infinity)
+        case 'waarde': return b.waardeSell - a.waardeSell
+        case 'prijs':  return b.betaalt - a.betaalt
+        case 'nieuw':  return new Date(b.uitgegeven).getTime() - new Date(a.uitgegeven).getTime()
+        default:       return b.nettoSell - a.nettoSell
+      }
+    })
+    return r
+  }, [feed, sort])
+
+  const t = feed?.totalen
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    flexWrap: 'wrap', gap: '.5rem', marginBottom: '.75rem' }}>
+        <span style={{ color: 'var(--text-dim)', fontSize: '.78rem' }}>
+          {feed?.regio ? `${feed.regio.naam} — publieke item exchange onder Jita-prijs`
+                       : 'publieke item-exchange-contracten'}
+        </span>
+        <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
+          {feed?.bijgewerkt && (
+            <span style={{ color: 'var(--text-dim)', fontSize: '.72rem' }}>
+              bijgewerkt {new Date(feed.bijgewerkt).toLocaleTimeString('nl-NL',
+                { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          <button className="btn btn-sm" onClick={() => void haal(true)} disabled={laden}>↻</button>
+        </div>
+      </div>
+
+      {fout && <div className="card" style={{ padding: '1rem', color: 'var(--red)' }}>{fout}</div>}
+
+      {t && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
+          <Stat label="Koopjes gevonden" waarde={String(t.koopjes)} kleur="var(--green)" />
+          <Stat label="Beste koopje" waarde={fmtISK(t.beste)} kleur="var(--green)" />
+          <Stat label="Gewaardeerd" waarde={`${t.gewaardeerd} / ${t.kandidaten}`} />
+          <Stat label="Totale marktwaarde" waarde={fmtISK(t.waarde)} kleur="var(--gold)" />
+          <Stat label="Totale vraagprijs" waarde={fmtISK(t.vraagprijs)} />
+        </div>
+      )}
+
+      {!!t?.nog_te_gaan && (
+        <div className="card" style={{ padding: '.6rem .9rem', marginBottom: '1rem',
+                                       fontSize: '.82rem', color: 'var(--text-dim)' }}>
+          Nog {t.nog_te_gaan} contracten te scannen — de inhoud van een contract kost één
+          losse ESI-call, dus dat gaat stapsgewijs. Klik op ↻ om verder te scannen; wat al
+          gescand is blijft bewaard.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem', alignItems: 'center',
+                    marginBottom: '.8rem' }}>
+        <span style={{ color: 'var(--text-dim)', fontSize: '.8rem' }}>Sorteer op</span>
+        {SORTS.map(s => (
+          <button
+            key={s.key}
+            onClick={() => setSort(s.key)}
+            className="btn btn-sm"
+            style={sort === s.key
+              ? { background: 'var(--blue)', color: '#04121a', fontWeight: 700 }
+              : undefined}
+          >{s.label}</button>
+        ))}
+      </div>
+
+      {!laden && !rows.length && (
+        <div className="card" style={{ padding: '1rem', color: 'var(--text-dim)' }}>
+          Nog geen koopjes gevonden. Klik op ↻ om meer contracten te scannen.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+        {rows.map(r => (
+          <div
+            key={r.id}
+            className="card"
+            onClick={() => setOpen(open === r.id ? null : r.id)}
+            style={{ padding: '.7rem .9rem', cursor: 'pointer',
+                     borderLeft: '3px solid var(--green)' }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.8rem',
+                          alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ minWidth: 240, flex: '1 1 300px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem',
+                              flexWrap: 'wrap', fontWeight: 600 }}>
+                  {r.titel || <span style={{ color: 'var(--text-dim)' }}>zonder titel</span>}
+                  {r.dunneMarkt    && <Badge kleur="amber" tekst="dunne markt" />}
+                  {r.heeftBpc      && <Badge kleur="amber" tekst="bpc" />}
+                  {r.prijsOnbekend && <Badge kleur="amber" tekst="prijs?" />}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem',
+                              marginTop: '.25rem', fontSize: '.82rem' }}>
+                  {r.items.slice(0, 3).map(i => (
+                    <span key={i.typeId} style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}>
+                      <EveImage category="types" id={i.typeId} variation="icon" size={32} px={18} />
+                      {i.aantal > 1 ? `${i.aantal.toLocaleString('nl-NL')}× ` : ''}{i.naam}
+                    </span>
+                  ))}
+                  {r.aantalItems > 3 && (
+                    <span style={{ color: 'var(--text-dim)' }}>+{r.aantalItems - 3} meer</span>
+                  )}
+                </div>
+                <div style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '.2rem' }}>
+                  verloopt over {fmtVerloopt(r.verlooptOp)}
+                  {r.volume > 0 && ` · ${r.volume.toLocaleString('nl-NL')} m³`}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1.2rem', textAlign: 'right' }}>
+                <Cel label="Vraagprijs"  waarde={fmtISK(r.betaalt)} />
+                <Cel label="Jita-waarde" waarde={fmtISK(r.waardeSell)} kleur="var(--gold)" />
+                <Cel label="Winst"       waarde={fmtISK(r.nettoSell)} kleur="var(--green)" groot />
+                <Cel label="Marge"
+                     waarde={r.marge === null ? '—' : `+${r.marge.toFixed(0)}%`}
+                     kleur="var(--green)" />
+              </div>
+            </div>
+
+            {open === r.id && (
+              <div style={{ marginTop: '.7rem', paddingTop: '.7rem', borderTop: '1px solid var(--border)' }}>
+                <table style={{ width: '100%', fontSize: '.82rem' }}>
+                  <tbody>
+                    {r.items.map(i => (
+                      <tr key={i.typeId}>
+                        <td style={{ padding: '.15rem 0' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.35rem' }}>
+                            <EveImage category="types" id={i.typeId} variation="icon" size={32} px={20} />
+                            {i.naam}{i.isBpc && <Badge kleur="amber" tekst="bpc" />}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-dim)' }}>
+                          {i.aantal.toLocaleString('nl-NL')}×
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{fmtISK(i.waarde)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {r.aantalItems > r.items.length && (
+                  <div style={{ color: 'var(--text-dim)', fontSize: '.78rem', marginTop: '.3rem' }}>
+                    (alleen de {r.items.length} waardevolste van {r.aantalItems} items)
+                  </div>
+                )}
+                <div style={{ color: 'var(--text-dim)', fontSize: '.78rem', marginTop: '.4rem' }}>
+                  Direct doorverkopen aan Jita-koop-orders levert {fmtISK(r.nettoBuy)} op.
+                  Contract-id {r.id} — zoek 'm in-game via Contracts → zoeken op de titel.
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <p style={{ color: 'var(--text-dim)', fontSize: '.78rem', marginTop: '1rem' }}>
+        Alleen publieke item-exchange-contracten in The Forge van 200 mln tot 50 mrd worden
+        bekeken — daaronder zijn contracten vrijwel altijd blueprint-copies, die geen
+        marktprijs hebben. Jita-waarde = de inhoud tegen de Jita-verkoopprijs; winst = die waarde minus de
+        vraagprijs. Blueprint-copies tellen als 0 (hun typeprijs zegt niets over een kopie), en
+        staat een verkoopprijs meer dan 10× boven het bod, dan waarderen we conservatief op de
+        biedprijs — dat contract krijgt de melding <em>dunne markt</em>.
+      </p>
+    </>
+  )
+}
+
+function Stat({ label, waarde, kleur }: { label: string; waarde: string; kleur?: string }) {
+  return (
+    <div className="card" style={{ padding: '.55rem .8rem', flex: '1 1 140px', minWidth: 130 }}>
+      <div style={{ fontSize: '.66rem', fontWeight: 700, letterSpacing: '.05em',
+                    textTransform: 'uppercase', color: 'var(--text-dim)' }}>{label}</div>
+      <div style={{ fontSize: '1.15rem', fontWeight: 700, color: kleur }}>{waarde}</div>
+    </div>
+  )
+}
+
+function Cel({ label, waarde, kleur, groot }: {
+  label: string; waarde: string; kleur?: string; groot?: boolean
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: '.64rem', color: 'var(--text-dim)', textTransform: 'uppercase',
+                    letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontWeight: 700, color: kleur, fontSize: groot ? '1.05rem' : '.92rem' }}>
+        {waarde}
+      </div>
+    </div>
+  )
+}
+
+function Badge({ tekst, kleur }: { tekst: string; kleur: 'red' | 'amber' | 'dim' }) {
+  const kleuren = {
+    red:   { c: 'var(--red)',      bg: 'rgba(224,85,85,.15)',   b: 'rgba(224,85,85,.5)' },
+    amber: { c: '#f0932b',         bg: 'rgba(240,147,43,.15)',  b: 'rgba(240,147,43,.5)' },
+    dim:   { c: 'var(--text-dim)', bg: 'rgba(255,255,255,.05)', b: 'var(--border)' },
+  }[kleur]
+  return (
+    <span style={{
+      fontSize: '.62rem', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase',
+      padding: '.08rem .4rem', borderRadius: 999, whiteSpace: 'nowrap',
+      color: kleuren.c, background: kleuren.bg, border: `1px solid ${kleuren.b}`,
+    }}>{tekst}</span>
+  )
+}
