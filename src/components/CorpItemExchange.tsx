@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Layout, { PageHeader } from '../components/Layout'
-import EveImage from '../components/EveImage'
+import EveImage from './EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
 
@@ -92,7 +91,7 @@ function fmtVerloopt(iso: string) {
   return uren >= 1 ? `${uren} uur` : `${Math.floor(ms / 60_000)} min`
 }
 
-export default function CorpContracts() {
+export default function CorpItemExchange() {
   const { tokens, mainCharId } = useAuth()
   const [feed, setFeed] = useState<Feed | null>(null)
   const [laden, setLaden] = useState(true)
@@ -176,8 +175,7 @@ export default function CorpContracts() {
 
   if (fout === 'no_token') {
     return (
-      <Layout header={<PageHeader title="Corp Contracten" sub="open contracten van de corp" />}>
-        <div className="card" style={{ padding: '1.5rem', maxWidth: 640 }}>
+      <div className="card" style={{ padding: '1.5rem', maxWidth: 640 }}>
           <h3 style={{ marginTop: 0 }}>Nog niet gekoppeld</h3>
           <p style={{ color: 'var(--text-dim)' }}>
             Om de corp-contracten te kunnen tonen moet één keer een character met de rol{' '}
@@ -193,30 +191,30 @@ export default function CorpContracts() {
               Vraag een director om dit in te stellen.
             </p>
           )}
-        </div>
-      </Layout>
+      </div>
     )
   }
 
   return (
-    <Layout header={
-      <PageHeader
-        title="Corp Contracten"
-        sub={feed?.corp ? `${feed.corp.naam} — open item exchange` : 'open contracten van de corp'}
-        right={
-          <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
-            {feed?.bijgewerkt && (
-              <span style={{ color: 'var(--text-dim)', fontSize: '.78rem' }}>
-                bijgewerkt {new Date(feed.bijgewerkt).toLocaleTimeString('nl-NL',
-                  { hour: '2-digit', minute: '2-digit' })}
-                {feed.verouderd ? ' (verouderd)' : ''}
-              </span>
-            )}
-            <button className="btn btn-sm" onClick={() => void haal(true)} disabled={laden}>↻</button>
-          </div>
-        }
-      />
-    }>
+    <>
+      {/* Kopregel van dit blok — de pagina-header is van de Contracts-pagina zelf */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    flexWrap: 'wrap', gap: '.5rem', marginBottom: '.75rem' }}>
+        <span style={{ color: 'var(--text-dim)', fontSize: '.78rem' }}>
+          {feed?.corp ? `${feed.corp.naam} — open item exchange` : 'open item-exchange-contracten van de corp'}
+        </span>
+        <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
+          {feed?.bijgewerkt && (
+            <span style={{ color: 'var(--text-dim)', fontSize: '.72rem' }}>
+              bijgewerkt {new Date(feed.bijgewerkt).toLocaleTimeString('nl-NL',
+                { hour: '2-digit', minute: '2-digit' })}
+              {feed.verouderd ? ' (verouderd)' : ''}
+            </span>
+          )}
+          <button className="btn btn-sm" onClick={() => void haal(true)} disabled={laden}>↻</button>
+        </div>
+      </div>
+
       {fout && <div className="card" style={{ padding: '1rem', color: 'var(--red)' }}>{fout}</div>}
 
       {t && (
@@ -371,7 +369,7 @@ export default function CorpContracts() {
         aanbod), dan is die niet te vertrouwen en waarderen we conservatief op de biedprijs —
         dat contract krijgt dan de melding <em>dunne markt</em>.
       </p>
-    </Layout>
+    </>
   )
 }
 

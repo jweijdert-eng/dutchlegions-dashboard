@@ -31,7 +31,6 @@ const Market       = lz(() => import('./pages/Market'))
 const Skills       = lz(() => import('./pages/Skills'))
 const Blueprints   = lz(() => import('./pages/Blueprints'))
 const Contracts    = lz(() => import('./pages/Contracts'))
-const CorpContracts = lz(() => import('./pages/CorpContracts'))
 const Notes        = lz(() => import('./pages/Notes'))
 const Ideeen       = lz(() => import('./pages/Ideeen'))
 const EveNews      = lz(() => import('./pages/EveNews'))
@@ -249,7 +248,6 @@ function AppRoutes() {
       <Route path="/skills"      element={<ProtectedRoute><Skills /></ProtectedRoute>} />
       <Route path="/blueprints" element={<ProtectedRoute><Blueprints /></ProtectedRoute>} />
       <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
-      <Route path="/corp-contracts" element={<ProtectedRoute><CorpContracts /></ProtectedRoute>} />
       <Route path="/notes"      element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/ideeen"     element={<ProtectedRoute><Ideeen /></ProtectedRoute>} />
       <Route path="/eve-news"   element={<ProtectedRoute><EveNews /></ProtectedRoute>} />
