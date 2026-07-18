@@ -269,8 +269,16 @@ export default function ContractDeals() {
                 </div>
                 <div style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '.2rem' }}>
                   📍 <span style={{ color: 'var(--blue)' }}>{r.regio}</span>
-                  {r.systeem && ` · ${r.systeem}`}
-                  {' · '}{r.locatie || structuren[r.locatieId] || `locatie #${r.locatieId}`}
+                  {(() => {
+                    const naam = r.locatie || structuren[r.locatieId] || ''
+                    // Een locatienaam begint met het systeem; voor structures die
+                    // we hier pas oplossen leiden we het systeem er zo ook uit af.
+                    const systeem = r.systeem || naam.split(' ')[0]
+                    return <>
+                      {systeem && ` · ${systeem}`}
+                      {' · '}{naam || `locatie #${r.locatieId}`}
+                    </>
+                  })()}
                 </div>
                 <div style={{ color: 'var(--text-dim)', fontSize: '.76rem' }}>
                   verloopt over {fmtVerloopt(r.verlooptOp)}

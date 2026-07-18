@@ -81,8 +81,8 @@ function cdSchema(PDO $pdo): void {
 /**
  * {id: stationnaam} voor de opgegeven locatie-ids.
  *
- * NPC-stations zijn publiek op te zoeken via /universe/names (de naam bevat
- * meteen het systeem, bv. "Jita IV - Moon 4 - Caldari Navy Assembly Plant").
+ * NPC-stations zijn publiek op te zoeken via /universe/names; de systeemnaam
+ * leiden we uit die naam af (zie onder).
  * Player-structures (Upwell) hebben een token nodig, dus die laten we hier leeg
  * — de frontend vult ze aan met het token van de ingelogde gebruiker.
  */
@@ -119,28 +119,21 @@ function cdLocaties(PDO $pdo, array $ids): array {
         }
     }
 
+    // Het systeem hoeft niet apart opgevraagd te worden: een EVE-locatienaam
+    // begint altijd met de systeemnaam ("Jita IV - Moon 4 - ...", "BKG-Q2 - ...")
+    // en systeemnamen bevatten nooit een spatie. Dat scheelt 2 ESI-calls per
+    // station — en die pasten niet in het tijdsbudget van een verzoek.
     $ins = $pdo->prepare('INSERT INTO cc_locaties (id, naam, systeem, updated_at) VALUES (?, ?, ?, NOW())
                           ON DUPLICATE KEY UPDATE naam = VALUES(naam), systeem = VALUES(systeem),
                               updated_at = NOW()');
-    $systeemNaam = [];   // system_id => naam, binnen dit verzoek
-    $start = time();
     foreach ($todo as $id) {
         $naam = $namen[$id] ?? '';
-        $systeem = '';
-        if (time() - $start < CD_TIJD_BUDGET) {
-            [$ok, $station] = cdEsi("/universe/stations/{$id}/");
-            $sid = $ok ? (int)($station['system_id'] ?? 0) : 0;
-            if ($sid) {
-                if (!isset($systeemNaam[$sid])) {
-                    [$ok2, $sys] = cdEsi("/universe/systems/{$sid}/");
-                    $systeemNaam[$sid] = $ok2 ? (string)($sys['name'] ?? '') : '';
-                }
-                $systeem = $systeemNaam[$sid];
-            }
-        }
+        if ($naam === '') continue;
+        $systeem = strtok($naam, ' ');
         $uit[$id] = ['naam' => $naam, 'systeem' => $systeem];
-        if ($naam !== '') $ins->execute([$id, $naam, $systeem]);
+        $ins->execute([$id, $naam, $systeem]);
     }
+
     return $uit;
 }
 
