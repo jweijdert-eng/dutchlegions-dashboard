@@ -68,6 +68,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Order-monitor', path: '/jita-monitor', icon: '🔔', badge: null },
   { label: 'Mijn posities', path: '/jita-positions', icon: '💼', badge: null },
   { label: 'Contracts',    path: '/contracts',  icon: '🤝', badge: null },
+  { label: 'Corp Contracten', path: '/corp-contracts', icon: '📦', badge: null },
   { label: 'Hauling',      path: '/hauling',    icon: '🛻', badge: null },
   { label: 'Killboard',    path: '/kills',      icon: '☠️', badge: null },
   { label: 'Corp Killboard', path: '/corp-killboard', icon: '💀', badge: null },

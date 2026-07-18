@@ -33,6 +33,9 @@ const SCOPES = [
   'esi-characters.read_contacts.v1',
   'esi-corporations.read_contacts.v1',
   'esi-alliances.read_contacts.v1',
+  // Alleen bruikbaar voor Directors/Accountants; nodig om het corp-contractenbord
+  // te voeden (één director koppelt zijn token, zie api/corpcontracts.php).
+  'esi-contracts.read_corporation_contracts.v1',
 ].join(' ')
 
 function base64url(bytes: Uint8Array): string {
