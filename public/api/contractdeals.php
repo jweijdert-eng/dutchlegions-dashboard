@@ -20,7 +20,12 @@
 require_once 'config.php';
 cors();
 
-const CD_REGION          = 10000002;   // The Forge (Jita)
+// Regio's die gescand worden. Per regio een eigen kandidatenlijst-cache, zodat
+// één verzoek nooit alle regio's tegelijk hoeft op te halen.
+const CD_REGIOS = [
+    10000002 => 'The Forge',   // Jita — veruit het grootste aanbod (~34 pagina's)
+    10000055 => 'Branch',      // eigen space (1 pagina)
+];
 const CD_MIN_PRICE       = 200000000;  // 200 mln — daaronder zijn het vrijwel
                                        // alleen BPC-verkopen, en die zijn niet op
                                        // marktprijs te waarderen (gemeten: 2% bruikbaar
@@ -32,7 +37,7 @@ const CD_PRIJS_SECONDEN  = 3600;       // marktprijzen 1 uur
 const CD_ITEMS_PER_CALL  = 60;         // max contract-inhouden per verzoek
 const CD_TIJD_BUDGET     = 12;         // en niet langer dan dit (PHP-limiet)
 const CD_TOON            = 100;        // zoveel beste deals teruggeven
-const CD_JITA_4_4        = 60003760;
+const CD_JITA_4_4        = 60003760;   // waarderen doen we altijd tegen Jita
 const CD_MIN_SELL_VOLUME = 20;
 const CD_MAX_SELL_RATIO  = 10;
 
@@ -65,8 +70,12 @@ function cdSchema(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS cc_locaties (
         id BIGINT PRIMARY KEY,
         naam VARCHAR(255) NOT NULL DEFAULT '',
+        systeem VARCHAR(100) NOT NULL DEFAULT '',
         updated_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // Kolom kan ontbreken als de tabel van een eerdere versie is.
+    try { $pdo->query('SELECT systeem FROM cc_locaties LIMIT 1'); }
+    catch (Exception $e) { try { $pdo->exec("ALTER TABLE cc_locaties ADD COLUMN systeem VARCHAR(100) NOT NULL DEFAULT ''"); } catch (Exception $e2) {} }
 }
 
 /**
@@ -84,9 +93,11 @@ function cdLocaties(PDO $pdo, array $ids): array {
     $uit = [];
     foreach (array_chunk($ids, 500) as $chunk) {
         $in = implode(',', array_fill(0, count($chunk), '?'));
-        $st = $pdo->prepare("SELECT id, naam FROM cc_locaties WHERE id IN ($in)");
+        $st = $pdo->prepare("SELECT id, naam, systeem FROM cc_locaties WHERE id IN ($in)");
         $st->execute($chunk);
-        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $uit[(int)$r['id']] = $r['naam'];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $uit[(int)$r['id']] = ['naam' => $r['naam'], 'systeem' => $r['systeem']];
+        }
     }
 
     // Alleen stations opzoeken; structures (ids ver boven de 2^31) kan ESI
@@ -94,17 +105,39 @@ function cdLocaties(PDO $pdo, array $ids): array {
     $todo = array_values(array_filter($ids, fn($i) => !isset($uit[$i]) && $i < 100000000));
     if (!$todo) return $uit;
 
-    $ins = $pdo->prepare('INSERT INTO cc_locaties (id, naam, updated_at) VALUES (?, ?, NOW())
-                          ON DUPLICATE KEY UPDATE naam = VALUES(naam), updated_at = NOW()');
+    // Namen in bulk (één call per 500), systeem per station (die zit niet in
+    // /universe/names) — beide daarna permanent gecached.
+    $namen = [];
     foreach (array_chunk($todo, 500) as $chunk) {
         [$status, $body] = cdHttp('https://esi.evetech.net/latest/universe/names/?datasource=tranquility',
                                   ['Content-Type: application/json'], json_encode(array_values($chunk)));
         if ($status !== 200) continue;
         foreach ((json_decode($body, true) ?: []) as $r) {
-            if (!isset($r['id'], $r['name'])) continue;
-            $uit[(int)$r['id']] = $r['name'];
-            $ins->execute([(int)$r['id'], $r['name']]);
+            if (isset($r['id'], $r['name'])) $namen[(int)$r['id']] = $r['name'];
         }
+    }
+
+    $ins = $pdo->prepare('INSERT INTO cc_locaties (id, naam, systeem, updated_at) VALUES (?, ?, ?, NOW())
+                          ON DUPLICATE KEY UPDATE naam = VALUES(naam), systeem = VALUES(systeem),
+                              updated_at = NOW()');
+    $systeemNaam = [];   // system_id => naam, binnen dit verzoek
+    $start = time();
+    foreach ($todo as $id) {
+        $naam = $namen[$id] ?? '';
+        $systeem = '';
+        if (time() - $start < CD_TIJD_BUDGET) {
+            [$ok, $station] = cdEsi("/universe/stations/{$id}/");
+            $sid = $ok ? (int)($station['system_id'] ?? 0) : 0;
+            if ($sid) {
+                if (!isset($systeemNaam[$sid])) {
+                    [$ok2, $sys] = cdEsi("/universe/systems/{$sid}/");
+                    $systeemNaam[$sid] = $ok2 ? (string)($sys['name'] ?? '') : '';
+                }
+                $systeem = $systeemNaam[$sid];
+            }
+        }
+        $uit[$id] = ['naam' => $naam, 'systeem' => $systeem];
+        if ($naam !== '') $ins->execute([$id, $naam, $systeem]);
     }
     return $uit;
 }
@@ -230,24 +263,24 @@ function cdUpdateNames(PDO $pdo, array $typeIds): void {
 
 // ---------------------------------------------------------------- contracten
 
-/** De kandidatenlijst: publieke item-exchange-contracten in het prijsvenster, nieuwste eerst. */
-function cdKandidaten(PDO $pdo, bool $force = false): array {
-    $cache = $force ? null : cdCacheGet($pdo, 'cd_lijst', CD_LIJST_SECONDEN);
+/** Kandidaten van één regio ophalen (of uit de cache halen). */
+function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $force = false): array {
+    $key = 'cd_lijst_' . $regioId;
+    $cache = $force ? null : cdCacheGet($pdo, $key, CD_LIJST_SECONDEN);
     if ($cache) return $cache['data'];
 
-    [$ok, $eerste, $hdrs] = cdEsi('/contracts/public/' . CD_REGION . '/', ['page' => 1]);
+    [$ok, $eerste, $hdrs] = cdEsi("/contracts/public/{$regioId}/", ['page' => 1]);
     if (!$ok) {
-        $oud = cdCacheGet($pdo, 'cd_lijst', 0);
+        $oud = cdCacheGet($pdo, $key, 0);
         return $oud ? $oud['data'] : [];
     }
     $paginas = max(1, (int)($hdrs['x-pages'] ?? 1));
     $alles = $eerste;
 
-    // Alle pagina's proberen, maar netjes binnen de tijd blijven.
     $start = time();
     for ($p = 2; $p <= $paginas; $p++) {
-        if (time() - $start > CD_TIJD_BUDGET) break;
-        [$ok2, $rows] = cdEsi('/contracts/public/' . CD_REGION . '/', ['page' => $p]);
+        if (time() - $start > CD_TIJD_BUDGET) break;   // rest volgt bij een volgende ronde
+        [$ok2, $rows] = cdEsi("/contracts/public/{$regioId}/", ['page' => $p]);
         if (!$ok2 || !$rows) break;
         $alles = array_merge($alles, $rows);
     }
@@ -266,14 +299,40 @@ function cdKandidaten(PDO $pdo, bool $force = false): array {
             'uitgegeven' => (string)($c['date_issued'] ?? ''),
             'verlooptOp' => (string)($c['date_expired'] ?? ''),
             'locatieId'  => (int)($c['start_location_id'] ?? 0),
+            'regioId'    => $regioId,
+            'regio'      => $regioNaam,
         ];
     }
-    // Nieuwste eerst: verse contracten zijn het interessantst (en nog beschikbaar).
     usort($kandidaten, fn($a, $b) => strcmp($b['uitgegeven'], $a['uitgegeven']));
     $kandidaten = array_slice($kandidaten, 0, CD_MAX_KANDIDATEN);
 
-    cdCacheSet($pdo, 'cd_lijst', $kandidaten);
+    cdCacheSet($pdo, $key, $kandidaten);
     return $kandidaten;
+}
+
+/**
+ * Alle kandidaten uit alle regio's, nieuwste eerst.
+ *
+ * Elke regio heeft z'n eigen cache; per verzoek verversen we er hooguit één
+ * (de oudste), zodat een verzoek nooit alle regio's tegelijk hoeft op te halen.
+ */
+function cdKandidaten(PDO $pdo, bool $force = false): array {
+    $verversen = null;
+    if (!$force) {
+        $oudste = PHP_INT_MAX;
+        foreach (CD_REGIOS as $rid => $rnaam) {
+            $c = cdCacheGet($pdo, 'cd_lijst_' . $rid, 0);
+            $ts = $c ? $c['ts'] : 0;                       // nooit opgehaald = hoogste prioriteit
+            if (time() - $ts > CD_LIJST_SECONDEN && $ts < $oudste) { $oudste = $ts; $verversen = $rid; }
+        }
+    }
+
+    $alles = [];
+    foreach (CD_REGIOS as $rid => $rnaam) {
+        $alles = array_merge($alles, cdRegioKandidaten($pdo, $rid, $rnaam, $force || $verversen === $rid));
+    }
+    usort($alles, fn($a, $b) => strcmp($b['uitgegeven'], $a['uitgegeven']));
+    return $alles;
 }
 
 /** Inhoud ophalen voor contracten die we nog niet kennen (binnen budget). */
@@ -394,7 +453,8 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
     $tonen = array_slice($rijen, 0, CD_TOON);
     $locaties = cdLocaties($pdo, array_column($tonen, 'locatieId'));
     foreach ($rijen as &$r) {
-        $r['locatie'] = $locaties[$r['locatieId']] ?? '';
+        $r['locatie'] = $locaties[$r['locatieId']]['naam'] ?? '';
+        $r['systeem'] = $locaties[$r['locatieId']]['systeem'] ?? '';
     }
     unset($r);
 
@@ -420,7 +480,7 @@ $winst = array_values(array_filter($alle, fn($r) => $r['nettoSell'] > 0));
 
 echo json_encode([
     'ok'         => true,
-    'regio'      => ['id' => CD_REGION, 'naam' => 'The Forge'],
+    'regios'     => array_values(CD_REGIOS),
     'bijgewerkt' => date('c'),
     'rows'       => array_slice($winst, 0, CD_TOON),
     'totalen'    => [

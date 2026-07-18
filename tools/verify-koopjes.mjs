@@ -12,7 +12,7 @@ fs.mkdirSync(SHOT, { recursive: true })
 // Nep-feed: één koopje, één te duur contract, één waarvan de inhoud onbekend is.
 const FEED = {
   ok: true,
-  regio: { id: 10000002, naam: 'The Forge' },
+  regios: ['The Forge', 'Branch'],
   bijgewerkt: new Date().toISOString(),
   totalen: { kandidaten: 4000, gewaardeerd: 812, nog_te_gaan: 3188, koopjes: 2,
              beste: 4.7393e8, waarde: 2.06e9, vraagprijs: 1.39e9 },
@@ -22,7 +22,8 @@ const FEED = {
       nettoBuy: 3.1e8, marge: 43.5, aantalItems: 4, dunneMarkt: false, heeftBpc: false,
       prijsOnbekend: false, uitgegeven: new Date().toISOString(),
       verlooptOp: new Date(Date.now() + 5 * 86400000).toISOString(), locatieId: 60003760,
-      locatie: 'Jita IV - Moon 4 - Caldari Navy Assembly Plant',
+      locatie: 'Jita IV - Moon 4 - Caldari Navy Assembly Plant', systeem: 'Jita',
+      regioId: 10000002, regio: 'The Forge',
       items: [{ typeId: 54732, naam: 'Stormbringer', aantal: 1, isBpc: false, waarde: 1.4e9 },
               { typeId: 34, naam: 'Tritanium', aantal: 1000, isBpc: false, waarde: 4000 }] },
     { id: 2, titel: 'Officer mod bundel', prijs: 3e8, beloning: 0, betaalt: 3e8,
@@ -30,7 +31,7 @@ const FEED = {
       marge: 65.3, aantalItems: 2, dunneMarkt: true, heeftBpc: true, prijsOnbekend: true,
       uitgegeven: new Date(Date.now() - 3600000).toISOString(),
       verlooptOp: new Date(Date.now() + 2 * 86400000).toISOString(), locatieId: 1035466617946,
-      locatie: '',
+      locatie: '', systeem: 'BKG-Q2', regioId: 10000055, regio: 'Branch',
       items: [{ typeId: 47757, naam: 'Vepas Modified BCS', aantal: 1, isBpc: false, waarde: 4.96e8 }] },
   ],
 }
@@ -87,7 +88,7 @@ await page.waitForTimeout(800)
 const heeft = async (t) => (await page.locator(`text=${t}`).count()) > 0
 const checks = {
   'paginatitel Koopjes':    await heeft('Koopjes'),
-  'regio The Forge':        await heeft('The Forge'),
+
   'sidebar-link':           sidebarLink > 0,
   'staat in de nav-groep':  inFinance,
   'schakelaar weg':         geenSchakelaar,
@@ -101,9 +102,21 @@ const checks = {
   'melding nog te scannen': await heeft('Nog 3188 contracten te scannen'),
   'stationnaam getoond':    await heeft('Jita IV - Moon 4 - Caldari Navy Assembly Plant'),
   'structure zonder naam':  await heeft('locatie #1035466617946'),
+  'regio The Forge bij rij': await heeft('The Forge'),
+  'regio Branch bij rij':    await heeft('Branch'),
+  'systeem BKG-Q2':          await heeft('BKG-Q2'),
 }
 for (const [k, v] of Object.entries(checks)) console.log(`  ${v ? 'OK ' : 'MIS'} ${k}`)
 await page.screenshot({ path: SHOT + 'koopjes-lijst.png', fullPage: true })
+
+console.log('--- Regio-filter op Branch ---')
+await page.click('button:has-text("Branch")').catch(() => console.log('  (regio-knop niet gevonden)'))
+await page.waitForTimeout(600)
+const naFilter = await page.locator('text=Stormbringer fit').count()
+console.log('  The Forge-contract verborgen na filter op Branch:', naFilter === 0)
+await page.screenshot({ path: SHOT + 'koopjes-branch.png' })
+await page.click('button:has-text("Alles")').catch(() => {})
+await page.waitForTimeout(400)
 
 console.log('--- Sorteren op Marge % ---')
 await page.click('button:has-text("Marge %")').catch(() => console.log('  (sorteerknop niet gevonden)'))

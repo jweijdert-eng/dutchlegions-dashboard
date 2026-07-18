@@ -40,11 +40,14 @@ interface Row {
   uitgegeven: string
   locatieId: number
   locatie: string      // stationnaam; leeg bij een player-structure
+  systeem: string      // solar system van dat station
+  regioId: number
+  regio: string
 }
 
 interface Feed {
   ok?: boolean
-  regio?: { id: number; naam: string }
+  regios?: string[]
   rows?: Row[]
   totalen?: {
     kandidaten: number
@@ -99,6 +102,7 @@ export default function ContractDeals() {
   const [fout, setFout] = useState('')
   const [sort, setSort] = useState<Sort>('netto')
   const [open, setOpen] = useState<number | null>(null)
+  const [regio, setRegio] = useState('alles')
 
   usePageLoading(laden)
 
@@ -138,7 +142,7 @@ export default function ContractDeals() {
   }, [feed, tokens])
 
   const rows = useMemo(() => {
-    const r = [...(feed?.rows ?? [])]
+    const r = [...(feed?.rows ?? [])].filter(x => regio === 'alles' || x.regio === regio)
     r.sort((a, b) => {
       switch (sort) {
         case 'marge':  return (b.marge ?? -Infinity) - (a.marge ?? -Infinity)
@@ -149,7 +153,7 @@ export default function ContractDeals() {
       }
     })
     return r
-  }, [feed, sort])
+  }, [feed, sort, regio])
 
   const t = feed?.totalen
 
@@ -158,8 +162,9 @@ export default function ContractDeals() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     flexWrap: 'wrap', gap: '.5rem', marginBottom: '.75rem' }}>
         <span style={{ color: 'var(--text-dim)', fontSize: '.78rem' }}>
-          {feed?.regio ? `${feed.regio.naam} — publieke item exchange onder Jita-prijs`
-                       : 'publieke item-exchange-contracten'}
+          {feed?.regios?.length
+            ? `${feed.regios.join(' + ')} — publieke item exchange onder de Jita-prijs`
+            : 'publieke item-exchange-contracten'}
         </span>
         <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
           {feed?.bijgewerkt && (
@@ -206,6 +211,23 @@ export default function ContractDeals() {
               : undefined}
           >{s.label}</button>
         ))}
+
+        {(feed?.regios?.length ?? 0) > 1 && (
+          <>
+            <span style={{ color: 'var(--border)' }}>|</span>
+            <span style={{ color: 'var(--text-dim)', fontSize: '.8rem' }}>Regio</span>
+            {['alles', ...(feed?.regios ?? [])].map(rg => (
+              <button
+                key={rg}
+                onClick={() => setRegio(rg)}
+                className="btn btn-sm"
+                style={regio === rg
+                  ? { background: 'var(--blue)', color: '#04121a', fontWeight: 700 }
+                  : undefined}
+              >{rg === 'alles' ? 'Alles' : rg}</button>
+            ))}
+          </>
+        )}
       </div>
 
       {!laden && !rows.length && (
@@ -246,7 +268,9 @@ export default function ContractDeals() {
                   )}
                 </div>
                 <div style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '.2rem' }}>
-                  📍 {r.locatie || structuren[r.locatieId] || `locatie #${r.locatieId}`}
+                  📍 <span style={{ color: 'var(--blue)' }}>{r.regio}</span>
+                  {r.systeem && ` · ${r.systeem}`}
+                  {' · '}{r.locatie || structuren[r.locatieId] || `locatie #${r.locatieId}`}
                 </div>
                 <div style={{ color: 'var(--text-dim)', fontSize: '.76rem' }}>
                   verloopt over {fmtVerloopt(r.verlooptOp)}
@@ -300,12 +324,13 @@ export default function ContractDeals() {
       </div>
 
       <p style={{ color: 'var(--text-dim)', fontSize: '.78rem', marginTop: '1rem' }}>
-        Alleen publieke item-exchange-contracten in The Forge van 200 mln tot 50 mrd worden
+        Alleen publieke item-exchange-contracten van 200 mln tot 50 mrd worden
         bekeken — daaronder zijn contracten vrijwel altijd blueprint-copies, die geen
         marktprijs hebben. Jita-waarde = de inhoud tegen de Jita-verkoopprijs; winst = die waarde minus de
         vraagprijs. Blueprint-copies tellen als 0 (hun typeprijs zegt niets over een kopie), en
         staat een verkoopprijs meer dan 10× boven het bod, dan waarderen we conservatief op de
-        biedprijs — dat contract krijgt de melding <em>dunne markt</em>.
+        biedprijs — dat contract krijgt de melding <em>dunne markt</em>. Let op: er wordt altijd tegen
+        Jita gewaardeerd, dus een koopje buiten The Forge moet je zelf nog verslepen.
       </p>
     </>
   )
