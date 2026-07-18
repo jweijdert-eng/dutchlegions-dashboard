@@ -101,8 +101,10 @@ function cdLocaties(PDO $pdo, array $ids): array {
     }
 
     // Alleen stations opzoeken; structures (ids ver boven de 2^31) kan ESI
-    // zonder token niet prijsgeven.
-    $todo = array_values(array_filter($ids, fn($i) => !isset($uit[$i]) && $i < 100000000));
+    // zonder token niet prijsgeven. Een rij mét naam maar zónder systeem is ook
+    // onaf — die stond er al voordat we het systeem gingen opslaan.
+    $todo = array_values(array_filter($ids, fn($i) =>
+        $i < 100000000 && (!isset($uit[$i]) || ($uit[$i]['systeem'] ?? '') === '')));
     if (!$todo) return $uit;
 
     // Namen in bulk (één call per 500), systeem per station (die zit niet in
