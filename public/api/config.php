@@ -36,6 +36,24 @@ function eveVerify(string $token): ?int {
     return ctype_digit($sub) ? (int)$sub : null;
 }
 
+// Haal het geverifieerde character-id uit een meegestuurd EVE-token (body 'token' of query 'token').
+// Retourneert null als er geen geldig, niet-verlopen EVE-token is meegestuurd.
+function authCharId(array $body = []): ?int {
+    return eveVerify((string)($body['token'] ?? $_GET['token'] ?? ''));
+}
+
+// Dwing admin-rechten af op basis van een geverifieerd token; stuurt 403 en stopt bij afwezigheid.
+// Vervangt de oude, spoofbare `adminCharId`-check (character-ID's zijn publieke EVE-data).
+function requireAdmin(array $body = []): int {
+    $cid = authCharId($body);
+    if (!$cid || !isAdminRole($cid)) {
+        http_response_code(403);
+        echo json_encode(['error' => 'forbidden']);
+        exit;
+    }
+    return $cid;
+}
+
 // Zorg dat de members-tabel een `allowed`-kolom heeft (allowlist voor de toegangs-gate).
 function ensureMembersSchema(PDO $pdo): void {
     try { $pdo->query('SELECT allowed FROM members LIMIT 1'); }

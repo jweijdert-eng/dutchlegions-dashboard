@@ -19,7 +19,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
 $action = $_GET['action'] ?? ($body['action'] ?? '');
 $cleanThread = fn($t) => preg_replace('/[^a-zA-Z0-9]/', '', (string)$t);
-$isAdmin = fn() => (int)($body['adminCharId'] ?? $_GET['adminCharId'] ?? 0) === ADMIN_CHAR_ID;
+// Admin-check o.b.v. een geverifieerd EVE-token (body 'token' of query 'token'), niet de spoofbare adminCharId.
+$isAdmin = function () use ($body) { $cid = authCharId($body); return $cid !== null && isAdminRole($cid); };
 
 // ── Bezoeker: bericht sturen ────────────────────────────────────────────────
 if ($method === 'POST' && $action === 'send') {

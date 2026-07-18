@@ -24,10 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $data = json_decode(file_get_contents('php://input'), true);
-    if ((int)($data['characterId'] ?? 0) !== ADMIN_CHAR_ID) {
-        http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
-    }
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    requireAdmin($data);  // geverifieerd EVE-token vereist (niet meer de spoofbare characterId)
     try {
         $pdo = getDB();
         foreach (($data['settings'] ?? []) as $key => $value) {

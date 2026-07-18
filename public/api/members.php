@@ -24,8 +24,7 @@ if ($method === 'GET') {
 }
 
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
-$adminId = (int)($body['adminCharId'] ?? 0);
-if ($adminId !== ADMIN_CHAR_ID) { http_response_code(403); echo json_encode(['error' => 'Geen toegang']); exit; }
+requireAdmin($body);  // geverifieerd EVE-token vereist (niet meer de spoofbare adminCharId)
 
 $charId = (int)($body['characterId'] ?? 0);
 if (!$charId) { http_response_code(400); echo json_encode(['error' => 'characterId vereist']); exit; }

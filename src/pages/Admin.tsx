@@ -211,13 +211,13 @@ export default function Admin() {
 
   async function fetchChatThreads() {
     if (!adminToken) return
-    try { const r = await fetch(`/api/pmchat.php?action=threads&adminCharId=${adminToken.characterId}`, { cache: 'no-cache' }); const j = await r.json(); if (Array.isArray(j)) setChatThreads(j) }
+    try { const r = await fetch(`/api/pmchat.php?action=threads&token=${encodeURIComponent(adminToken.accessToken)}`, { cache: 'no-cache' }); const j = await r.json(); if (Array.isArray(j)) setChatThreads(j) }
     catch { /* ignore */ }
   }
 
   async function refreshThreadMsgs(thread: string) {
     if (!adminToken) return
-    try { const r = await fetch(`/api/pmchat.php?action=messages&thread=${thread}&adminCharId=${adminToken.characterId}`, { cache: 'no-cache' }); const j = await r.json(); if (Array.isArray(j)) setThreadMsgs(j) }
+    try { const r = await fetch(`/api/pmchat.php?action=messages&thread=${thread}&token=${encodeURIComponent(adminToken.accessToken)}`, { cache: 'no-cache' }); const j = await r.json(); if (Array.isArray(j)) setThreadMsgs(j) }
     catch { /* ignore */ }
   }
 
@@ -234,7 +234,7 @@ export default function Admin() {
     setReplyText('')
     await fetch('/api/pmchat.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reply', adminCharId: adminToken.characterId, staff_name: adminToken.characterName, thread: activeThread, message: msg }),
+      body: JSON.stringify({ action: 'reply', token: adminToken.accessToken, staff_name: adminToken.characterName, thread: activeThread, message: msg }),
     }).catch(() => {})
     refreshThreadMsgs(activeThread)
   }
@@ -243,7 +243,7 @@ export default function Admin() {
     if (!adminToken || !confirm('Dit gesprek definitief verwijderen?')) return
     await fetch('/api/pmchat.php', {
       method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId, thread }),
+      body: JSON.stringify({ token: adminToken.accessToken, thread }),
     }).catch(() => {})
     if (activeThread === thread) { setActiveThread(null); setThreadMsgs([]) }
     fetchChatThreads()
@@ -484,7 +484,7 @@ export default function Admin() {
       if (!pick) { setOrgMsg(`Geen corp of alliance gevonden voor "${name}".`); return }
       await fetch('/api/access_orgs.php', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminCharId: adminToken.characterId, action: 'add', orgId: pick.id, orgType: pick.type, name: pick.name }),
+        body: JSON.stringify({ token: adminToken.accessToken, action: 'add', orgId: pick.id, orgType: pick.type, name: pick.name }),
       })
       setOrgMsg(`${pick.name} (${pick.type}) toegevoegd aan de allowlist.`)
       setOrgName('')
@@ -497,7 +497,7 @@ export default function Admin() {
     setAllowedOrgs(prev => prev.filter(o => o.org_id !== orgId))
     await fetch('/api/access_orgs.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId, action: 'remove', orgId }),
+      body: JSON.stringify({ token: adminToken.accessToken, action: 'remove', orgId }),
     }).catch(() => {})
     fetchAllowedOrgs()
   }
@@ -545,7 +545,7 @@ export default function Admin() {
     await fetch('/api/members.php', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: charId }),
+      body: JSON.stringify({ token: adminToken.accessToken, characterId: charId }),
     }).catch(() => {})
     await refreshMembers()
   }
@@ -557,7 +557,7 @@ export default function Admin() {
     await fetch('/api/members.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: member.character_id, action }),
+      body: JSON.stringify({ token: adminToken.accessToken, characterId: member.character_id, action }),
     }).catch(() => {})
     await refreshMembers()
   }
@@ -570,7 +570,7 @@ export default function Admin() {
     await fetch('/api/members.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: member.character_id, action }),
+      body: JSON.stringify({ token: adminToken.accessToken, characterId: member.character_id, action }),
     }).catch(() => {})
     await refreshMembers()
   }
@@ -590,7 +590,7 @@ export default function Admin() {
       if (!c) { setAllowMsg(`Character "${name}" niet gevonden.`); return }
       await fetch('/api/members.php', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminCharId: adminToken.characterId, characterId: c.id, name: c.name, action: 'allow' }),
+        body: JSON.stringify({ token: adminToken.accessToken, characterId: c.id, name: c.name, action: 'allow' }),
       })
       setAllowMsg(`${c.name} op de allowlist gezet.`)
       setAllowName('')
@@ -620,7 +620,7 @@ export default function Admin() {
       await fetch('/api/settings.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId: adminToken.characterId, settings: next }),
+        body: JSON.stringify({ token: adminToken.accessToken, settings: next }),
       })
     } catch { /* ignore */ }
   }
@@ -637,7 +637,7 @@ export default function Admin() {
       const r = await fetch('/api/settings.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId: adminToken.characterId, settings: { auth_epoch: epoch } }),
+        body: JSON.stringify({ token: adminToken.accessToken, settings: { auth_epoch: epoch } }),
       })
       if (!r.ok) throw new Error()
       // Stempel jouw eigen browser zodat je zelf ingelogd blijft.

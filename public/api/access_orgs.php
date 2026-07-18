@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
-if ((int)($body['adminCharId'] ?? 0) !== ADMIN_CHAR_ID) { http_response_code(403); echo json_encode(['error' => 'forbidden']); exit; }
+requireAdmin($body);  // geverifieerd EVE-token vereist (niet meer de spoofbare adminCharId)
 $action = $body['action'] ?? '';
 
 if ($action === 'add') {

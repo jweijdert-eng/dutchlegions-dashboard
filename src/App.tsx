@@ -203,7 +203,7 @@ function AppRoutes() {
     let cancelled = false
     const check = async () => {
       try {
-        const r = await fetch(`/api/pmchat.php?action=threads&adminCharId=${adminToken.characterId}`, { cache: 'no-cache' })
+        const r = await fetch(`/api/pmchat.php?action=threads&token=${encodeURIComponent(adminToken.accessToken)}`, { cache: 'no-cache' })
         const j = await r.json()
         if (cancelled || !Array.isArray(j)) return
         const total = j.reduce((s: number, t: { staff_unread?: number }) => s + (Number(t.staff_unread) || 0), 0)
