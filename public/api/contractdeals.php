@@ -73,6 +73,14 @@ function cdSchema(PDO $pdo): void {
         systeem VARCHAR(100) NOT NULL DEFAULT '',
         updated_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Namen van uitgevers (characters/corps). Publiek op te zoeken via
+    // /universe/names en daarna permanent te bewaren — namen wijzigen zelden.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS cc_namen (
+        id BIGINT PRIMARY KEY,
+        naam VARCHAR(255) NOT NULL DEFAULT '',
+        updated_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     // Kolom kan ontbreken als de tabel van een eerdere versie is.
     try { $pdo->query('SELECT systeem FROM cc_locaties LIMIT 1'); }
     catch (Exception $e) { try { $pdo->exec("ALTER TABLE cc_locaties ADD COLUMN systeem VARCHAR(100) NOT NULL DEFAULT ''"); } catch (Exception $e2) {} }
@@ -134,6 +142,44 @@ function cdLocaties(PDO $pdo, array $ids): array {
         $ins->execute([$id, $naam, $systeem]);
     }
 
+    return $uit;
+}
+
+/**
+ * {id: naam} voor uitgevers (characters én corps).
+ *
+ * /universe/names lost characters, corps, allianties enz. in bulk op zonder token.
+ * Namen worden permanent gecached; onbekende ids (verwijderde characters) laten we
+ * gewoon leeg — de frontend toont dan niets.
+ */
+function cdNamen(PDO $pdo, array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) return [];
+
+    $uit = [];
+    foreach (array_chunk($ids, 500) as $chunk) {
+        $in = implode(',', array_fill(0, count($chunk), '?'));
+        $st = $pdo->prepare("SELECT id, naam FROM cc_namen WHERE id IN ($in)");
+        $st->execute($chunk);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $uit[(int)$r['id']] = $r['naam'];
+    }
+
+    $todo = array_values(array_filter($ids, fn($i) => !isset($uit[$i])));
+    if (!$todo) return $uit;
+
+    $ins = $pdo->prepare('INSERT INTO cc_namen (id, naam, updated_at) VALUES (?, ?, NOW())
+                          ON DUPLICATE KEY UPDATE naam = VALUES(naam), updated_at = NOW()');
+    foreach (array_chunk($todo, 500) as $chunk) {
+        [$status, $body] = cdHttp('https://esi.evetech.net/latest/universe/names/?datasource=tranquility',
+                                  ['Content-Type: application/json'], json_encode(array_values($chunk)));
+        if ($status !== 200) continue;   // 404 als één id onvindbaar is: hele chunk overslaan
+        foreach ((json_decode($body, true) ?: []) as $r) {
+            if (isset($r['id'], $r['name'])) {
+                $uit[(int)$r['id']] = $r['name'];
+                $ins->execute([(int)$r['id'], $r['name']]);
+            }
+        }
+    }
     return $uit;
 }
 
@@ -294,6 +340,9 @@ function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $forc
             'uitgegeven' => (string)($c['date_issued'] ?? ''),
             'verlooptOp' => (string)($c['date_expired'] ?? ''),
             'locatieId'  => (int)($c['start_location_id'] ?? 0),
+            'issuerId'   => (int)($c['issuer_id'] ?? 0),
+            'issuerCorpId' => (int)($c['issuer_corporation_id'] ?? 0),
+            'forCorp'    => !empty($c['for_corporation']),
             'regioId'    => $regioId,
             'regio'      => $regioNaam,
         ];
@@ -444,12 +493,21 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
 
     usort($rijen, fn($a, $b) => $b['nettoSell'] <=> $a['nettoSell']);
 
-    // Stationnamen erbij (alleen voor wat we tonen — scheelt lookups).
+    // Stationnamen + uitgevernamen erbij (alleen voor wat we tonen — scheelt lookups).
     $tonen = array_slice($rijen, 0, CD_TOON);
     $locaties = cdLocaties($pdo, array_column($tonen, 'locatieId'));
+    // Zowel de speler als (bij corp-contracten) de corp opzoeken in één call.
+    $naamIds = [];
+    foreach ($tonen as $r) {
+        if (!empty($r['issuerId']))     $naamIds[] = $r['issuerId'];
+        if (!empty($r['forCorp']) && !empty($r['issuerCorpId'])) $naamIds[] = $r['issuerCorpId'];
+    }
+    $namen = cdNamen($pdo, $naamIds);
     foreach ($rijen as &$r) {
         $r['locatie'] = $locaties[$r['locatieId']]['naam'] ?? '';
         $r['systeem'] = $locaties[$r['locatieId']]['systeem'] ?? '';
+        $r['issuer']     = $namen[$r['issuerId']] ?? '';
+        $r['issuerCorp'] = !empty($r['forCorp']) ? ($namen[$r['issuerCorpId']] ?? '') : '';
     }
     unset($r);
 

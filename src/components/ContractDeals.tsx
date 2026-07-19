@@ -43,6 +43,11 @@ interface Row {
   systeem: string      // solar system van dat station
   regioId: number
   regio: string
+  issuerId: number     // de speler die het contract uitgaf
+  issuer: string       // diens naam; leeg als (nog) niet opgelost
+  issuerCorpId?: number
+  issuerCorp?: string  // corpnaam; alleen ingevuld bij een corp-contract
+  forCorp?: boolean
 }
 
 interface Feed {
@@ -284,6 +289,19 @@ export default function ContractDeals() {
                   verloopt over {fmtVerloopt(r.verlooptOp)}
                   {r.volume > 0 && ` · ${r.volume.toLocaleString('nl-NL')} m³`}
                 </div>
+                {r.issuer && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem',
+                                marginTop: '.3rem', fontSize: '.78rem' }}>
+                    <EveImage category="characters" id={r.issuerId} variation="portrait"
+                              size={32} px={20} round />
+                    <span style={{ color: 'var(--text-dim)' }}>van</span>
+                    <span style={{ fontWeight: 600 }}>{r.issuer}</span>
+                    {r.forCorp && r.issuerCorp && (
+                      <span style={{ color: 'var(--text-dim)' }}>· namens {r.issuerCorp}</span>
+                    )}
+                    <CopyKnop tekst={r.issuer} />
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '1.2rem', textAlign: 'right' }}>
@@ -365,6 +383,31 @@ function Cel({ label, waarde, kleur, groot }: {
         {waarde}
       </div>
     </div>
+  )
+}
+
+function CopyKnop({ tekst }: { tekst: string }) {
+  const [gekopieerd, setGekopieerd] = useState(false)
+  const kopieer = (e: React.MouseEvent) => {
+    e.stopPropagation()   // niet de kaart open/dicht klappen
+    void navigator.clipboard?.writeText(tekst).then(() => {
+      setGekopieerd(true)
+      setTimeout(() => setGekopieerd(false), 1200)
+    }).catch(() => {})
+  }
+  return (
+    <button
+      onClick={kopieer}
+      title={`Naam "${tekst}" kopiëren`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '.2rem',
+        padding: '.05rem .35rem', fontSize: '.68rem', lineHeight: 1.4,
+        borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap',
+        color: gekopieerd ? 'var(--green)' : 'var(--text-dim)',
+        background: gekopieerd ? 'rgba(63,185,110,.12)' : 'rgba(255,255,255,.05)',
+        border: `1px solid ${gekopieerd ? 'rgba(63,185,110,.5)' : 'var(--border)'}`,
+      }}
+    >{gekopieerd ? '✓ gekopieerd' : '⧉ kopieer'}</button>
   )
 }
 
