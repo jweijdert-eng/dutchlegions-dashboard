@@ -206,6 +206,7 @@ function sovTimers(PDO $pdo, int $region, bool $force): array {
         $tid = (int)($s['structure_type_id'] ?? 0);
         $rows[] = [
             'structure_id' => $s['structure_id'] ?? null,
+            'system_id'   => $sid,
             'type'        => SOV_TYPES[$tid] ?? (string)$tid,
             'type_full'   => SOV_TYPES_FULL[$tid] ?? (string)$tid,
             'system'      => $sys['name'],

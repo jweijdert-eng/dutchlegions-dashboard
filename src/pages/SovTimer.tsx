@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
+import { useAuth } from '../auth/AuthContext'
+import { setWaypoint } from '../api/esi'
 
 // Sovereignty Structures Timer voor één regio (default Cobalt Edge): welke
 // IHUB/TCU kwetsbaar zijn / wanneer, met ADM en actieve aanvallen. Data uit
@@ -10,6 +12,7 @@ import { usePageLoading } from '../hooks/usePageLoading'
 
 interface Row {
   structure_id: number
+  system_id: number
   type: string
   type_full: string
   system: string
@@ -45,10 +48,11 @@ function fmtWhen(iso: string | null, now: number) {
   if (ms <= -60_000) return 'voorbij'
   if (ms <= 0) return 'nu'
   const s = Math.floor(ms / 1000)
-  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
-  if (d) return `${d}d ${h}u`
-  if (h) return `${h}u ${m}m`
-  return `${m}m`
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600)
+  const m = Math.floor((s % 3600) / 60), sec = s % 60
+  const p = (n: number) => String(n).padStart(2, '0')
+  // Live tikkende klok (uu:mm:ss), met dagen ervoor als het ver weg is.
+  return d ? `${d}d ${p(h)}:${p(m)}:${p(sec)}` : `${p(h)}:${p(m)}:${p(sec)}`
 }
 
 function secClass(sec: number) {
@@ -74,6 +78,29 @@ export default function SovTimer() {
   const [filter, setFilter] = useState<Filter>('all')
   const [now, setNow] = useState(() => Date.now())
   const [from, setFrom] = useState(() => localStorage.getItem('sov_from') || '')
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const { activeTokens } = useAuth()
+  const tok = activeTokens[0]
+  const canWaypoint = useMemo(() => {
+    const tk = tok?.accessToken
+    if (!tk) return false
+    try {
+      const p = JSON.parse(atob(tk.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+      const scp: string[] = Array.isArray(p.scp) ? p.scp : p.scp ? [p.scp] : []
+      return scp.includes('esi-ui.write_waypoint.v1')
+    } catch { return false }
+  }, [tok])
+
+  // Klik op een systeem → in-game destination zetten (autopilot) op het gekozen character.
+  const zetRoute = useCallback(async (r: Row) => {
+    if (!tok) { setMsg({ text: 'Log in om een route te zetten.', ok: false }); return }
+    if (!canWaypoint) { setMsg({ text: 'Log opnieuw in — de "Set Destination"-toestemming ontbreekt.', ok: false }); return }
+    setMsg({ text: `Route naar ${r.system} zetten…`, ok: true })
+    const res = await setWaypoint(r.system_id, tok.accessToken, true)
+    setMsg({ text: res.ok ? `✅ Route naar ${r.system} gezet op ${tok.characterName}` : `Kon de route niet zetten (ESI ${res.status}).`, ok: res.ok })
+    setTimeout(() => setMsg(null), 3500)
+  }, [tok, canWaypoint])
 
   usePageLoading(laden)
 
@@ -92,7 +119,7 @@ export default function SovTimer() {
   }, [])
 
   useEffect(() => { void haal() }, [haal])
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t) }, [])
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1_000); return () => clearInterval(t) }, [])
   useEffect(() => { localStorage.setItem('sov_from', from) }, [from])
 
   const rows = useMemo(() => {
@@ -115,6 +142,13 @@ export default function SovTimer() {
         sub="sovereignty-structuren & kwetsbaarheidstimers — live uit ESI"
       />
     }>
+      {msg && (
+        <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 50, padding: '.6rem .9rem',
+          borderRadius: 8, fontSize: '.82rem', fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.4)',
+          background: msg.ok ? 'rgba(62,207,110,.16)' : 'rgba(224,85,85,.16)',
+          border: `1px solid ${msg.ok ? 'rgba(62,207,110,.55)' : 'rgba(224,85,85,.55)'}`,
+          color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.text}</div>
+      )}
       {fout && <div className="card" style={{ padding: '1rem', color: 'var(--red)' }}>{fout}</div>}
 
       {/* Stats + acties */}
@@ -193,9 +227,13 @@ export default function SovTimer() {
                   <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
                     <span style={{ color: secClass(r.sec), fontWeight: 700, marginRight: '.35rem',
                                    fontVariantNumeric: 'tabular-nums' }}>{r.sec.toFixed(1)}</span>
+                    <button onClick={() => void zetRoute(r)}
+                       title={`In-game route naar ${r.system} zetten (Set Destination)`}
+                       style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 600,
+                                color: 'var(--blue)', cursor: 'pointer' }}>{r.system}</button>
                     <a href={routeUrl(r.system, from)} target="_blank" rel="noopener"
-                       title={from.trim() ? `Route van ${from.trim()} naar ${r.system}` : `${r.system} op dotlan`}
-                       style={{ color: 'var(--blue)', textDecoration: 'none' }}>{r.system}</a>
+                       title={from.trim() ? `dotlan-route van ${from.trim()} naar ${r.system}` : `${r.system} op dotlan`}
+                       style={{ marginLeft: '.4rem', textDecoration: 'none', fontSize: '.8rem', opacity: .65 }}>🗺</a>
                   </td>
                   <td style={{ padding: '.5rem .7rem' }}>
                     <span title={r.type_full} style={{ fontSize: '.62rem', fontWeight: 800, padding: '.12rem .4rem',
@@ -241,8 +279,9 @@ export default function SovTimer() {
 
       <p style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '1rem' }}>
         Data uit de publieke ESI-endpoints <code>/sovereignty/structures</code> &amp; <code>/campaigns</code> (geen token).
-        ADM = Activity Defense Multiplier (1–6): hoe hoger, hoe langer een IHUB standhoudt. Klik een systeem voor
-        de dotlan-route vanaf je staging. Tijden zijn EVE-tijd (UTC).
+        ADM = Activity Defense Multiplier (1–6): hoe hoger, hoe langer een IHUB standhoudt. <strong>Klik een systeem</strong>
+        om in-game de route te zetten (Set Destination){canWaypoint ? '' : ' — log opnieuw in als dit niet werkt'};
+        het 🗺-icoon opent de dotlan-route vanaf je staging. Tijden zijn EVE-tijd (UTC).
       </p>
     </Layout>
   )
