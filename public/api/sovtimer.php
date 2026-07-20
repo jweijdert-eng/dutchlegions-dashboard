@@ -16,6 +16,7 @@ require_once 'config.php';
 cors();
 
 const SOV_DEFAULT_REGION = 10000053;   // Cobalt Edge
+const SOV_HOME_ALLIANCE  = 99013537;   // Insidious. — "wij"
 const SOV_TTL            = 300;        // sov-status 5 min
 const SOV_STATIC_TTL     = 2592000;   // regio-kaart + namen 30 dagen
 const SOV_TYPES          = [32458 => 'IHUB', 32226 => 'TCU'];
@@ -213,6 +214,7 @@ function sovTimers(PDO $pdo, int $region, bool $force): array {
             'sec'         => $sys['sec'],
             'alliance_id' => $s['alliance_id'] ?? null,
             'alliance'    => $names[$s['alliance_id'] ?? 0] ?? '—',
+            'ours'        => ((int)($s['alliance_id'] ?? 0) === SOV_HOME_ALLIANCE),
             'adm'         => $s['vulnerability_occupancy_level'] ?? null,
             'status'      => $status,
             'when'        => $when ? gmdate('c', $when) : null,
@@ -243,6 +245,9 @@ function sovTimers(PDO $pdo, int $region, bool $force): array {
         'aantal'      => count($rows),
         'kwetsbaar_nu'=> count(array_filter($rows, fn($r) => in_array($r['status'], ['vulnerable', 'campaign']))),
         'onder_aanval'=> count(array_filter($rows, fn($r) => $r['status'] === 'campaign')),
+        'ours_count'  => count(array_filter($rows, fn($r) => $r['ours'])),
+        'ours_attack' => count(array_filter($rows, fn($r) => $r['ours'] && $r['status'] === 'campaign')),
+        'home'        => SOV_HOME_ALLIANCE,
         'bijgewerkt'  => gmdate('c'),
     ];
     cacheSet($pdo, $key, $out);

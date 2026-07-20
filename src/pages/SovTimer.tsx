@@ -19,6 +19,7 @@ interface Row {
   sec: number
   alliance_id: number | null
   alliance: string
+  ours: boolean
   adm: number | null
   status: 'campaign' | 'vulnerable' | 'upcoming'
   when: string | null
@@ -40,10 +41,12 @@ interface Feed {
   aantal?: number
   kwetsbaar_nu?: number
   onder_aanval?: number
+  ours_count?: number
+  ours_attack?: number
   bijgewerkt?: string
 }
 
-type Filter = 'all' | 'vulnerable' | 'campaign'
+type Filter = 'all' | 'vulnerable' | 'campaign' | 'ours'
 
 function fmtWhen(iso: string | null, now: number) {
   if (!iso) return '—'
@@ -130,6 +133,7 @@ export default function SovTimer() {
     const r = feed?.rows ?? []
     if (filter === 'vulnerable') return r.filter(x => x.status === 'vulnerable' || x.status === 'campaign')
     if (filter === 'campaign') return r.filter(x => x.status === 'campaign')
+    if (filter === 'ours') return r.filter(x => x.ours)
     return r
   }, [feed, filter])
 
@@ -137,6 +141,7 @@ export default function SovTimer() {
     { key: 'all', label: 'Alles' },
     { key: 'vulnerable', label: 'Kwetsbaar' },
     { key: 'campaign', label: 'Onder aanval' },
+    { key: 'ours', label: 'Van ons' },
   ]
 
   return (
@@ -161,6 +166,9 @@ export default function SovTimer() {
         <Stat label="Structuren" waarde={String(feed?.aantal ?? 0)} />
         <Stat label="Kwetsbaar nu" waarde={String(feed?.kwetsbaar_nu ?? 0)} kleur="var(--gold)" />
         <Stat label="Onder aanval" waarde={String(feed?.onder_aanval ?? 0)} kleur="var(--red)" />
+        <Stat label="Van ons (Insidious.)" waarde={String(feed?.ours_count ?? 0)} kleur="var(--blue)"
+              alert={!!feed?.ours_attack}
+              sub={feed?.ours_attack ? `⚠ ${feed.ours_attack} onder aanval` : undefined} />
         <div className="card" style={{ padding: '.55rem .8rem', flex: '2 1 240px', minWidth: 200,
                                        display: 'flex', flexDirection: 'column', gap: '.25rem', justifyContent: 'center' }}>
           <label style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.05em',
@@ -215,7 +223,9 @@ export default function SovTimer() {
               {rows.map(r => (
                 <tr key={r.structure_id} style={{
                   borderBottom: '1px solid var(--border)',
-                  background: r.status === 'campaign' ? 'rgba(224,85,85,.06)'
+                  borderLeft: r.ours ? '3px solid var(--blue)' : '3px solid transparent',
+                  background: r.ours ? 'rgba(0,180,216,.07)'
+                    : r.status === 'campaign' ? 'rgba(224,85,85,.06)'
                     : r.status === 'vulnerable' ? 'rgba(240,147,43,.05)' : undefined,
                 }}>
                   <td style={{ padding: '.5rem .7rem' }}>
@@ -251,6 +261,11 @@ export default function SovTimer() {
                         ? <EveImage category="alliances" id={r.alliance_id} variation="logo" size={32} px={20} round />
                         : null}
                       <span>{r.alliance}</span>
+                      {r.ours && (
+                        <span style={{ fontSize: '.56rem', fontWeight: 800, letterSpacing: '.04em',
+                          padding: '.08rem .35rem', borderRadius: 4, color: '#04121a',
+                          background: 'var(--blue)' }}>WIJ</span>
+                      )}
                     </span>
                   </td>
                   <td style={{ padding: '.5rem .7rem', textAlign: 'right' }}>
@@ -303,12 +318,17 @@ export default function SovTimer() {
   )
 }
 
-function Stat({ label, waarde, kleur }: { label: string; waarde: string; kleur?: string }) {
+function Stat({ label, waarde, kleur, sub, alert }: {
+  label: string; waarde: string; kleur?: string; sub?: string; alert?: boolean
+}) {
   return (
-    <div className="card" style={{ padding: '.55rem .8rem', flex: '1 1 130px', minWidth: 110 }}>
+    <div className="card" style={{ padding: '.55rem .8rem', flex: '1 1 130px', minWidth: 110,
+      border: alert ? '1px solid rgba(224,85,85,.5)' : undefined,
+      background: alert ? 'rgba(224,85,85,.08)' : undefined }}>
       <div style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.05em',
                     textTransform: 'uppercase', color: 'var(--text-dim)' }}>{label}</div>
       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: kleur }}>{waarde}</div>
+      {sub && <div style={{ fontSize: '.64rem', fontWeight: 700, color: 'var(--red)' }}>{sub}</div>}
     </div>
   )
 }
