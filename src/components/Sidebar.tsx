@@ -73,6 +73,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Killboard',    path: '/kills',      icon: '☠️', badge: null },
   { label: 'Corp Killboard', path: '/corp-killboard', icon: '💀', badge: null },
   { label: 'Vijand-dossier', path: '/enemy-dossier', icon: '🕵️', badge: null },
+  { label: 'Sov Timers',   path: '/sov-timer',   icon: '⏳', badge: null },
   { label: 'Wars',         path: '/wars',       icon: '🗡️', badge: null },
   { label: 'Fleet',        path: '/fleet',      icon: '🛰️', badge: null },
   { label: 'Ansiblex', path: '/ansiblex', icon: '🌉', badge: 'ansiblex' },
@@ -106,7 +107,7 @@ const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
   { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/jita-today', '/market', '/jita-scanner', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build'] },
-  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/fleet', '/ansiblex', '/ratting'] },
+  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/fleet', '/ansiblex', '/ratting'] },
 ]
 
 const NAV_LS_KEY = 'nav_layout_v1'
