@@ -26,6 +26,10 @@ interface Row {
   defender: string
   defender_score: number | null
   attackers_score: number | null
+  moved: boolean
+  d_def: number
+  d_att: number
+  trend: '' | 'att' | 'def'
 }
 
 interface Feed {
@@ -142,6 +146,7 @@ export default function SovTimer() {
         sub="sovereignty-structuren & kwetsbaarheidstimers — live uit ESI"
       />
     }>
+      <style>{`@keyframes sovPulse{0%,100%{opacity:1}50%{opacity:.45}}`}</style>
       {msg && (
         <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 50, padding: '.6rem .9rem',
           borderRadius: 8, fontSize: '.82rem', fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.4)',
@@ -266,6 +271,14 @@ export default function SovTimer() {
                         </div>
                         <span style={{ color: 'var(--text-dim)', fontSize: '.66rem' }}>
                           {r.defender_score}% def · {r.attackers_score}% att
+                          {r.moved && (
+                            <span title="Score beweegt — de node wordt actief gelinkt (entosis)"
+                              style={{ marginLeft: '.35rem', fontWeight: 800,
+                                       color: r.trend === 'att' ? 'var(--red)' : 'var(--green)',
+                                       animation: 'sovPulse 1.4s ease-in-out infinite' }}>
+                              ⚡ {r.trend === 'att' ? `att ▲${r.d_att}%` : r.trend === 'def' ? `def ▲${r.d_def}%` : ''}
+                            </span>
+                          )}
                         </span>
                       </>
                     ) : <span style={{ color: 'var(--text-dim)' }}>—</span>}

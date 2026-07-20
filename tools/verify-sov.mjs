@@ -8,8 +8,8 @@ const b64u=(o)=>Buffer.from(JSON.stringify(o)).toString('base64').replace(/=/g,'
 const JWT='x.'+b64u({scp:['esi-ui.write_waypoint.v1'],exp:Math.floor(Date.now()/1000)+7200,name:'Verify Tester',sub:'CHARACTER:EVE:90000001'})+'.y'
 const FEED={ok:true,region:'Cobalt Edge',region_id:10000053,aantal:2,kwetsbaar_nu:1,onder_aanval:1,bijgewerkt:new Date().toISOString(),
   rows:[
-    {structure_id:1,system_id:30001780,type:'IHUB',type_full:'Infrastructure Hub',system:'GQLB-V',sec:-0.4,alliance_id:99011990,alliance:'Insidious.',adm:1.4,status:'campaign',when:iso(140),campaign:true,defender:'Insidious.',defender_score:60,attackers_score:40},
-    {structure_id:2,system_id:30000208,type:'IHUB',type_full:'Infrastructure Hub',system:'HXK-J6',sec:-0.6,alliance_id:99003581,alliance:'Beyond the Breach',adm:4.1,status:'vulnerable',when:iso(3),campaign:false,defender:'',defender_score:null,attackers_score:null},
+    {structure_id:1,system_id:30001780,type:'IHUB',type_full:'Infrastructure Hub',system:'GQLB-V',sec:-0.4,alliance_id:99011990,alliance:'Insidious.',adm:1.4,status:'campaign',when:iso(140),campaign:true,defender:'Insidious.',defender_score:60,attackers_score:40,moved:true,d_def:-8,d_att:8,trend:'att'},
+    {structure_id:2,system_id:30000208,type:'IHUB',type_full:'Infrastructure Hub',system:'HXK-J6',sec:-0.6,alliance_id:99003581,alliance:'Beyond the Breach',adm:4.1,status:'vulnerable',when:iso(3),campaign:false,defender:'',defender_score:null,attackers_score:null,moved:false,d_def:0,d_att:0,trend:''},
   ]}
 const b=await chromium.launch({channel:'msedge',headless:true})
 const ctx=await b.newContext({viewport:{width:1400,height:900}})
@@ -35,6 +35,7 @@ await p.waitForTimeout(500)
 console.log('  waypoint-call body:',JSON.stringify(wpBody))
 console.log('  OK  route gezet naar juiste systeem-id (30001780):', wpBody && wpBody.dest===30001780 && wpBody.clear===true)
 console.log('  OK  bevestiging zichtbaar:', (await p.locator('text=Route naar GQLB-V gezet').count())>0)
+console.log('  OK  ⚡ live-indicator:', (await p.locator('text=att ▲8%').count())>0)
 await p.screenshot({path:SHOT+'sov2.png',fullPage:true})
 console.log('JS-fouten:',errs.length?errs:'geen')
 await b.close()

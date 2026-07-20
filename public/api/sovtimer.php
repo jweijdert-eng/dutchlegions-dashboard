@@ -220,6 +220,8 @@ function sovTimers(PDO $pdo, int $region, bool $force): array {
             'defender'    => $camp ? ($names[$camp['defender_id'] ?? 0] ?? '—') : '',
             'defender_score'  => $camp ? (int)round(($camp['defender_score'] ?? 0) * 100) : null,
             'attackers_score' => $camp ? (int)round(($camp['attackers_score'] ?? 0) * 100) : null,
+            // Score-beweging (proxy voor "iemand linkt de node") — hieronder gevuld.
+            'moved' => false, 'd_def' => 0, 'd_att' => 0, 'trend' => '',
         ];
     }
 
@@ -230,6 +232,8 @@ function sovTimers(PDO $pdo, int $region, bool $force): array {
         if ($ra !== $rb) return $ra - $rb;
         return strcmp($a['when'] ?? '9', $b['when'] ?? '9');
     });
+
+    sovScoreBeweging($pdo, $region, $rows, $now);
 
     $out = [
         'ok'          => true,
@@ -243,6 +247,30 @@ function sovTimers(PDO $pdo, int $region, bool $force): array {
     ];
     cacheSet($pdo, $key, $out);
     return $out;
+}
+
+/** Score-beweging: vergelijk campaign-scores met de vorige snapshot (proxy voor
+ *  "iemand linkt de node"). Vult per rij moved/d_def/d_att/trend. */
+function sovScoreBeweging(PDO $pdo, int $region, array &$rows, int $now): void {
+    $key = 'sov_scores_' . $region;
+    $prev = cacheGet($pdo, $key, 0) ?: [];   // maxAge 0 → altijd lezen
+    $snap = [];
+    foreach ($rows as &$r) {
+        if ($r['status'] !== 'campaign') continue;
+        $sid = (string)$r['structure_id'];
+        $p = $prev[$sid] ?? null;
+        if ($p) {
+            $r['d_def'] = $r['defender_score'] - (int)$p['def'];
+            $r['d_att'] = $r['attackers_score'] - (int)$p['att'];
+            $r['moved'] = ($r['d_def'] !== 0 || $r['d_att'] !== 0);
+            $r['trend'] = $r['d_att'] > 0 ? 'att' : ($r['d_def'] > 0 ? 'def' : '');
+        }
+        // Basislijn ~4 min vasthouden zodat de verschuiving zichtbaar blijft.
+        if ($p && ($now - (int)($p['ts'] ?? 0)) < 240) $snap[$sid] = $p;
+        else $snap[$sid] = ['def' => $r['defender_score'], 'att' => $r['attackers_score'], 'ts' => $now];
+    }
+    unset($r);
+    cacheSet($pdo, $key, $snap);
 }
 
 // ---------------------------------------------------------------- route
