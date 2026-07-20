@@ -271,13 +271,16 @@ export default function SovTimer() {
                         </div>
                         <span style={{ color: 'var(--text-dim)', fontSize: '.66rem' }}>
                           {r.defender_score}% def · {r.attackers_score}% att
-                          {r.moved && (
+                          {r.moved ? (
                             <span title="Score beweegt — de node wordt actief gelinkt (entosis)"
                               style={{ marginLeft: '.35rem', fontWeight: 800,
                                        color: r.trend === 'att' ? 'var(--red)' : 'var(--green)',
                                        animation: 'sovPulse 1.4s ease-in-out infinite' }}>
                               ⚡ {r.trend === 'att' ? `att ▲${r.d_att}%` : r.trend === 'def' ? `def ▲${r.d_def}%` : ''}
                             </span>
+                          ) : (
+                            <span title="Actieve campaign, maar de score beweegt nu niet — er wordt niet gelinkt"
+                              style={{ marginLeft: '.35rem', opacity: .7 }}>· rustig</span>
                           )}
                         </span>
                       </>
