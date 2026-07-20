@@ -85,6 +85,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Fittings',     path: '/fittings',   icon: '🛠️', badge: null },
   { label: 'Blueprints',   path: '/blueprints', icon: '📐', badge: null },
   { label: 'Build vs Buy', path: '/buildvsbuy', icon: '⚖️', badge: null },
+  { label: 'Bouwwinst',    path: '/build-profit', icon: '💰', badge: null },
   { label: 'Bouwproject',  path: '/build',      icon: '🔨', badge: null },
   { label: 'Industrie-kosten', path: '/industry-cost', icon: '🧾', badge: null, wip: true },
   { label: 'Recruitment',  path: '/recruit-funnel', icon: '📋', badge: null, wip: true },
@@ -106,7 +107,7 @@ const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'item', path: '/' },
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
   { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/jita-today', '/market', '/jita-scanner', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/hauling'] },
-  { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build'] },
+  { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build-profit', '/build'] },
   { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/fleet', '/ansiblex', '/ratting'] },
 ]
 

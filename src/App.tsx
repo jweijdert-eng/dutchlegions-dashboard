@@ -40,6 +40,7 @@ const DebugUnresolved = lz(() => import('./pages/DebugUnresolved'))
 const MultiChar    = lz(() => import('./pages/MultiChar'))
 const LocalChat    = lz(() => import('./pages/LocalChat'))
 const BuildvsBuy   = lz(() => import('./pages/BuildvsBuy'))
+const BuildProfit  = lz(() => import('./pages/BuildProfit'))
 const BuildProject = lz(() => import('./pages/BuildProject'))
 const Wars         = lz(() => import('./pages/Wars'))
 const PiPlanner    = lz(() => import('./pages/PiPlanner'))
@@ -258,6 +259,7 @@ function AppRoutes() {
       <Route path="/overview"   element={<ProtectedRoute><MultiChar /></ProtectedRoute>} />
       <Route path="/local"      element={<LocalChatRoute><LocalChat /></LocalChatRoute>} />
       <Route path="/buildvsbuy" element={<ProtectedRoute><BuildvsBuy /></ProtectedRoute>} />
+      <Route path="/build-profit" element={<ProtectedRoute><BuildProfit /></ProtectedRoute>} />
       <Route path="/build"      element={<ProtectedRoute><BuildProject /></ProtectedRoute>} />
       <Route path="/wars"       element={<ProtectedRoute><Wars /></ProtectedRoute>} />
       <Route path="/pi-planner" element={<ProtectedRoute><PiPlanner /></ProtectedRoute>} />
