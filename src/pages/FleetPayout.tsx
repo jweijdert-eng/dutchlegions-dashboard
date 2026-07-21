@@ -18,6 +18,8 @@ const ASSETS_SCOPE = 'esi-assets.read_assets.v1'
 const BOND_VALUE: Record<number, number> = {
   55931: 10_000, 55930: 100_000, 55933: 1_000_000, 55932: 10_000_000,
 }
+// Skyhook-loot: Magmatic Gas + Superionic Ice — tegen Jita (Fuzzwork) waarderen.
+const REAGENTS: Record<number, string> = { 81143: 'Magmatic Gas', 81144: 'Superionic Ice' }
 
 interface Member {
   name: string
@@ -184,6 +186,24 @@ export default function FleetPayout() {
       setMsg(`ESS Bonds gevonden: ${fmtIsk(total)} — ${count} bond(s) op ${tok.characterName}.`)
     } catch { setMsg('Kon je items (assets) niet lezen.') }
   }
+  // Skyhook-loot = Magmatic Gas + Superionic Ice in je cargo, tegen Jita-verkoopprijs.
+  async function readSkyhook() {
+    if (!tok) { setMsg('Log in om je items te lezen.'); return }
+    if (!canAssets) { setMsg('Log opnieuw in — de assets-toestemming ontbreekt.'); return }
+    setMsg('Skyhook-loot uit je items lezen…')
+    try {
+      const assets = await getAssets(tok.characterId, tok.accessToken)
+      const qty: Record<number, number> = { 81143: 0, 81144: 0 }
+      for (const a of assets) if (a.type_id in REAGENTS) qty[a.type_id] += a.quantity || 0
+      if (!qty[81143] && !qty[81144]) { setMsg(`Geen Magmatic Gas / Superionic Ice gevonden op ${tok.characterName}.`); return }
+      const r = await fetch('https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=81143,81144')
+      const d = await r.json() as Record<string, { sell: { min: number } }>
+      const total = qty[81143] * Number(d['81143']?.sell?.min || 0) + qty[81144] * Number(d['81144']?.sell?.min || 0)
+      if (!total) { setMsg('Kon geen Jita-prijs voor de reagents ophalen.'); return }
+      setField('potRaw', String(Math.round(total)))
+      setMsg(`Skyhook-loot: ${fmtIsk(total)} — ${qty[81143].toLocaleString('nl-NL')} Magmatic Gas + ${qty[81144].toLocaleString('nl-NL')} Superionic Ice (Jita sell).`)
+    } catch { setMsg('Kon de skyhook-loot niet waarderen.') }
+  }
   function setField<K extends keyof Session>(k: K, v: Session[K]) {
     sessRef.current[k] = v; save(sessRef.current); rerender()
   }
@@ -233,6 +253,10 @@ export default function FleetPayout() {
             {canAssets && (
               <button className="btn btn-sm" title="ESS Bonds uit je cargo/hangar optellen (nominale waarde)"
                 onClick={() => void readEss()} style={{ whiteSpace: 'nowrap' }}>⭳ ESS Bonds</button>
+            )}
+            {canAssets && (
+              <button className="btn btn-sm" title="Skyhook-loot (Magmatic Gas + Superionic Ice) uit je cargo tegen Jita"
+                onClick={() => void readSkyhook()} style={{ whiteSpace: 'nowrap' }}>⭳ Skyhook</button>
             )}
           </div>
           <div style={{ color: 'var(--gold)', fontSize: '.72rem', marginTop: '.15rem' }}>= {fmtIsk(pot)} ISK</div>
@@ -317,7 +341,8 @@ export default function FleetPayout() {
         bijgewerkt via ESI. Wie <strong>later instapt of eerder stopt</strong> telt naar rato minder mee (verdeling “Naar tijd”).
         <strong> Buit:</strong> bij een <strong>ESS</strong> krijg je <strong>Bounty SCC Encrypted Bonds</strong> (10K/100K/1M/10M).
         De knop <em>⭳ ESS Bonds</em> telt die bonds in je cargo/hangar op nominale waarde op — draai 'm op het character dat de ESS
-        pakte (geen verzilveren nodig). <strong>Skyhook-loot</strong> zijn andere items; die vul je zelf in tegen Jita-waarde.
+        pakte (geen verzilveren nodig). <strong>Skyhook-loot</strong> = Magmatic Gas + Superionic Ice; <em>⭳ Skyhook</em> telt die
+        uit je cargo tegen Jita-verkoopprijs op (zelfde prijsbron als Janice).
         <strong>Skyhook-loot</strong> zijn items, geen ISK, dus die vul je zelf in (Jita-waarde). Fleet-broadcasts zitten
         niet in ESI, dus daar kan de buit niet uit. Houd de pagina open tijdens de op; de sessie blijft bij een refresh.
       </p>
