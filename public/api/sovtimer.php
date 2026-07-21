@@ -270,8 +270,8 @@ function sovScoreBeweging(PDO $pdo, int $region, array &$rows, int $now): void {
             $r['moved'] = ($r['d_def'] !== 0 || $r['d_att'] !== 0);
             $r['trend'] = $r['d_att'] > 0 ? 'att' : ($r['d_def'] > 0 ? 'def' : '');
         }
-        // Basislijn ~4 min vasthouden zodat de verschuiving zichtbaar blijft.
-        if ($p && ($now - (int)($p['ts'] ?? 0)) < 240) $snap[$sid] = $p;
+        // Basislijn ~30 min vasthouden zodat de ⚡ lang zichtbaar blijft.
+        if ($p && ($now - (int)($p['ts'] ?? 0)) < 1800) $snap[$sid] = $p;
         else $snap[$sid] = ['def' => $r['defender_score'], 'att' => $r['attackers_score'], 'ts' => $now];
     }
     unset($r);
