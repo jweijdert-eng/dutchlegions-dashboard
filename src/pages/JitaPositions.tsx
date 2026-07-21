@@ -178,7 +178,7 @@ export default function JitaPositions() {
 
   return (
     <Layout header={<PageHeader title="Mijn posities" sub="Open posities uit je wallet + handmatige aankopen, met live winst/verlies" />}>
-      <div style={{ maxWidth: 1040 }}>
+      <div style={{ maxWidth: 1300 }}>
         {/* Fees + refresh */}
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
           <span style={{ ...LABEL, marginBottom: 0 }}>FEES:</span>
@@ -227,8 +227,8 @@ export default function JitaPositions() {
                     const good = r.pnl !== null && r.pnl > 0
                     const isEditing = r.source === 'manual' && editing === r.manualId
                     const advies = r.pnl === null ? { t: '—', c: 'var(--text-dim)' }
-                      : good ? { t: 'Verkoopbaar met winst', c: '#4ade80' }
-                      : { t: 'Verlies — wacht', c: '#ff5c6c' }
+                      : good ? { t: 'Verkoopbaar', c: '#4ade80' }
+                      : { t: 'Verlies', c: '#ff5c6c' }
                     return (
                       <tr key={r.key} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ ...TD, textAlign: 'left' }}>
