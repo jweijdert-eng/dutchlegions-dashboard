@@ -91,6 +91,7 @@ export default function FleetPayout() {
   const rerender = useCallback(() => setBump(x => x + 1), [])
   const [now, setNow] = useState(Date.now())
   const [msg, setMsg] = useState('')
+  const [paste, setPaste] = useState('')
 
   // Live klok voor de meedoen-tijden.
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
@@ -204,6 +205,38 @@ export default function FleetPayout() {
       setMsg(`Skyhook-loot: ${fmtIsk(total)} — ${qty[81143].toLocaleString('nl-NL')} Magmatic Gas + ${qty[81144].toLocaleString('nl-NL')} Superionic Ice (Jita sell).`)
     } catch { setMsg('Kon de skyhook-loot niet waarderen.') }
   }
+  // Geplakte loot (EVE-inventory-kopie, tab-gescheiden) waarderen tegen Jita — Janice-stijl.
+  async function appraisePaste() {
+    const items = paste.split('\n').map(l => {
+      const parts = l.split('\t')
+      const name = (parts[0] || '').trim()
+      const qty = parseInt(((parts[1] || '').replace(/[^\d]/g, '')) || '1', 10) || 1
+      return { name, qty }
+    }).filter(i => i.name)
+    if (!items.length) { setMsg('Plak eerst je loot (in de cargo: alles selecteren → kopiëren).'); return }
+    setMsg('Loot waarderen…')
+    try {
+      const names = [...new Set(items.map(i => i.name))]
+      const idRes = await fetch('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(names) })
+      const idJson = await idRes.json() as { inventory_types?: { id: number; name: string }[] }
+      const nameToId = new Map<string, number>()
+      for (const t of (idJson.inventory_types || [])) nameToId.set(t.name.toLowerCase(), t.id)
+      const ids = [...new Set(items.map(i => nameToId.get(i.name.toLowerCase())).filter((x): x is number => !!x))]
+      if (!ids.length) { setMsg('Geen bekende items herkend in de geplakte tekst.'); return }
+      const pr = await fetch(`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${ids.join(',')}`)
+      const pd = await pr.json() as Record<string, { sell: { min: number } }>
+      let total = 0, unknown = 0
+      for (const it of items) {
+        const id = nameToId.get(it.name.toLowerCase())
+        if (!id) { unknown++; continue }
+        total += Number(pd[String(id)]?.sell?.min || 0) * it.qty
+      }
+      if (!total) { setMsg('Kon geen Jita-waarde bepalen voor de geplakte loot.'); return }
+      setField('potRaw', String(Math.round(total)))
+      setMsg(`Loot gewaardeerd: ${fmtIsk(total)} — ${items.length} regel(s)${unknown ? `, ${unknown} niet herkend` : ''} (Jita sell).`)
+    } catch { setMsg('Waarderen mislukt.') }
+  }
   function setField<K extends keyof Session>(k: K, v: Session[K]) {
     sessRef.current[k] = v; save(sessRef.current); rerender()
   }
@@ -278,6 +311,21 @@ export default function FleetPayout() {
         </div>
       </div>
 
+      <details className="card" style={{ padding: '.55rem .8rem', marginBottom: '1rem' }}>
+        <summary style={{ cursor: 'pointer', fontSize: '.72rem', fontWeight: 700, letterSpacing: '.04em',
+                          textTransform: 'uppercase', color: 'var(--text-dim)' }}>
+          📋 Loot plakken (Janice-stijl) — werkt meteen, ook zonder docken
+        </summary>
+        <div style={{ marginTop: '.5rem', display: 'flex', gap: '.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <textarea value={paste} onChange={e => setPaste(e.target.value)} rows={4}
+            placeholder={'In je cargo: alles selecteren → kopiëren → hier plakken.\nbijv.:\nMagmatic Gas\t1000\nSuperionic Ice\t500'}
+            style={{ flex: '1 1 320px', minWidth: 240, background: 'rgba(255,255,255,.05)', border: '1px solid var(--border)',
+                     borderRadius: 6, color: 'inherit', padding: '.4rem .5rem', fontSize: '.82rem', fontFamily: 'monospace' }} />
+          <button className="btn btn-sm" style={{ background: 'var(--blue)', color: '#04121a', fontWeight: 700 }}
+            onClick={() => void appraisePaste()}>Waardeer &amp; vul buit in</button>
+        </div>
+      </details>
+
       {!rows.length && (
         <div className="card" style={{ padding: '1rem', color: 'var(--text-dim)' }}>
           {s.running ? 'Fleet uitlezen…' : 'Klik ▶ Start op terwijl je in de fleet zit (als FC/boss). De meedoen-tijd loopt dan live mee.'}
@@ -342,7 +390,9 @@ export default function FleetPayout() {
         <strong> Buit:</strong> bij een <strong>ESS</strong> krijg je <strong>Bounty SCC Encrypted Bonds</strong> (10K/100K/1M/10M).
         De knop <em>⭳ ESS Bonds</em> telt die bonds in je cargo/hangar op nominale waarde op — draai 'm op het character dat de ESS
         pakte (geen verzilveren nodig). <strong>Skyhook-loot</strong> = Magmatic Gas + Superionic Ice; <em>⭳ Skyhook</em> telt die
-        uit je cargo tegen Jita-verkoopprijs op (zelfde prijsbron als Janice).
+        uit je cargo tegen Jita-verkoopprijs op. <strong>Let op:</strong> de ⭳-knoppen lezen ESI-assets, die <em>niet realtime</em>
+        zijn (tot ~1 uur cache; verse loot in je actieve schip verschijnt vaak pas ná docken). Werkt het niet meteen? Gebruik dan
+        <strong> 📋 Loot plakken</strong> — dat waardeert je gekopieerde cargo direct tegen Jita, zonder wachten.
         <strong>Skyhook-loot</strong> zijn items, geen ISK, dus die vul je zelf in (Jita-waarde). Fleet-broadcasts zitten
         niet in ESI, dus daar kan de buit niet uit. Houd de pagina open tijdens de op; de sessie blijft bij een refresh.
       </p>
