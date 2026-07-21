@@ -5,7 +5,10 @@ import {
   getRegionOrders, getTransactions, resolveTypeIds, resolveNames, openMarketWindow,
   type WalletTransaction,
 } from '../api/esi'
-import { loadPositions, addPosition, removePosition, updatePosition, type Position } from '../utils/jitaPositions'
+import {
+  loadPositions, addPosition, removePosition, updatePosition,
+  loadHidden, toggleHidden, loadOverrides, setOverride, clearOverride, type Position,
+} from '../utils/jitaPositions'
 
 const THE_FORGE = 10000002
 const JITA_STATION = 60003760
@@ -62,12 +65,14 @@ function computeOpenPositions(txs: WalletTransaction[]): Array<{ typeId: number;
   return out
 }
 
-interface DisplayRow { key: string; source: 'auto' | 'manual'; manualId?: string; typeId: number; name: string; qty: number; buyPrice: number }
+interface DisplayRow { key: string; source: 'auto' | 'manual'; manualId?: string; typeId: number; name: string; qty: number; buyPrice: number; overridden?: boolean; hiddenRow?: boolean }
 
 export default function JitaPositions() {
   const { activeTokens: tokens } = useAuth()
   const [manual, setManual] = useState<Position[]>(loadPositions)
-  const [auto, setAuto] = useState<Array<{ typeId: number; name: string; qty: number; buyPrice: number }>>([])
+  const [auto, setAuto] = useState<Array<{ typeId: number; name: string; qty: number; buyPrice: number; overridden?: boolean }>>([])
+  const [hidden, setHidden] = useState<number[]>(loadHidden)
+  const [showHidden, setShowHidden] = useState(false)
   const [prices, setPrices] = useState<Map<number, Price>>(new Map())
   const [loading, setLoading] = useState(false)
   const [presetIdx, setPresetIdx] = useState(2)
@@ -94,9 +99,17 @@ export default function JitaPositions() {
         )).flat()
         const open = computeOpenPositions(txs)
         const names = await resolveNames(open.map(o => o.typeId))
-        autoPos = open.map(o => ({ ...o, name: names.get(o.typeId) ?? `#${o.typeId}` }))
+        const ov = loadOverrides()
+        autoPos = open.map(o => ({
+          typeId: o.typeId,
+          name: names.get(o.typeId) ?? `#${o.typeId}`,
+          qty: ov[o.typeId]?.qty ?? o.qty,
+          buyPrice: ov[o.typeId]?.buyPrice ?? o.buyPrice,
+          overridden: !!ov[o.typeId],
+        }))
       }
       setAuto(autoPos)
+      setHidden(loadHidden())
 
       // Prijzen voor alle betrokken types.
       const typeIds = [...new Set([...autoPos.map(a => a.typeId), ...man.map(m => m.typeId)])]
@@ -131,23 +144,34 @@ export default function JitaPositions() {
     finally { setAdding(false) }
   }
 
-  function remove(id: string) { removePosition(id); setManual(loadPositions()) }
-
-  // Inline bewerken van een handmatige positie (aantal + koopprijs).
-  const [editing, setEditing] = useState<string | null>(null)
+  // Inline bewerken/verwijderen — werkt voor handmatige én wallet-posities.
+  // Wallet: bewerken = een override opslaan, verwijderen = verbergen (dismiss).
+  type EditTarget = { key: string; source: 'auto' | 'manual'; manualId?: string; typeId: number }
+  const [editT, setEditT] = useState<EditTarget | null>(null)
   const [eQty, setEQty] = useState('')
   const [ePrice, setEPrice] = useState('')
-  function startEdit(id: string, qty: number, price: number) {
-    setEditing(id); setEQty(String(qty)); setEPrice(String(price)); setErr(null)
+  function startEdit(t: EditTarget, qty: number, price: number) {
+    setEditT(t); setEQty(String(qty)); setEPrice(String(price)); setErr(null)
   }
   function saveEdit() {
-    if (!editing) return
+    if (!editT) return
     const nQty = parseInt(eQty) || 0
     const nPrice = parseFloat(ePrice.replace(',', '.')) || 0
     if (nQty < 1 || nPrice <= 0) { setErr('Vul een geldig aantal en koopprijs in.'); return }
-    updatePosition(editing, { qty: nQty, buyPrice: nPrice })
-    setEditing(null); setManual(loadPositions())
+    if (editT.source === 'manual' && editT.manualId) {
+      updatePosition(editT.manualId, { qty: nQty, buyPrice: nPrice }); setManual(loadPositions())
+    } else {
+      setOverride(editT.typeId, { qty: nQty, buyPrice: nPrice })
+      setAuto(prev => prev.map(a => (a.typeId === editT.typeId ? { ...a, qty: nQty, buyPrice: nPrice, overridden: true } : a)))
+    }
+    setEditT(null)
   }
+  function del(t: EditTarget) {
+    if (t.source === 'manual' && t.manualId) { removePosition(t.manualId); setManual(loadPositions()) }
+    else { toggleHidden(t.typeId, true); setHidden(loadHidden()) }
+  }
+  function unhide(typeId: number) { toggleHidden(typeId, false); setHidden(loadHidden()) }
+  function resetOverride(typeId: number) { clearOverride(typeId); refresh() }
 
   async function openMarket(typeId: number) {
     const t = tokens[0]; if (!t) return
@@ -155,8 +179,11 @@ export default function JitaPositions() {
   }
 
   const rows = useMemo<Array<DisplayRow & { cost: number; sellNow: number | null; revenue: number | null; pnl: number | null; pnlPct: number | null }>>(() => {
+    const hiddenSet = new Set(hidden)
     const display: DisplayRow[] = [
-      ...auto.map(a => ({ key: `a${a.typeId}`, source: 'auto' as const, typeId: a.typeId, name: a.name, qty: a.qty, buyPrice: a.buyPrice })),
+      ...auto
+        .filter(a => showHidden || !hiddenSet.has(a.typeId))
+        .map(a => ({ key: `a${a.typeId}`, source: 'auto' as const, typeId: a.typeId, name: a.name, qty: a.qty, buyPrice: a.buyPrice, overridden: a.overridden, hiddenRow: hiddenSet.has(a.typeId) })),
       ...manual.map(m => ({ key: `m${m.id}`, source: 'manual' as const, manualId: m.id, typeId: m.typeId, name: m.name, qty: m.qty, buyPrice: m.buyPrice })),
     ]
     return display.map(d => {
@@ -168,7 +195,7 @@ export default function JitaPositions() {
       const pnlPct = pnl !== null && cost > 0 ? (pnl / cost) * 100 : null
       return { ...d, cost, sellNow, revenue, pnl, pnlPct }
     })
-  }, [auto, manual, prices, fees])
+  }, [auto, manual, prices, fees, hidden, showHidden])
 
   const totals = useMemo(() => {
     let cost = 0, value = 0, known = 0
@@ -190,7 +217,12 @@ export default function JitaPositions() {
               color: presetIdx === i ? 'var(--blue)' : 'var(--text-dim)',
             }}>{p.label}</button>
           ))}
-          <button onClick={refresh} disabled={loading} style={{ marginLeft: 'auto', padding: '0.35rem 0.8rem', borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.7rem' }}>
+          {auto.filter(a => hidden.includes(a.typeId)).length > 0 && (
+            <button onClick={() => setShowHidden(v => !v)} style={{ marginLeft: 'auto', padding: '0.35rem 0.7rem', borderRadius: 2, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.7rem' }}>
+              {showHidden ? 'Verberg verborgen' : `Toon verborgen (${auto.filter(a => hidden.includes(a.typeId)).length})`}
+            </button>
+          )}
+          <button onClick={refresh} disabled={loading} style={{ marginLeft: auto.filter(a => hidden.includes(a.typeId)).length > 0 ? 0 : 'auto', padding: '0.35rem 0.8rem', borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.7rem' }}>
             {loading ? 'Laden…' : '↻ Ververs (uit wallet)'}
           </button>
         </div>
@@ -225,27 +257,32 @@ export default function JitaPositions() {
                 <tbody>
                   {rows.map(r => {
                     const good = r.pnl !== null && r.pnl > 0
-                    const isEditing = r.source === 'manual' && editing === r.manualId
+                    const isEditing = editT?.key === r.key
+                    const target = { key: r.key, source: r.source, manualId: r.manualId, typeId: r.typeId }
                     const advies = r.pnl === null ? { t: '—', c: 'var(--text-dim)' }
                       : good ? { t: 'Verkoopbaar', c: '#4ade80' }
                       : { t: 'Verlies', c: '#ff5c6c' }
                     return (
-                      <tr key={r.key} style={{ borderTop: '1px solid var(--border)' }}>
+                      <tr key={r.key} style={{ borderTop: '1px solid var(--border)', opacity: r.hiddenRow ? 0.45 : 1 }}>
                         <td style={{ ...TD, textAlign: 'left' }}>
                           <button onClick={() => openMarket(r.typeId)} title="Open in-game marktvenster" style={{ background: 'none', border: 0, padding: 0, color: 'var(--blue)', cursor: 'pointer', fontSize: '0.75rem', textAlign: 'left' }}>{r.name}</button>
                         </td>
-                        <td style={{ ...TD, textAlign: 'left', color: 'var(--text-dim)', fontSize: '0.65rem' }} title={r.source === 'auto' ? 'Automatisch uit wallet-transacties' : 'Handmatig toegevoegd'}>{r.source === 'auto' ? '🔄 wallet' : '✏️ hand'}</td>
+                        <td style={{ ...TD, textAlign: 'left', color: 'var(--text-dim)', fontSize: '0.65rem' }} title={r.source === 'auto' ? 'Automatisch uit wallet-transacties' : 'Handmatig toegevoegd'}>
+                          {r.source === 'auto' ? '🔄 wallet' : '✏️ hand'}
+                          {r.overridden && <button onClick={() => resetOverride(r.typeId)} title="Override wissen (terug naar wallet-waarde)" style={{ background: 'none', border: 0, padding: 0, marginLeft: '0.25rem', color: 'var(--blue)', cursor: 'pointer', fontSize: '0.62rem' }}>✎ reset</button>}
+                          {r.hiddenRow && <span style={{ color: 'var(--text-dim)' }}> · verborgen</span>}
+                        </td>
                         <td style={TD}>
                           {isEditing
                             ? <input type="number" min={1} value={eQty} onChange={e => setEQty(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditT(null) }}
                                 autoFocus style={{ ...INPUT, width: 80, textAlign: 'right' }} />
                             : r.qty.toLocaleString('nl-NL')}
                         </td>
                         <td style={TD}>
                           {isEditing
                             ? <input value={ePrice} onChange={e => setEPrice(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditT(null) }}
                                 placeholder="ISK" style={{ ...INPUT, width: 110, textAlign: 'right' }} />
                             : fmtISK(r.buyPrice)}
                         </td>
@@ -257,18 +294,18 @@ export default function JitaPositions() {
                         </td>
                         <td style={{ ...TD, textAlign: 'left', color: advies.c, fontWeight: 700 }}>{advies.t}</td>
                         <td style={TD}>
-                          {r.source === 'manual' && r.manualId && (
-                            isEditing ? (
-                              <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
-                                <button onClick={saveEdit} title="Opslaan" style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80', borderRadius: 2, color: '#4ade80', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✓</button>
-                                <button onClick={() => setEditing(null)} title="Annuleren" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✕</button>
-                              </span>
-                            ) : (
-                              <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
-                                <button onClick={() => startEdit(r.manualId!, r.qty, r.buyPrice)} title="Bewerken" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✏️</button>
-                                <button onClick={() => remove(r.manualId!)} title="Verwijderen" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>🗑</button>
-                              </span>
-                            )
+                          {isEditing ? (
+                            <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                              <button onClick={saveEdit} title="Opslaan" style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80', borderRadius: 2, color: '#4ade80', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✓</button>
+                              <button onClick={() => setEditT(null)} title="Annuleren" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✕</button>
+                            </span>
+                          ) : (
+                            <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                              <button onClick={() => startEdit(target, r.qty, r.buyPrice)} title={r.source === 'auto' ? 'Bewerken (override)' : 'Bewerken'} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✏️</button>
+                              {r.hiddenRow
+                                ? <button onClick={() => unhide(r.typeId)} title="Weer tonen" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>↩</button>
+                                : <button onClick={() => del(target)} title={r.source === 'manual' ? 'Verwijderen' : 'Verbergen'} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>🗑</button>}
+                            </span>
                           )}
                         </td>
                       </tr>

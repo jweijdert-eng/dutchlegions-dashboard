@@ -1,0 +1,32 @@
+import { chromium } from 'playwright-core'
+const APP='http://localhost:8090'
+const TX=[{transaction_id:1,date:new Date(Date.now()-86400000).toISOString(),type_id:44992,location_id:60003760,is_buy:true,quantity:10,unit_price:5000000,journal_ref_id:1,client_id:1}]
+const b=await chromium.launch({channel:'msedge',headless:true})
+const ctx=await b.newContext({viewport:{width:1440,height:900}})
+await ctx.addInitScript(()=>{localStorage.setItem('eve_tokens',JSON.stringify([{accessToken:'fake',refreshToken:'f',expiresAt:Date.now()+7200000,characterId:90000001,characterName:'Tester'}]));localStorage.removeItem('jita:positions');localStorage.removeItem('jita:autoHidden');localStorage.removeItem('jita:autoOverride')})
+const json=body=>({status:200,headers:{'content-type':'application/json','access-control-allow-origin':'*'},body:JSON.stringify(body)})
+await ctx.route('**/api/*.php',r=>r.fulfill(json({})))
+await ctx.route('**esi.evetech.net/**',r=>r.fulfill(json([])))
+await ctx.route('**/wallet/transactions/**',r=>r.fulfill(json(TX)))
+const p=await ctx.newPage(); const errs=[]; p.on('pageerror',e=>errs.push(e.message))
+await p.goto(`${APP}/jita-positions`,{waitUntil:'domcontentloaded'}).catch(()=>{})
+await p.waitForSelector('text=Mijn posities',{timeout:20000}).catch(()=>{})
+await p.waitForTimeout(1500)
+console.log('  OK wallet-rij aanwezig:', (await p.locator('text=🔄 wallet').count())>0)
+console.log('  OK edit-knop op wallet-rij:', (await p.locator('button[title="Bewerken (override)"]').count())>0)
+// bewerken (override): aantal→5, prijs→6M
+await p.click('button[title="Bewerken (override)"]'); await p.waitForTimeout(200)
+await p.locator('tbody input[type="number"]').first().fill('5')
+await p.locator('tbody input').nth(1).fill('6000000')
+await p.click('button[title="Opslaan"]'); await p.waitForTimeout(300)
+const ov=await p.evaluate(()=>JSON.parse(localStorage.getItem('jita:autoOverride')||'{}'))
+console.log('  override opgeslagen:',JSON.stringify(ov))
+console.log('  OK override 44992 = qty5/6M:', ov['44992']?.qty===5 && ov['44992']?.buyPrice===6000000)
+console.log('  OK ✎ reset zichtbaar:', (await p.locator('text=✎ reset').count())>0)
+// verbergen
+await p.click('button[title="Verbergen"]'); await p.waitForTimeout(300)
+const hid=await p.evaluate(()=>JSON.parse(localStorage.getItem('jita:autoHidden')||'[]'))
+console.log('  OK verborgen (autoHidden=[44992]):', JSON.stringify(hid)==='[44992]')
+console.log('  OK "Toon verborgen (1)"-knop:', (await p.locator('text=Toon verborgen (1)').count())>0)
+console.log('  JS-fouten:',errs.length?errs:'geen')
+await b.close()

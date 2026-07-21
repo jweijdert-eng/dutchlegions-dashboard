@@ -41,3 +41,28 @@ export function removePosition(id: string): void {
 export function updatePosition(id: string, patch: Partial<Pick<Position, 'qty' | 'buyPrice' | 'name'>>): void {
   savePositions(loadPositions().map(p => (p.id === id ? { ...p, ...patch } : p)))
 }
+
+// ── Auto-posities (uit de wallet) bewerkbaar maken: verbergen + overschrijven ──
+const HIDDEN_KEY = 'jita:autoHidden'
+const OVERRIDE_KEY = 'jita:autoOverride'
+export interface AutoOverride { qty?: number; buyPrice?: number }
+
+export function loadHidden(): number[] {
+  try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]') as number[] } catch { return [] }
+}
+export function toggleHidden(typeId: number, hide: boolean): void {
+  const s = new Set(loadHidden())
+  if (hide) s.add(typeId); else s.delete(typeId)
+  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...s])) } catch { /* quota */ }
+}
+export function loadOverrides(): Record<number, AutoOverride> {
+  try { return JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}') as Record<number, AutoOverride> } catch { return {} }
+}
+export function setOverride(typeId: number, o: AutoOverride): void {
+  const m = loadOverrides(); m[typeId] = { ...m[typeId], ...o }
+  try { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(m)) } catch { /* quota */ }
+}
+export function clearOverride(typeId: number): void {
+  const m = loadOverrides(); delete m[typeId]
+  try { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(m)) } catch { /* quota */ }
+}
