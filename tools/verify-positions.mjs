@@ -1,0 +1,35 @@
+import { chromium } from 'playwright-core'
+const APP='http://localhost:8090'
+const POS=[{id:'p1',typeId:44992,name:'PLEX',qty:100,buyPrice:5000000,date:new Date().toISOString()}]
+const b=await chromium.launch({channel:'msedge',headless:true})
+const ctx=await b.newContext({viewport:{width:1300,height:800}})
+await ctx.addInitScript(({pos})=>{localStorage.setItem('eve_tokens',JSON.stringify([{accessToken:'fake',refreshToken:'f',expiresAt:Date.now()+7200000,characterId:90000001,characterName:'Tester'}]));localStorage.setItem('jita:positions',JSON.stringify(pos))},{pos:POS})
+await ctx.route('**esi.evetech.net/**',r=>r.fulfill({status:200,headers:{'content-type':'application/json'},body:'[]'}))
+await ctx.route('**/api/*.php',r=>r.fulfill({status:200,headers:{'content-type':'application/json'},body:'{}'}))
+const p=await ctx.newPage(); const errs=[]; p.on('pageerror',e=>errs.push(e.message))
+await p.goto(`${APP}/jita-positions`,{waitUntil:'domcontentloaded'}).catch(()=>{})
+await p.waitForSelector('text=Mijn posities',{timeout:20000}).catch(()=>{})
+await p.waitForTimeout(1200)
+const has=async t=>(await p.locator(`text=${t}`).count())>0
+console.log('  OK PLEX-rij:', await has('PLEX'))
+console.log('  OK edit-knop (✏️):', (await p.locator('button[title="Bewerken"]').count())>0)
+console.log('  OK delete-knop (🗑):', (await p.locator('button[title="Verwijderen"]').count())>0)
+// bewerken: klik edit, wijzig aantal → 250 + prijs → 6000000, opslaan
+await p.click('button[title="Bewerken"]')
+await p.waitForTimeout(200)
+const qtyInput=p.locator('tbody input[type="number"]').first()
+await qtyInput.fill('250')
+const priceInput=p.locator('tbody input').nth(1)
+await priceInput.fill('6000000')
+await p.click('button[title="Opslaan"]')
+await p.waitForTimeout(300)
+const stored=await p.evaluate(()=>JSON.parse(localStorage.getItem('jita:positions')||'[]'))
+console.log('  na opslaan:',JSON.stringify(stored[0]))
+console.log('  OK aantal→250 & prijs→6M opgeslagen:', stored[0]?.qty===250 && stored[0]?.buyPrice===6000000)
+// verwijderen
+await p.click('button[title="Verwijderen"]')
+await p.waitForTimeout(300)
+const after=await p.evaluate(()=>JSON.parse(localStorage.getItem('jita:positions')||'[]'))
+console.log('  OK verwijderd (leeg):', after.length===0)
+console.log('  JS-fouten:',errs.length?errs:'geen')
+await b.close()

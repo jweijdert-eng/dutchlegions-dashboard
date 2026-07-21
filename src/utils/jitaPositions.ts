@@ -37,3 +37,7 @@ export function addPosition(p: Omit<Position, 'id' | 'date'>): Position {
 export function removePosition(id: string): void {
   savePositions(loadPositions().filter(p => p.id !== id))
 }
+
+export function updatePosition(id: string, patch: Partial<Pick<Position, 'qty' | 'buyPrice' | 'name'>>): void {
+  savePositions(loadPositions().map(p => (p.id === id ? { ...p, ...patch } : p)))
+}

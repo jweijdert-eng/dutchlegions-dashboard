@@ -5,7 +5,7 @@ import {
   getRegionOrders, getTransactions, resolveTypeIds, resolveNames, openMarketWindow,
   type WalletTransaction,
 } from '../api/esi'
-import { loadPositions, addPosition, removePosition, type Position } from '../utils/jitaPositions'
+import { loadPositions, addPosition, removePosition, updatePosition, type Position } from '../utils/jitaPositions'
 
 const THE_FORGE = 10000002
 const JITA_STATION = 60003760
@@ -133,6 +133,22 @@ export default function JitaPositions() {
 
   function remove(id: string) { removePosition(id); setManual(loadPositions()) }
 
+  // Inline bewerken van een handmatige positie (aantal + koopprijs).
+  const [editing, setEditing] = useState<string | null>(null)
+  const [eQty, setEQty] = useState('')
+  const [ePrice, setEPrice] = useState('')
+  function startEdit(id: string, qty: number, price: number) {
+    setEditing(id); setEQty(String(qty)); setEPrice(String(price)); setErr(null)
+  }
+  function saveEdit() {
+    if (!editing) return
+    const nQty = parseInt(eQty) || 0
+    const nPrice = parseFloat(ePrice.replace(',', '.')) || 0
+    if (nQty < 1 || nPrice <= 0) { setErr('Vul een geldig aantal en koopprijs in.'); return }
+    updatePosition(editing, { qty: nQty, buyPrice: nPrice })
+    setEditing(null); setManual(loadPositions())
+  }
+
   async function openMarket(typeId: number) {
     const t = tokens[0]; if (!t) return
     try { await openMarketWindow(typeId, t.accessToken) } catch { /* client niet open */ }
@@ -209,6 +225,7 @@ export default function JitaPositions() {
                 <tbody>
                   {rows.map(r => {
                     const good = r.pnl !== null && r.pnl > 0
+                    const isEditing = r.source === 'manual' && editing === r.manualId
                     const advies = r.pnl === null ? { t: '—', c: 'var(--text-dim)' }
                       : good ? { t: 'Verkoopbaar met winst', c: '#4ade80' }
                       : { t: 'Verlies — wacht', c: '#ff5c6c' }
@@ -218,8 +235,20 @@ export default function JitaPositions() {
                           <button onClick={() => openMarket(r.typeId)} title="Open in-game marktvenster" style={{ background: 'none', border: 0, padding: 0, color: 'var(--blue)', cursor: 'pointer', fontSize: '0.75rem', textAlign: 'left' }}>{r.name}</button>
                         </td>
                         <td style={{ ...TD, textAlign: 'left', color: 'var(--text-dim)', fontSize: '0.65rem' }} title={r.source === 'auto' ? 'Automatisch uit wallet-transacties' : 'Handmatig toegevoegd'}>{r.source === 'auto' ? '🔄 wallet' : '✏️ hand'}</td>
-                        <td style={TD}>{r.qty.toLocaleString('nl-NL')}</td>
-                        <td style={TD}>{fmtISK(r.buyPrice)}</td>
+                        <td style={TD}>
+                          {isEditing
+                            ? <input type="number" min={1} value={eQty} onChange={e => setEQty(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }}
+                                autoFocus style={{ ...INPUT, width: 80, textAlign: 'right' }} />
+                            : r.qty.toLocaleString('nl-NL')}
+                        </td>
+                        <td style={TD}>
+                          {isEditing
+                            ? <input value={ePrice} onChange={e => setEPrice(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }}
+                                placeholder="ISK" style={{ ...INPUT, width: 110, textAlign: 'right' }} />
+                            : fmtISK(r.buyPrice)}
+                        </td>
                         <td style={TD}>{fmtISK(r.cost)}</td>
                         <td style={TD}>{r.sellNow !== null ? fmtISK(r.sellNow) : '—'}</td>
                         <td style={TD}>{r.revenue !== null ? fmtISK(r.revenue) : '—'}</td>
@@ -228,9 +257,19 @@ export default function JitaPositions() {
                         </td>
                         <td style={{ ...TD, textAlign: 'left', color: advies.c, fontWeight: 700 }}>{advies.t}</td>
                         <td style={TD}>
-                          {r.source === 'manual'
-                            ? <button onClick={() => r.manualId && remove(r.manualId)} title="Verwijderen" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✕</button>
-                            : null}
+                          {r.source === 'manual' && r.manualId && (
+                            isEditing ? (
+                              <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                                <button onClick={saveEdit} title="Opslaan" style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80', borderRadius: 2, color: '#4ade80', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✓</button>
+                                <button onClick={() => setEditing(null)} title="Annuleren" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✕</button>
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                                <button onClick={() => startEdit(r.manualId!, r.qty, r.buyPrice)} title="Bewerken" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>✏️</button>
+                                <button onClick={() => remove(r.manualId!)} title="Verwijderen" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>🗑</button>
+                              </span>
+                            )
+                          )}
                         </td>
                       </tr>
                     )
