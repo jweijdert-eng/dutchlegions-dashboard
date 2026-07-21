@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
+import { useMyRole } from '../hooks/useMyRole'
 import { getContracts, getStructureName, resolveNames, type Contract } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -47,6 +48,7 @@ export default function Hauling() {
   const [hauls, setHauls]     = useState<Haul[]>([])
   const [loading, setLoading] = useState(true)
   const [demo, setDemo]       = useState(false)
+  const isAdmin = useMyRole() === 'admin'
   usePageLoading(loading)
   const fetchId = useRef(0)
 
@@ -110,7 +112,7 @@ export default function Hauling() {
     ]
   }, [demo])
 
-  const shown = demo ? hauls.concat(demoHauls) : hauls
+  const shown = (demo && isAdmin) ? hauls.concat(demoHauls) : hauls
   const completed  = shown.filter(c => FINISHED.includes(c.status) && c.date_completed)
   const inProgress = shown.filter(c => c.status === 'in_progress')
   const failed     = shown.filter(c => c.status === 'failed')
@@ -149,12 +151,14 @@ export default function Hauling() {
         ))}
       </div>
 
-      {/* Demo-voorbeeld tonen/verbergen */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-        <button onClick={() => setDemo(d => !d)} style={{ padding: '0.3rem 0.7rem', borderRadius: 2, border: '1px solid var(--border)', background: demo ? 'rgba(0,180,216,0.12)' : 'transparent', color: demo ? 'var(--blue)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.68rem' }}>
-          {demo ? '✕ Voorbeeld verbergen' : '👁 Voorbeeld tonen'}
-        </button>
-      </div>
+      {/* Demo-voorbeeld — alleen voor de admin */}
+      {isAdmin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+          <button onClick={() => setDemo(d => !d)} style={{ padding: '0.3rem 0.7rem', borderRadius: 2, border: '1px solid var(--border)', background: demo ? 'rgba(0,180,216,0.12)' : 'transparent', color: demo ? 'var(--blue)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.68rem' }}>
+            {demo ? '✕ Voorbeeld verbergen' : '👁 Voorbeeld tonen'} <span title="Alleen zichtbaar voor admin" style={{ opacity: 0.7 }}>🔒</span>
+          </button>
+        </div>
+      )}
 
       {/* Verdiensten per dag */}
       {!loading && dailyData.length > 0 && (
