@@ -172,7 +172,7 @@ export default function FleetPayout() {
       const j = await getWalletJournal(tok.characterId, tok.accessToken, 3)
       const ess = j.filter(e => e.ref_type === 'ess_escrow_transfer' && e.amount > 0 && Date.parse(e.date) >= since)
       const total = ess.reduce((a, e) => a + e.amount, 0)
-      if (!total) { setMsg(`Nog geen ESS-uitbetaling op ${tok.characterName}. Gestolen ESS-ISK komt via escrow later binnen — klik ⭳ ESS opnieuw zodra het in je wallet staat.`); return }
+      if (!total) { setMsg(`Nog geen ESS-ISK op ${tok.characterName}. Bij een ESS krijg je eerst ESS Bonds — verzilver die bij een station; daarna klik je ⭳ ESS opnieuw.`); return }
       setField('potRaw', String(Math.round(total)))
       setMsg(`ESS-buit gevonden: ${fmtIsk(total)} uit ${ess.length} boeking(en) op ${tok.characterName}.`)
     } catch { setMsg('Kon de wallet-journal niet lezen.') }
@@ -308,9 +308,10 @@ export default function FleetPayout() {
       <p style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '1rem' }}>
         De <strong>FC/fleet-boss</strong> start de op terwijl iedereen in de fleet zit; de meedoen-tijd wordt elke {POLL_MS / 1000}s live
         bijgewerkt via ESI. Wie <strong>later instapt of eerder stopt</strong> telt naar rato minder mee (verdeling “Naar tijd”).
-        <strong> Buit:</strong> een gestolen <strong>ESS</strong> betaalt <em>niet meteen</em> uit — de ISK komt via escrow later in
-        je wallet. De knop <em>⭳ ESS</em> haalt die <code>ess_escrow_transfer</code>-boekingen (vanaf de op-start) op, dus klik 'm
-        <strong>zodra de ISK is binnengekomen</strong> (ook al is de op al gestopt), op het character dat de ESS pakte.
+        <strong> Buit:</strong> bij een <strong>ESS</strong> krijg je eerst <strong>ESS Bonds</strong> (items) — die verzilver je bij
+        een station voor ISK. Pas dán staat de ISK in je wallet; de knop <em>⭳ ESS</em> telt die boekingen (vanaf de op-start) op,
+        dus klik 'm <strong>na het verzilveren</strong> op het character dat de ESS pakte. Kun je niet wachten? Vul de bond-waarde
+        gewoon handmatig in. Skyhook-loot (ook items) vul je ook zelf in tegen Jita-waarde.
         <strong>Skyhook-loot</strong> zijn items, geen ISK, dus die vul je zelf in (Jita-waarde). Fleet-broadcasts zitten
         niet in ESI, dus daar kan de buit niet uit. Houd de pagina open tijdens de op; de sessie blijft bij een refresh.
       </p>
