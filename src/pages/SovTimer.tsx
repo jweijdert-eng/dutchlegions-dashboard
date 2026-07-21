@@ -166,7 +166,7 @@ export default function SovTimer() {
       {/* Stats + acties */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', alignItems: 'stretch', marginBottom: '1rem' }}>
         <Stat label="Structuren" waarde={String(feed?.aantal ?? 0)} />
-        <Stat label="Kwetsbaar nu" waarde={String(feed?.kwetsbaar_nu ?? 0)} kleur="var(--gold)" />
+        <Stat label="Pakbaar nu" waarde={String(feed?.kwetsbaar_nu ?? 0)} kleur="var(--green)" />
         <Stat label="Onder aanval" waarde={String(feed?.onder_aanval ?? 0)} kleur="var(--red)" />
         <Stat label="Van ons (Insidious.)" waarde={String(feed?.ours_count ?? 0)} kleur="var(--blue)"
               alert={!!feed?.ours_attack}
@@ -222,18 +222,23 @@ export default function SovTimer() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {rows.map(r => {
+                const pakbaar = r.status === 'campaign' || r.status === 'vulnerable'
+                return (
                 <tr key={r.structure_id} style={{
                   borderBottom: '1px solid var(--border)',
-                  borderLeft: r.ours ? '3px solid var(--blue)' : '3px solid transparent',
+                  opacity: pakbaar ? 1 : 0.4,
+                  borderLeft: r.ours ? '3px solid var(--blue)' : pakbaar ? '3px solid var(--green)' : '3px solid transparent',
                   background: r.ours ? 'rgba(0,180,216,.07)'
                     : r.status === 'campaign' ? 'rgba(224,85,85,.06)'
-                    : r.status === 'vulnerable' ? 'rgba(240,147,43,.05)' : undefined,
+                    : r.status === 'vulnerable' ? 'rgba(62,207,110,.07)' : undefined,
                 }}>
-                  <td style={{ padding: '.5rem .7rem' }}>
+                  <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
                     {r.status === 'campaign' ? <Badge tekst="ONDER AANVAL" kleur="red" />
                       : r.status === 'vulnerable' ? <Badge tekst="KWETSBAAR" kleur="amber" />
                       : <Badge tekst="veilig" kleur="dim" />}
+                    {pakbaar && <span style={{ marginLeft: '.35rem', fontSize: '.58rem', fontWeight: 800,
+                      letterSpacing: '.04em', color: 'var(--green)' }}>⚔ PAKBAAR</span>}
                   </td>
                   <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
                     <div style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtWhen(r.when, now)}</div>
@@ -304,7 +309,8 @@ export default function SovTimer() {
                     ) : <span style={{ color: 'var(--text-dim)' }}>—</span>}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
