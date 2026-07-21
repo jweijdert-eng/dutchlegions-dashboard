@@ -13,6 +13,22 @@ function fmtISK(v: number) {
   return `${abs.toFixed(0)}`
 }
 
+function fmtDT(iso?: string) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('nl-NL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// Duur tussen accepteren en opleveren, compact.
+function fmtDur(fromIso?: string, toIso?: string) {
+  if (!fromIso || !toIso) return '—'
+  const ms = new Date(toIso).getTime() - new Date(fromIso).getTime()
+  if (!isFinite(ms) || ms < 0) return '—'
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24)
+  if (d) return `${d}d ${h % 24}u`
+  if (h) return `${h}u ${m % 60}m`
+  return `${m}m`
+}
+
 interface Haul extends Contract {
   charName: string
   startName: string
@@ -146,6 +162,7 @@ export default function Hauling() {
                   </td>
                   <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>{Math.round(c.volume ?? 0).toLocaleString('nl')} m³</td>
                   <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>{c.charName}</td>
+                  <td style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }} title="Geaccepteerd op">✔ {fmtDT(c.date_accepted)}</td>
                   <td style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)', padding: '0.4rem 0.875rem', textAlign: 'right', whiteSpace: 'nowrap' }}>+{fmtISK(c.reward)}</td>
                 </tr>
               ))}
@@ -163,19 +180,19 @@ export default function Hauling() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, background: 'var(--surface2)', zIndex: 1 }}>
               <tr>
-                {['Opgeleverd', 'Route', 'Volume', 'Character', 'Beloning'].map((h, i) => (
-                  <th key={h} style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', padding: '0.35rem 0.875rem', textAlign: i === 4 ? 'right' : 'left' }}>{h}</th>
+                {['Geaccepteerd', 'Opgeleverd', 'Duur', 'Route', 'Volume', 'Character', 'Beloning'].map((h, i) => (
+                  <th key={h} style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', padding: '0.35rem 0.875rem', textAlign: i === 6 ? 'right' : 'left' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.75rem' }}>Laden...</td></tr>}
-              {!loading && completed.length === 0 && <tr><td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.75rem' }}>Geen voltooide courier-contracten gevonden (ESI toont ~30 dagen terug).</td></tr>}
+              {loading && <tr><td colSpan={7} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.75rem' }}>Laden...</td></tr>}
+              {!loading && completed.length === 0 && <tr><td colSpan={7} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.75rem' }}>Geen voltooide courier-contracten gevonden (ESI toont ~30 dagen terug).</td></tr>}
               {completed.map((c, i) => (
                 <tr key={c.contract_id} style={{ background: i % 2 === 1 ? 'rgba(15,15,34,0.5)' : 'transparent' }}>
-                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }}>
-                    {new Date(c.date_completed!).toLocaleString('nl-NL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </td>
+                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }}>{fmtDT(c.date_accepted)}</td>
+                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }}>{fmtDT(c.date_completed)}</td>
+                  <td style={{ fontSize: '0.68rem', color: 'var(--text)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }} title="Tijd tussen accepteren en opleveren">{fmtDur(c.date_accepted, c.date_completed)}</td>
                   <td style={{ fontSize: '0.7rem', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }} title={`${c.startName} → ${c.endName}`}>
                     {shortLoc(c.startName)} <span style={{ color: 'var(--blue)' }}>→</span> {shortLoc(c.endName)}
                   </td>

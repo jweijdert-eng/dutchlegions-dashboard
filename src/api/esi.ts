@@ -626,6 +626,7 @@ export interface Contract {
   acceptor_id?: number
   date_issued: string
   date_expired: string
+  date_accepted?: string
   date_completed?: string
   for_corporation: boolean
   price: number
