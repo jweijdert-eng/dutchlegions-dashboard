@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
-import { getCharacterFleet, getFleetMembers, resolveNames, getWalletJournal } from '../api/esi'
+import { getCharacterFleet, getFleetMembers, resolveNames, getAssets } from '../api/esi'
 
 // Fleet-payout: verdeel de winst van een ESS/skyhook-op eerlijk over de fleet.
 // De FC-tokenhouder pollt live de fleet-leden; per lid houden we de meedoen-tijd
@@ -13,6 +13,11 @@ import { getCharacterFleet, getFleetMembers, resolveNames, getWalletJournal } fr
 const LS_KEY = 'fleet_payout_v1'
 const POLL_MS = 20_000
 const WP_SCOPE = 'esi-fleets.read_fleet.v1'
+const ASSETS_SCOPE = 'esi-assets.read_assets.v1'
+// ESS-buit komt als "Bounty SCC Encrypted Bond"-items met vaste nominale waarde.
+const BOND_VALUE: Record<number, number> = {
+  55931: 10_000, 55930: 100_000, 55933: 1_000_000, 55932: 10_000_000,
+}
 
 interface Member {
   name: string
@@ -77,7 +82,7 @@ export default function FleetPayout() {
     } catch { return [] }
   }, [tok])
   const canFleet = scopes.includes(WP_SCOPE)
-  const canWallet = scopes.includes('esi-wallet.read_character_wallet.v1')
+  const canAssets = scopes.includes(ASSETS_SCOPE)
 
   const sessRef = useRef<Session>(load())
   const [, setBump] = useState(0)
@@ -162,20 +167,22 @@ export default function FleetPayout() {
   function reset() {
     sessRef.current = emptySession(); save(sessRef.current); setMsg(''); rerender()
   }
-  // ESS-buit uit de wallet-journal (ref_type ess_escrow_transfer) sinds de op-start.
+  // ESS-buit = de "Bounty SCC Encrypted Bond"-items in je cargo/hangar, op nominale waarde.
   async function readEss() {
-    if (!tok) { setMsg('Log in om je wallet te lezen.'); return }
-    if (!canWallet) { setMsg('Log opnieuw in — de wallet-toestemming ontbreekt.'); return }
-    setMsg('ESS-buit uit wallet lezen…')
-    const since = sessRef.current.opStart || (Date.now() - 6 * 3600_000)
+    if (!tok) { setMsg('Log in om je items te lezen.'); return }
+    if (!canAssets) { setMsg('Log opnieuw in — de assets-toestemming ontbreekt.'); return }
+    setMsg('ESS Bonds uit je items lezen…')
     try {
-      const j = await getWalletJournal(tok.characterId, tok.accessToken, 3)
-      const ess = j.filter(e => e.ref_type === 'ess_escrow_transfer' && e.amount > 0 && Date.parse(e.date) >= since)
-      const total = ess.reduce((a, e) => a + e.amount, 0)
-      if (!total) { setMsg(`Nog geen ESS-ISK op ${tok.characterName}. Bij een ESS krijg je eerst ESS Bonds — verzilver die bij een station; daarna klik je ⭳ ESS opnieuw.`); return }
-      setField('potRaw', String(Math.round(total)))
-      setMsg(`ESS-buit gevonden: ${fmtIsk(total)} uit ${ess.length} boeking(en) op ${tok.characterName}.`)
-    } catch { setMsg('Kon de wallet-journal niet lezen.') }
+      const assets = await getAssets(tok.characterId, tok.accessToken)
+      let total = 0, count = 0
+      for (const a of assets) {
+        const val = BOND_VALUE[a.type_id]
+        if (val) { const q = a.quantity || 1; total += val * q; count += q }
+      }
+      if (!total) { setMsg(`Geen ESS Bonds gevonden op ${tok.characterName}. Zit je op het character dat de ESS pakte (bonds in cargo/hangar)?`); return }
+      setField('potRaw', String(total))
+      setMsg(`ESS Bonds gevonden: ${fmtIsk(total)} — ${count} bond(s) op ${tok.characterName}.`)
+    } catch { setMsg('Kon je items (assets) niet lezen.') }
   }
   function setField<K extends keyof Session>(k: K, v: Session[K]) {
     sessRef.current[k] = v; save(sessRef.current); rerender()
@@ -223,9 +230,9 @@ export default function FleetPayout() {
           <div style={{ display: 'flex', gap: '.35rem', marginTop: '.2rem' }}>
             <input value={s.potRaw} onChange={e => setField('potRaw', e.target.value)} placeholder="bijv. 1.5b of 300m of 250000000"
               style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,.05)', border: '1px solid var(--border)', borderRadius: 6, color: 'inherit', padding: '.3rem .5rem', fontSize: '.95rem' }} />
-            {canWallet && (
-              <button className="btn btn-sm" title="ESS-buit uit je wallet-journal lezen (sinds de op-start)"
-                onClick={() => void readEss()} style={{ whiteSpace: 'nowrap' }}>⭳ ESS</button>
+            {canAssets && (
+              <button className="btn btn-sm" title="ESS Bonds uit je cargo/hangar optellen (nominale waarde)"
+                onClick={() => void readEss()} style={{ whiteSpace: 'nowrap' }}>⭳ ESS Bonds</button>
             )}
           </div>
           <div style={{ color: 'var(--gold)', fontSize: '.72rem', marginTop: '.15rem' }}>= {fmtIsk(pot)} ISK</div>
@@ -308,10 +315,9 @@ export default function FleetPayout() {
       <p style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '1rem' }}>
         De <strong>FC/fleet-boss</strong> start de op terwijl iedereen in de fleet zit; de meedoen-tijd wordt elke {POLL_MS / 1000}s live
         bijgewerkt via ESI. Wie <strong>later instapt of eerder stopt</strong> telt naar rato minder mee (verdeling “Naar tijd”).
-        <strong> Buit:</strong> bij een <strong>ESS</strong> krijg je eerst <strong>ESS Bonds</strong> (items) — die verzilver je bij
-        een station voor ISK. Pas dán staat de ISK in je wallet; de knop <em>⭳ ESS</em> telt die boekingen (vanaf de op-start) op,
-        dus klik 'm <strong>na het verzilveren</strong> op het character dat de ESS pakte. Kun je niet wachten? Vul de bond-waarde
-        gewoon handmatig in. Skyhook-loot (ook items) vul je ook zelf in tegen Jita-waarde.
+        <strong> Buit:</strong> bij een <strong>ESS</strong> krijg je <strong>Bounty SCC Encrypted Bonds</strong> (10K/100K/1M/10M).
+        De knop <em>⭳ ESS Bonds</em> telt die bonds in je cargo/hangar op nominale waarde op — draai 'm op het character dat de ESS
+        pakte (geen verzilveren nodig). <strong>Skyhook-loot</strong> zijn andere items; die vul je zelf in tegen Jita-waarde.
         <strong>Skyhook-loot</strong> zijn items, geen ISK, dus die vul je zelf in (Jita-waarde). Fleet-broadcasts zitten
         niet in ESI, dus daar kan de buit niet uit. Houd de pagina open tijdens de op; de sessie blijft bij een refresh.
       </p>

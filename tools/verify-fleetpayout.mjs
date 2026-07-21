@@ -3,7 +3,7 @@ import fs from 'fs'
 const APP='http://localhost:8081'
 const SHOT=new URL('../.verify-shots/', import.meta.url).pathname.replace(/^\/(\w:)/,'$1'); fs.mkdirSync(SHOT,{recursive:true})
 const b64u=o=>Buffer.from(JSON.stringify(o)).toString('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
-const JWT='x.'+b64u({scp:['esi-fleets.read_fleet.v1','esi-wallet.read_character_wallet.v1'],exp:Math.floor(Date.now()/1000)+7200,name:'FC Tester',sub:'CHARACTER:EVE:90000001'})+'.y'
+const JWT='x.'+b64u({scp:['esi-fleets.read_fleet.v1','esi-assets.read_assets.v1'],exp:Math.floor(Date.now()/1000)+7200,name:'FC Tester',sub:'CHARACTER:EVE:90000001'})+'.y'
 // Gestopte sessie met twee leden: A=60min, B=20min → 75%/25%
 const SESS={running:false,fleetId:12345,opStart:Date.now()-3600000,potRaw:'1b',taxPct:10,mode:'time',members:{
   '90000001':{name:'Piloot A',joinTime:Date.now()-3600000,shipTypeId:670,totalMs:3600000,presentSince:null},
@@ -13,7 +13,7 @@ const b=await chromium.launch({channel:'msedge',headless:true})
 const ctx=await b.newContext({viewport:{width:1400,height:900}})
 await ctx.addInitScript(({jwt,sess})=>{localStorage.setItem('eve_tokens',JSON.stringify([{accessToken:jwt,refreshToken:'f',expiresAt:Date.now()+7200000,characterId:90000001,characterName:'FC Tester'}]));localStorage.setItem('fleet_payout_v1',JSON.stringify(sess))},{jwt:JWT,sess:SESS})
 await ctx.route('**esi.evetech.net/**',r=>r.fulfill({status:200,headers:{'content-type':'application/json'},body:'[]'}))
-await ctx.route('**/characters/*/wallet/journal/**',r=>r.fulfill({status:200,headers:{'content-type':'application/json'},body:JSON.stringify([{id:1,date:new Date(Date.now()-1800000).toISOString(),ref_type:'ess_escrow_transfer',amount:500000000,balance:0,description:'ess'}])}))
+await ctx.route('**/characters/*/assets/**',r=>r.fulfill({status:200,headers:{'content-type':'application/json'},body:JSON.stringify([{item_id:1,type_id:55932,location_id:1,location_flag:'Cargo',location_type:'item',quantity:5,is_singleton:false},{item_id:2,type_id:55933,location_id:1,location_flag:'Cargo',location_type:'item',quantity:20,is_singleton:false}])}))
 await ctx.route('**/api/*.php',r=>r.fulfill({status:200,headers:{'content-type':'application/json'},body:'{}'}))
 const p=await ctx.newPage(); const errs=[]; p.on('pageerror',e=>errs.push(e.message))
 await p.goto(`${APP}/fleet-payout`,{waitUntil:'domcontentloaded'}).catch(()=>{})
@@ -31,8 +31,8 @@ console.log('  OK naar-tijd B ~225M:', c[1].some(x=>x.includes('225.00M')) )
 // gelijk verdelen → beide 450M
 await p.click('button:has-text("Gelijk")'); await p.waitForTimeout(300); c=await cells()
 console.log('  OK gelijk beide 450M:', c[0].some(x=>x.includes('450.00M')) && c[1].some(x=>x.includes('450.00M')) )
-await p.click('button:has-text("ESS")'); await p.waitForTimeout(500)
-console.log('  OK ESS-buit ingevuld (500M):', (await p.locator('text=500.00M ISK').count())>0)
+await p.click('button:has-text("ESS Bonds")'); await p.waitForTimeout(500)
+console.log('  OK ESS Bonds ingevuld (70M):', (await p.locator('text=70.00M ISK').count())>0)
 await p.screenshot({path:SHOT+'fleetpayout.png',fullPage:true})
 console.log('  JS-fouten:',errs.length?errs:'geen')
 await b.close()
