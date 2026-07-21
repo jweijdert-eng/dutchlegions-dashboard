@@ -111,21 +111,23 @@ export default function SovTimer() {
 
   usePageLoading(laden)
 
-  const haal = useCallback(async (ververs = false) => {
-    setLaden(true); setFout('')
+  const haal = useCallback(async (ververs = false, stil = false) => {
+    if (!stil) { setLaden(true); setFout('') }
     try {
       const res = await fetch(`/api/sovtimer.php?action=list${ververs ? '&refresh=1' : ''}`)
       const data = await res.json() as Feed
-      if (!res.ok || !data.ok) setFout('Ophalen mislukt.')
+      if (!res.ok || !data.ok) { if (!stil) setFout('Ophalen mislukt.') }
       else setFeed(data)
     } catch {
-      setFout('Kon de sovereignty-data niet ophalen.')
+      if (!stil) setFout('Kon de sovereignty-data niet ophalen.')
     } finally {
-      setLaden(false)
+      if (!stil) setLaden(false)
     }
   }, [])
 
   useEffect(() => { void haal() }, [haal])
+  // Auto-refresh: elke 45s stil bijwerken (geen flikker), zodat scores/⚡ live blijven.
+  useEffect(() => { const t = setInterval(() => void haal(false, true), 45_000); return () => clearInterval(t) }, [haal])
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1_000); return () => clearInterval(t) }, [])
   useEffect(() => { localStorage.setItem('sov_from', from) }, [from])
 

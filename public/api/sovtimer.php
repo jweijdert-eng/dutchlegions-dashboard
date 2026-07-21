@@ -17,7 +17,7 @@ cors();
 
 const SOV_DEFAULT_REGION = 10000053;   // Cobalt Edge
 const SOV_HOME_ALLIANCE  = 99013537;   // Insidious. — "wij"
-const SOV_TTL            = 300;        // sov-status 5 min
+const SOV_TTL            = 45;         // sov-status 45s — snel genoeg voor scores/⚡
 const SOV_STATIC_TTL     = 2592000;   // regio-kaart + namen 30 dagen
 const SOV_TYPES          = [32458 => 'IHUB', 32226 => 'TCU'];
 const SOV_TYPES_FULL     = [32458 => 'Infrastructure Hub', 32226 => 'Territorial Claim Unit'];
