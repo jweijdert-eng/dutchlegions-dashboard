@@ -1,0 +1,26 @@
+import { chromium } from 'playwright-core'
+const APP='http://localhost:8090'
+const b=await chromium.launch({channel:'msedge',headless:true})
+const ctx=await b.newContext({viewport:{width:1440,height:900}})
+await ctx.addInitScript(()=>localStorage.setItem('eve_tokens',JSON.stringify([{accessToken:'fake',refreshToken:'f',expiresAt:Date.now()+7200000,characterId:90000001,characterName:'Tester'}])))
+const json=body=>({status:200,headers:{'content-type':'application/json','access-control-allow-origin':'*'},body:JSON.stringify(body)})
+await ctx.route('**/api/*.php',r=>r.fulfill(json({})))
+await ctx.route('**esi.evetech.net/**',r=>r.fulfill(json([])))
+await ctx.route('**/characters/*/contracts/**',r=>r.fulfill(json([])))
+const p=await ctx.newPage(); const errs=[]; p.on('pageerror',e=>errs.push(e.message))
+await p.goto(`${APP}/hauling`,{waitUntil:'domcontentloaded'}).catch(()=>{})
+await p.waitForSelector('text=Voorbeeld tonen',{timeout:20000})
+const has=async t=>(await p.locator(`text=${t}`).count())>0
+console.log('  OG geen DEMO vooraf:', !(await has('DEMO')))
+await p.click('button:has-text("Voorbeeld tonen")')
+await p.waitForTimeout(600)
+console.log('  OK DEMO-chip zichtbaar:', await has('DEMO'))
+console.log('  OK demo-duur 2u 48m:', await has('2u 48m'))
+console.log('  OK voltooid-teller (1 hauls voltooid):', await has('1 hauls voltooid'))
+console.log('  OK onderweg accept-tijd (✔):', (await p.locator('text=✔').count())>0)
+// weer verbergen
+await p.click('button:has-text("Voorbeeld verbergen")')
+await p.waitForTimeout(300)
+console.log('  OK verbergen werkt (geen DEMO meer):', !(await has('DEMO')))
+console.log('  JS-fouten:',errs.length?errs:'geen')
+await b.close()

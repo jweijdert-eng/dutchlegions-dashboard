@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
 import { getContracts, getStructureName, resolveNames, type Contract } from '../api/esi'
@@ -46,6 +46,7 @@ export default function Hauling() {
   const { activeTokens: tokens } = useAuth()
   const [hauls, setHauls]     = useState<Haul[]>([])
   const [loading, setLoading] = useState(true)
+  const [demo, setDemo]       = useState(false)
   usePageLoading(loading)
   const fetchId = useRef(0)
 
@@ -91,9 +92,28 @@ export default function Hauling() {
     load()
   }, [tokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')])
 
-  const completed  = hauls.filter(c => FINISHED.includes(c.status) && c.date_completed)
-  const inProgress = hauls.filter(c => c.status === 'in_progress')
-  const failed     = hauls.filter(c => c.status === 'failed')
+  // Demo-voorbeeld: 1 voltooid + 1 onderweg sample-contract (raakt echte data niet).
+  const demoHauls = useMemo<Haul[]>(() => {
+    if (!demo) return []
+    const now = Date.now()
+    const iso = (msAgo: number) => new Date(now - msAgo).toISOString()
+    const base = { type: 'courier' as const, availability: 'personal' as const, issuer_id: 0, acceptor_id: 0, for_corporation: false, price: 0 }
+    return [
+      { ...base, contract_id: -1, status: 'finished', reward: 45_000_000, collateral: 800_000_000, volume: 15000,
+        date_issued: iso(4 * 3600e3), date_expired: iso(-7 * 24 * 3600e3), date_accepted: iso(3 * 3600e3), date_completed: iso(12 * 60e3),
+        start_location_id: 0, end_location_id: 0, charName: 'DEMO',
+        startName: 'Jita IV - Moon 4 - Caldari Navy Assembly Plant', endName: 'Amarr VIII - Emperor Family Academy' } as Haul,
+      { ...base, contract_id: -2, status: 'in_progress', reward: 30_000_000, collateral: 500_000_000, volume: 9000,
+        date_issued: iso(2 * 3600e3), date_expired: iso(-7 * 24 * 3600e3), date_accepted: iso(90 * 60e3),
+        start_location_id: 0, end_location_id: 0, charName: 'DEMO',
+        startName: 'Amarr VIII - Emperor Family Academy', endName: 'Dodixie IX - Moon 20 - Federation Navy Assembly Plant' } as Haul,
+    ]
+  }, [demo])
+
+  const shown = demo ? hauls.concat(demoHauls) : hauls
+  const completed  = shown.filter(c => FINISHED.includes(c.status) && c.date_completed)
+  const inProgress = shown.filter(c => c.status === 'in_progress')
+  const failed     = shown.filter(c => c.status === 'failed')
 
   const totalReward    = completed.reduce((s, c) => s + c.reward, 0)
   const totalVolume    = completed.reduce((s, c) => s + (c.volume ?? 0), 0)
@@ -129,6 +149,13 @@ export default function Hauling() {
         ))}
       </div>
 
+      {/* Demo-voorbeeld tonen/verbergen */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+        <button onClick={() => setDemo(d => !d)} style={{ padding: '0.3rem 0.7rem', borderRadius: 2, border: '1px solid var(--border)', background: demo ? 'rgba(0,180,216,0.12)' : 'transparent', color: demo ? 'var(--blue)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.68rem' }}>
+          {demo ? '✕ Voorbeeld verbergen' : '👁 Voorbeeld tonen'}
+        </button>
+      </div>
+
       {/* Verdiensten per dag */}
       {!loading && dailyData.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.875rem 1rem', marginBottom: '0.75rem' }}>
@@ -161,7 +188,9 @@ export default function Hauling() {
                     {shortLoc(c.startName)} <span style={{ color: 'var(--blue)' }}>→</span> {shortLoc(c.endName)}
                   </td>
                   <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>{Math.round(c.volume ?? 0).toLocaleString('nl')} m³</td>
-                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>{c.charName}</td>
+                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>
+                    {c.charName}{c.contract_id < 0 && <span style={{ marginLeft: '0.3rem', fontSize: '0.55rem', fontWeight: 800, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 2, padding: '0 0.25rem' }}>DEMO</span>}
+                  </td>
                   <td style={{ fontSize: '0.66rem', color: 'var(--text-dim)', padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }} title="Geaccepteerd op">✔ {fmtDT(c.date_accepted)}</td>
                   <td style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)', padding: '0.4rem 0.875rem', textAlign: 'right', whiteSpace: 'nowrap' }}>+{fmtISK(c.reward)}</td>
                 </tr>
@@ -197,7 +226,9 @@ export default function Hauling() {
                     {shortLoc(c.startName)} <span style={{ color: 'var(--blue)' }}>→</span> {shortLoc(c.endName)}
                   </td>
                   <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }}>{Math.round(c.volume ?? 0).toLocaleString('nl')} m³</td>
-                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }}>{c.charName}</td>
+                  <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', padding: '0.35rem 0.875rem', whiteSpace: 'nowrap' }}>
+                    {c.charName}{c.contract_id < 0 && <span style={{ marginLeft: '0.3rem', fontSize: '0.55rem', fontWeight: 800, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 2, padding: '0 0.25rem' }}>DEMO</span>}
+                  </td>
                   <td style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--green)', padding: '0.35rem 0.875rem', textAlign: 'right', whiteSpace: 'nowrap' }}>+{fmtISK(c.reward)}</td>
                 </tr>
               ))}
