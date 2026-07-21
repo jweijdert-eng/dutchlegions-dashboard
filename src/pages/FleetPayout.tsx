@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
-import { getCharacterFleet, getFleetMembers, resolveNames } from '../api/esi'
+import { getCharacterFleet, getFleetMembers, resolveNames, getWalletJournal } from '../api/esi'
 
 // Fleet-payout: verdeel de winst van een ESS/skyhook-op eerlijk over de fleet.
 // De FC-tokenhouder pollt live de fleet-leden; per lid houden we de meedoen-tijd
@@ -68,15 +68,16 @@ function fmtDur(ms: number) {
 export default function FleetPayout() {
   const { activeTokens } = useAuth()
   const tok = activeTokens[0]
-  const canFleet = useMemo(() => {
+  const scopes = useMemo(() => {
     const tk = tok?.accessToken
-    if (!tk) return false
+    if (!tk) return [] as string[]
     try {
       const p = JSON.parse(atob(tk.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
-      const scp: string[] = Array.isArray(p.scp) ? p.scp : p.scp ? [p.scp] : []
-      return scp.includes(WP_SCOPE)
-    } catch { return false }
+      return Array.isArray(p.scp) ? p.scp as string[] : p.scp ? [p.scp as string] : []
+    } catch { return [] }
   }, [tok])
+  const canFleet = scopes.includes(WP_SCOPE)
+  const canWallet = scopes.includes('esi-wallet.read_character_wallet.v1')
 
   const sessRef = useRef<Session>(load())
   const [, setBump] = useState(0)
@@ -161,6 +162,21 @@ export default function FleetPayout() {
   function reset() {
     sessRef.current = emptySession(); save(sessRef.current); setMsg(''); rerender()
   }
+  // ESS-buit uit de wallet-journal (ref_type ess_escrow_transfer) sinds de op-start.
+  async function readEss() {
+    if (!tok) { setMsg('Log in om je wallet te lezen.'); return }
+    if (!canWallet) { setMsg('Log opnieuw in — de wallet-toestemming ontbreekt.'); return }
+    setMsg('ESS-buit uit wallet lezen…')
+    const since = sessRef.current.opStart || (Date.now() - 6 * 3600_000)
+    try {
+      const j = await getWalletJournal(tok.characterId, tok.accessToken, 3)
+      const ess = j.filter(e => e.ref_type === 'ess_escrow_transfer' && e.amount > 0 && Date.parse(e.date) >= since)
+      const total = ess.reduce((a, e) => a + e.amount, 0)
+      if (!total) { setMsg(`Geen ESS-boekingen op ${tok.characterName} sinds de op-start (staat het al in je journal?).`); return }
+      setField('potRaw', String(Math.round(total)))
+      setMsg(`ESS-buit gevonden: ${fmtIsk(total)} uit ${ess.length} boeking(en) op ${tok.characterName}.`)
+    } catch { setMsg('Kon de wallet-journal niet lezen.') }
+  }
   function setField<K extends keyof Session>(k: K, v: Session[K]) {
     sessRef.current[k] = v; save(sessRef.current); rerender()
   }
@@ -204,8 +220,14 @@ export default function FleetPayout() {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
         <div className="card" style={{ padding: '.55rem .8rem', flex: '2 1 220px', minWidth: 200 }}>
           <label style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>Totale buit (ISK)</label>
-          <input value={s.potRaw} onChange={e => setField('potRaw', e.target.value)} placeholder="bijv. 1.5b of 300m of 250000000"
-            style={{ width: '100%', background: 'rgba(255,255,255,.05)', border: '1px solid var(--border)', borderRadius: 6, color: 'inherit', padding: '.3rem .5rem', fontSize: '.95rem', marginTop: '.2rem' }} />
+          <div style={{ display: 'flex', gap: '.35rem', marginTop: '.2rem' }}>
+            <input value={s.potRaw} onChange={e => setField('potRaw', e.target.value)} placeholder="bijv. 1.5b of 300m of 250000000"
+              style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,.05)', border: '1px solid var(--border)', borderRadius: 6, color: 'inherit', padding: '.3rem .5rem', fontSize: '.95rem' }} />
+            {canWallet && (
+              <button className="btn btn-sm" title="ESS-buit uit je wallet-journal lezen (sinds de op-start)"
+                onClick={() => void readEss()} style={{ whiteSpace: 'nowrap' }}>⭳ ESS</button>
+            )}
+          </div>
           <div style={{ color: 'var(--gold)', fontSize: '.72rem', marginTop: '.15rem' }}>= {fmtIsk(pot)} ISK</div>
         </div>
         <div className="card" style={{ padding: '.55rem .8rem', flex: '1 1 120px', minWidth: 110 }}>
@@ -285,9 +307,11 @@ export default function FleetPayout() {
 
       <p style={{ color: 'var(--text-dim)', fontSize: '.76rem', marginTop: '1rem' }}>
         De <strong>FC/fleet-boss</strong> start de op terwijl iedereen in de fleet zit; de meedoen-tijd wordt elke {POLL_MS / 1000}s live
-        bijgewerkt via ESI. Wie <strong>later instapt of eerder stopt</strong> telt naar rato minder mee (verdeling “Naar tijd”). Vul de
-        totale buit in (ESS-ISK of de Jita-waarde van skyhook-loot), stel eventueel een corp-cut in, en kopieer de uitbetaallijst.
-        Houd deze pagina open tijdens de op; de sessie blijft bewaard bij een refresh.
+        bijgewerkt via ESI. Wie <strong>later instapt of eerder stopt</strong> telt naar rato minder mee (verdeling “Naar tijd”).
+        <strong> Buit:</strong> voor <strong>ESS</strong> haalt de knop <em>⭳ ESS</em> het bedrag automatisch uit je wallet-journal
+        (de <code>ess_escrow_transfer</code>-boekingen sinds de op-start — draai dit op het character dat de ESS pakte).
+        <strong>Skyhook-loot</strong> zijn items, geen ISK, dus die vul je zelf in (Jita-waarde). Fleet-broadcasts zitten
+        niet in ESI, dus daar kan de buit niet uit. Houd de pagina open tijdens de op; de sessie blijft bij een refresh.
       </p>
     </Layout>
   )
