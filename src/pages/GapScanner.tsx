@@ -38,6 +38,21 @@ const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: str
 // Standaard: alleen Ships aan, de rest uit.
 const DEFAULT_CATS: Record<string, boolean> = Object.fromEntries(CATS.map(c => [c.key, c.key === 'ships']))
 
+// Sorteermogelijkheden voor de resultatentabel.
+type SortKey = 'potential' | 'roi' | 'gap' | 'vol'
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'potential', label: 'Potentieel' },
+  { key: 'roi',       label: 'ROI %' },
+  { key: 'gap',       label: 'Gat %' },
+  { key: 'vol',       label: 'Vol/dag' },
+]
+
+// Instellingen (categorieën + filters) onthouden tussen bezoeken.
+const LS_KEY = 'gapscanner.v1'
+function loadSettings(): Record<string, unknown> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') } catch { return {} }
+}
+
 // ── Stijl (zelfde look als de andere pagina's) ──
 const INPUT: React.CSSProperties = {
   background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2,
@@ -103,6 +118,7 @@ interface GapRow {
   gapISK: number
   gapPct: number
   units: number      // units ≤ buyUnder (op te kopen)
+  capital: number    // ISK die je moet vastleggen (werkelijke koopkosten)
   netPerUnit: number // na verkoop-fees, o.b.v. echte koopkosten
   potential: number  // echte totale winst (opbrengst − werkelijke koopkosten)
 }
@@ -144,11 +160,23 @@ export default function GapScanner() {
     names: Record<string, string>
   } | null>(null)
 
-  const [cats, setCats] = useState<Record<string, boolean>>({ ...DEFAULT_CATS })
-  const [minGapPct, setMinGapPct] = useState(15)
-  const [minValue, setMinValue] = useState(100_000_000)
-  const [feePct, setFeePct] = useState(8)
-  const [minVolume, setMinVolume] = useState(1)
+  // Beginwaarden uit localStorage (indien eerder opgeslagen), anders de defaults.
+  const [cats, setCats] = useState<Record<string, boolean>>(
+    () => ({ ...DEFAULT_CATS, ...(loadSettings().cats as Record<string, boolean> | undefined) }))
+  const [minGapPct, setMinGapPct] = useState(() => (loadSettings().minGapPct as number) ?? 15)
+  const [minValue, setMinValue] = useState(() => (loadSettings().minValue as number) ?? 100_000_000)
+  const [feePct, setFeePct] = useState(() => (loadSettings().feePct as number) ?? 8)
+  const [minVolume, setMinVolume] = useState(() => (loadSettings().minVolume as number) ?? 1)
+  const [maxDays, setMaxDays] = useState(() => (loadSettings().maxDays as number) ?? 0)   // 0 = geen limiet
+  const [sortKey, setSortKey] = useState<SortKey>(() => (loadSettings().sortKey as SortKey) ?? 'potential')
+
+  // Instellingen bewaren zodra ze wijzigen.
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(
+        { cats, minGapPct, minValue, feePct, minVolume, maxDays, sortKey }))
+    } catch { /* localStorage vol/geblokkeerd: niet erg */ }
+  }, [cats, minGapPct, minValue, feePct, minVolume, maxDays, sortKey])
 
   const [orders, setOrders] = useState<PublicMarketOrder[] | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -227,7 +255,7 @@ export default function GapScanner() {
         name: bundles.names[String(typeId)] ?? `#${typeId}`,
         groupName: grp?.[0] ?? '',
         cheapest: g.cheapest, avgBuy, buyUnder: g.buyUnder, sellWall: g.sellWall,
-        gapISK: g.gapISK, gapPct: g.gapPct, units: g.units,
+        gapISK: g.gapISK, gapPct: g.gapPct, units: g.units, capital: g.buyCost,
         netPerUnit: netTotal / g.units, potential: netTotal,
       })
     }
@@ -255,16 +283,29 @@ export default function GapScanner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gapRows])
 
-  // Dagvolume erbij + filter op "snelle verkopers" + sortering
+  // Dagvolume erbij + ROI/dagen berekenen + filteren + sorteren.
   const rows = useMemo(() => {
     return gapRows
       .map(r => {
         const h = histCache[r.typeId]
-        return { ...r, dailyVolume: h ? avgDailyVolume(h) : -1 } // -1 = nog onbekend
+        const dailyVolume = h ? avgDailyVolume(h) : -1  // -1 = nog onbekend
+        const roi = r.capital > 0 ? (r.potential / r.capital) * 100 : 0
+        // Hoeveel dagen kost het om alle op te kopen units weer kwijt te raken?
+        const days = dailyVolume > 0 ? r.units / dailyVolume : (dailyVolume === 0 ? Infinity : -1)
+        return { ...r, dailyVolume, roi, days }
       })
       .filter(r => r.dailyVolume < 0 || r.dailyVolume >= minVolume)
-      .sort((a, b) => b.potential - a.potential)
-  }, [gapRows, histCache, minVolume])
+      // Trage flips (te lang om te verkopen) wegfilteren; onbekend dagvolume laten staan.
+      .filter(r => maxDays <= 0 || r.days < 0 || r.days <= maxDays)
+      .sort((a, b) => {
+        switch (sortKey) {
+          case 'roi': return b.roi - a.roi
+          case 'gap': return b.gapPct - a.gapPct
+          case 'vol': return b.dailyVolume - a.dailyVolume
+          default:    return b.potential - a.potential
+        }
+      })
+  }, [gapRows, histCache, minVolume, maxDays, sortKey])
 
   const openInEve = async (typeId: number) => {
     const t = activeTokens[0] ?? tokens[0]
@@ -325,6 +366,10 @@ export default function GapScanner() {
           <div style={LABEL}>MIN. VOL/DAG</div>
           <input type="number" value={minVolume} min={0} onChange={e => setMinVolume(+e.target.value)} style={{ ...INPUT, width: 90 }} />
         </div>
+        <div>
+          <div style={LABEL} title="Verberg flips die langer dan dit duren om te verkopen (0 = geen limiet)">MAX. DAGEN</div>
+          <input type="number" value={maxDays} min={0} onChange={e => setMaxDays(+e.target.value)} style={{ ...INPUT, width: 90 }} />
+        </div>
         <button onClick={scan} disabled={loading || typeSet.size === 0} style={{
           ...INPUT, cursor: loading ? 'wait' : 'pointer', fontWeight: 700,
           background: 'var(--blue)', color: '#0a0a12', borderColor: 'var(--blue)', padding: '0.4rem 1rem',
@@ -351,9 +396,22 @@ export default function GapScanner() {
       {msg && <div style={{ color: 'var(--blue)', fontSize: '0.72rem', marginBottom: '0.6rem' }}>{msg}</div>}
 
       {orders && !loading && (
-        <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>
-          {rows.length} flip-kans{rows.length === 1 ? '' : 'en'} — gesorteerd op potentieel · klik op een rij voor de prijs-historie{volProgress ? ` · dagvolume laden ${volProgress.done}/${volProgress.total}…` : ''}
-        </div>
+        <>
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            <span style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>SORTEER</span>
+            {SORTS.map(s => (
+              <button key={s.key} onClick={() => setSortKey(s.key)} style={{
+                ...INPUT, cursor: 'pointer', fontWeight: 600, padding: '0.2rem 0.6rem',
+                background: sortKey === s.key ? 'var(--blue)' : 'var(--surface2)',
+                color: sortKey === s.key ? '#0a0a12' : 'var(--text)',
+                borderColor: sortKey === s.key ? 'var(--blue)' : 'var(--border)',
+              }}>{s.label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>
+            {rows.length} flip-kans{rows.length === 1 ? '' : 'en'} · klik op een rij voor de prijs-historie{volProgress ? ` · dagvolume laden ${volProgress.done}/${volProgress.total}…` : ''}
+          </div>
+        </>
       )}
 
       {rows.length > 0 && (
@@ -369,7 +427,10 @@ export default function GapScanner() {
                 <th style={TH}>Gat ISK</th>
                 <th style={TH}>Units</th>
                 <th style={TH}>Vol/dag</th>
+                <th style={TH} title="Dagen om alle units weer te verkopen (units ÷ vol/dag)">Dagen</th>
                 <th style={TH}>Net/stuk</th>
+                <th style={TH} title="ISK die je moet vastleggen">Kapitaal</th>
+                <th style={TH} title="Rendement op het vastgelegde kapitaal">ROI %</th>
                 <th style={TH}>Potentieel</th>
                 <th style={TH}></th>
               </tr>
@@ -397,7 +458,12 @@ export default function GapScanner() {
                   <td style={{ ...TD, color: r.dailyVolume < 0 ? 'var(--text-dim)' : (r.dailyVolume >= 10 ? '#4ade80' : 'var(--text)') }}>
                     {r.dailyVolume < 0 ? '…' : Math.round(r.dailyVolume).toLocaleString('nl-NL')}
                   </td>
+                  <td style={{ ...TD, color: r.days < 0 ? 'var(--text-dim)' : (r.days === Infinity ? '#ff5c6c' : (r.days <= 3 ? '#4ade80' : r.days <= 14 ? 'var(--text)' : '#ff9f43')) }}>
+                    {r.days < 0 ? '…' : r.days === Infinity ? '∞' : r.days < 1 ? '<1' : Math.round(r.days).toLocaleString('nl-NL')}
+                  </td>
                   <td style={{ ...TD, color: '#4ade80' }}>{fmtISK(r.netPerUnit)}</td>
+                  <td style={TD} title="ISK die je moet vastleggen">{fmtISK(r.capital)}</td>
+                  <td style={{ ...TD, color: r.roi >= 20 ? '#4ade80' : 'var(--text)', fontWeight: 600 }}>{r.roi.toFixed(0)}%</td>
                   <td style={{ ...TD, fontWeight: 700 }}>{fmtISK(r.potential)}</td>
                   <td style={TD}>
                     <button onClick={e => { e.stopPropagation(); openInEve(r.typeId) }} title="Open in EVE" style={{ ...INPUT, cursor: 'pointer', padding: '0.15rem 0.4rem' }}>⧉</button>
@@ -405,7 +471,7 @@ export default function GapScanner() {
                 </tr>
                 {expanded === r.typeId && (
                   <tr>
-                    <td colSpan={11} style={{ padding: '0.7rem 1rem', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+                    <td colSpan={14} style={{ padding: '0.7rem 1rem', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
                       {histLoading === r.typeId
                         ? <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Prijs-historie laden…</div>
                         : (histCache[r.typeId]?.length
