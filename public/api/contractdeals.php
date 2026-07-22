@@ -21,11 +21,18 @@ require_once 'config.php';
 cors();
 
 // We waarderen én kopen alleen in Jita. ESI geeft publieke contracten alléén per
-// regio, dus we halen The Forge op (daar ligt Jita in) en filteren de kandidaten
-// meteen op Jita 4-4 (zie CD_JITA_4_4 hieronder). Alleen Jita → geen versleep-gedoe
-// en de dekking is veel sneller compleet (veel minder contracten te scannen).
-const CD_REGIOS = [
-    10000002 => 'Jita',   // The Forge-regio, maar we houden alleen Jita 4-4 over
+// regio, dus we halen per hub de regio op (daar ligt de hub in) en filteren de
+// kandidaten meteen op het hub-station. Zo scannen we alléén de vijf grote
+// handelshubs — geen Branch/BKG en niet de rest van een regio.
+//
+// Per hub: regio-id => [hub-naam, station-id, systeemnaam, volledige stationnaam].
+// De hub-naam is meteen het filter dat de frontend als knop toont.
+const CD_HUBS = [
+    10000002 => ['Jita',    60003760, 'Jita',    'Jita IV - Moon 4 - Caldari Navy Assembly Plant'],
+    10000043 => ['Amarr',   60008494, 'Amarr',   'Amarr VIII (Oris) - Emperor Family Academy'],
+    10000032 => ['Dodixie', 60011866, 'Dodixie', 'Dodixie IX - Moon 20 - Federation Navy Assembly Plant'],
+    10000030 => ['Rens',    60004588, 'Rens',    'Rens VI - Moon 8 - Brutor Tribe Treasury'],
+    10000042 => ['Hek',     60005686, 'Hek',     'Hek VIII - Moon 12 - Boundless Creation Factory'],
 ];
 const CD_MIN_PRICE       = 200000000;  // 200 mln — daaronder zijn het vrijwel
                                        // alleen BPC-verkopen, en die zijn niet op
@@ -37,8 +44,10 @@ const CD_LIJST_SECONDEN  = 1800;       // contractenlijst 30 min vasthouden
 const CD_PRIJS_SECONDEN  = 3600;       // marktprijzen 1 uur
 const CD_ITEMS_PER_CALL  = 60;         // max contract-inhouden per verzoek
 const CD_TIJD_BUDGET     = 12;         // en niet langer dan dit (PHP-limiet)
-const CD_TOON            = 100;        // zoveel beste deals teruggeven
-const CD_JITA_4_4        = 60003760;   // waarderen doen we altijd tegen Jita
+const CD_TOON            = 200;        // zoveel beste deals teruggeven (ruimer, zodat
+                                       // ook de kleinere hubs in beeld komen)
+const CD_JITA_4_4        = 60003760;   // waarderen doen we ALTIJD tegen Jita, ook voor
+                                       // koopjes in Amarr/Dodixie/Rens/Hek
 const CD_MIN_SELL_VOLUME = 20;
 const CD_MAX_SELL_RATIO  = 10;
 
@@ -305,8 +314,9 @@ function cdUpdateNames(PDO $pdo, array $typeIds): void {
 
 // ---------------------------------------------------------------- contracten
 
-/** Kandidaten van één regio ophalen (of uit de cache halen). */
-function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $force = false): array {
+/** Kandidaten van één hub ophalen (of uit de cache halen). */
+function cdRegioKandidaten(PDO $pdo, int $regioId, bool $force = false): array {
+    [$hubNaam, $stationId] = CD_HUBS[$regioId];
     $key = 'cd_lijst_' . $regioId;
     $cache = $force ? null : cdCacheGet($pdo, $key, CD_LIJST_SECONDEN);
     if ($cache) return $cache['data'];
@@ -330,9 +340,9 @@ function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $forc
     $kandidaten = [];
     foreach ($alles as $c) {
         if (($c['type'] ?? '') !== 'item_exchange') continue;
-        // Alleen contracten die in Jita 4-4 opgehaald kunnen worden — de rest van
-        // The Forge (en Branch) valt hiermee weg zonder één extra ESI-call.
-        if ((int)($c['start_location_id'] ?? 0) !== CD_JITA_4_4) continue;
+        // Alleen contracten op het hub-station zelf — de rest van de regio valt
+        // hiermee weg zonder één extra ESI-call.
+        if ((int)($c['start_location_id'] ?? 0) !== $stationId) continue;
         $prijs = (float)($c['price'] ?? 0);
         if ($prijs < CD_MIN_PRICE || $prijs > CD_MAX_PRICE) continue;
         $kandidaten[] = [
@@ -348,7 +358,7 @@ function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $forc
             'issuerCorpId' => (int)($c['issuer_corporation_id'] ?? 0),
             'forCorp'    => !empty($c['for_corporation']),
             'regioId'    => $regioId,
-            'regio'      => $regioNaam,
+            'regio'      => $hubNaam,
         ];
     }
     usort($kandidaten, fn($a, $b) => strcmp($b['uitgegeven'], $a['uitgegeven']));
@@ -359,25 +369,27 @@ function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $forc
 }
 
 /**
- * Alle kandidaten uit alle regio's, nieuwste eerst.
+ * Alle kandidaten uit alle hubs, nieuwste eerst.
  *
- * Elke regio heeft z'n eigen cache; per verzoek verversen we er hooguit één
- * (de oudste), zodat een verzoek nooit alle regio's tegelijk hoeft op te halen.
+ * Elke hub heeft z'n eigen cache; per verzoek verversen we er hooguit één
+ * (de oudste), zodat een verzoek nooit alle hubs tegelijk hoeft op te halen.
  */
 function cdKandidaten(PDO $pdo, bool $force = false): array {
+    // Kies precies één hub om te verversen: de oudste. Normaal alleen als die
+    // ouder is dan 30 min; bij een handmatige refresh negeren we die gate zodat
+    // er sowieso één ververst. NOOIT meer dan één per verzoek — 5 hubs tegelijk
+    // ophalen zou het PHP-tijdsbudget overschrijden.
     $verversen = null;
-    if (!$force) {
-        $oudste = PHP_INT_MAX;
-        foreach (CD_REGIOS as $rid => $rnaam) {
-            $c = cdCacheGet($pdo, 'cd_lijst_' . $rid, 0);
-            $ts = $c ? $c['ts'] : 0;                       // nooit opgehaald = hoogste prioriteit
-            if (time() - $ts > CD_LIJST_SECONDEN && $ts < $oudste) { $oudste = $ts; $verversen = $rid; }
-        }
+    $oudste = PHP_INT_MAX;
+    foreach (CD_HUBS as $rid => $hub) {
+        $c = cdCacheGet($pdo, 'cd_lijst_' . $rid, 0);
+        $ts = $c ? $c['ts'] : 0;                           // nooit opgehaald = hoogste prioriteit
+        if (($force || time() - $ts > CD_LIJST_SECONDEN) && $ts < $oudste) { $oudste = $ts; $verversen = $rid; }
     }
 
     $alles = [];
-    foreach (CD_REGIOS as $rid => $rnaam) {
-        $alles = array_merge($alles, cdRegioKandidaten($pdo, $rid, $rnaam, $force || $verversen === $rid));
+    foreach (CD_HUBS as $rid => $hub) {
+        $alles = array_merge($alles, cdRegioKandidaten($pdo, $rid, $verversen === $rid));
     }
     usort($alles, fn($a, $b) => strcmp($b['uitgegeven'], $a['uitgegeven']));
     return $alles;
@@ -497,9 +509,10 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
 
     usort($rijen, fn($a, $b) => $b['nettoSell'] <=> $a['nettoSell']);
 
-    // Stationnamen + uitgevernamen erbij (alleen voor wat we tonen — scheelt lookups).
+    // Uitgevernamen erbij (alleen voor wat we tonen — scheelt lookups). De locatie
+    // hoeven we niet meer op te zoeken: elk contract ligt op het hub-station van
+    // z'n regio, dus stationnaam + systeem komen rechtstreeks uit CD_HUBS.
     $tonen = array_slice($rijen, 0, CD_TOON);
-    $locaties = cdLocaties($pdo, array_column($tonen, 'locatieId'));
     // Zowel de speler als (bij corp-contracten) de corp opzoeken in één call.
     $naamIds = [];
     foreach ($tonen as $r) {
@@ -508,8 +521,9 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
     }
     $namen = cdNamen($pdo, $naamIds);
     foreach ($rijen as &$r) {
-        $r['locatie'] = $locaties[$r['locatieId']]['naam'] ?? '';
-        $r['systeem'] = $locaties[$r['locatieId']]['systeem'] ?? '';
+        $hub = CD_HUBS[$r['regioId']] ?? null;
+        $r['locatie'] = $hub[3] ?? '';   // volledige stationnaam
+        $r['systeem'] = $hub[2] ?? '';   // systeemnaam
         $r['issuer']     = $namen[$r['issuerId']] ?? '';
         $r['issuerCorp'] = !empty($r['forCorp']) ? ($namen[$r['issuerCorpId']] ?? '') : '';
     }
@@ -537,7 +551,7 @@ $winst = array_values(array_filter($alle, fn($r) => $r['nettoSell'] > 0));
 
 echo json_encode([
     'ok'         => true,
-    'regios'     => array_values(CD_REGIOS),
+    'regios'     => array_map(fn($h) => $h[0], array_values(CD_HUBS)),
     'bijgewerkt' => date('c'),
     'rows'       => array_slice($winst, 0, CD_TOON),
     'totalen'    => [
