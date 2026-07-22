@@ -10,8 +10,9 @@ const THE_FORGE = 10000002
 const JITA_44 = 60003760
 
 // ── Categorie-definities (via inventory-groepen/categorieën uit de SDE-bundel) ──
-type CatKey = string
-const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: string, categoryId: number) => boolean }[] = [
+// Geëxporteerd zodat de Hub-arbitrage-pagina dezelfde categorieën hergebruikt.
+export type CatKey = string
+export const CATS: { key: CatKey; label: string; parent?: CatKey; test: (groupName: string, categoryId: number) => boolean }[] = [
   { key: 'ships', label: 'Ships', test: (_n, c) => c === 6 },
   // Ship Equipment = alle fitting-modules (categorie 7). Shield en Turrets vallen hieronder.
   { key: 'equipment', label: 'Ship Equipment', test: (_n, c) => c === 7 },

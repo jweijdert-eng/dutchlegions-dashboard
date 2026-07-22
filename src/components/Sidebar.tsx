@@ -65,6 +65,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Trade Vandaag', path: '/jita-today', icon: '✅', badge: null },
   { label: 'Jita Scanner', path: '/jita-scanner', icon: '📈', badge: null },
   { label: 'Gap Scanner',  path: '/gap-scanner', icon: '🕳️', badge: null },
+  { label: 'Hub-arbitrage', path: '/hub-arbitrage', icon: '🔀', badge: null },
   { label: 'Order-monitor', path: '/jita-monitor', icon: '🔔', badge: null },
   { label: 'Mijn posities', path: '/jita-positions', icon: '💼', badge: null },
   { label: 'Contracts',    path: '/contracts',  icon: '🤝', badge: null },
@@ -107,7 +108,7 @@ export type LayoutEntry =
 const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'item', path: '/' },
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
-  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/jita-today', '/market', '/jita-scanner', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/hauling'] },
+  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/jita-today', '/market', '/jita-scanner', '/gap-scanner', '/hub-arbitrage', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build-profit', '/build'] },
   { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/fleet', '/fleet-payout', '/ansiblex', '/ratting'] },
 ]

@@ -52,6 +52,7 @@ const BoosterCalc  = lz(() => import('./pages/BoosterCalc'))
 const StationTrading = lz(() => import('./pages/StationTrading'))
 const JitaScanner  = lz(() => import('./pages/JitaScanner'))
 const GapScanner   = lz(() => import('./pages/GapScanner'))
+const HubArbitrage = lz(() => import('./pages/HubArbitrage'))
 const JitaMonitor  = lz(() => import('./pages/JitaMonitor'))
 const JitaPositions = lz(() => import('./pages/JitaPositions'))
 const JitaToday    = lz(() => import('./pages/JitaToday'))
@@ -243,6 +244,7 @@ function AppRoutes() {
       <Route path="/market"    element={<ProtectedRoute><Market /></ProtectedRoute>} />
       <Route path="/jita-scanner" element={<ProtectedRoute><JitaScanner /></ProtectedRoute>} />
       <Route path="/gap-scanner" element={<ProtectedRoute><GapScanner /></ProtectedRoute>} />
+      <Route path="/hub-arbitrage" element={<ProtectedRoute><HubArbitrage /></ProtectedRoute>} />
       <Route path="/jita-monitor" element={<ProtectedRoute><JitaMonitor /></ProtectedRoute>} />
       <Route path="/jita-positions" element={<ProtectedRoute><JitaPositions /></ProtectedRoute>} />
       <Route path="/jita-today" element={<ProtectedRoute><JitaToday /></ProtectedRoute>} />
