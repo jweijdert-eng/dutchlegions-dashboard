@@ -20,11 +20,12 @@
 require_once 'config.php';
 cors();
 
-// Regio's die gescand worden. Per regio een eigen kandidatenlijst-cache, zodat
-// één verzoek nooit alle regio's tegelijk hoeft op te halen.
+// We waarderen én kopen alleen in Jita. ESI geeft publieke contracten alléén per
+// regio, dus we halen The Forge op (daar ligt Jita in) en filteren de kandidaten
+// meteen op Jita 4-4 (zie CD_JITA_4_4 hieronder). Alleen Jita → geen versleep-gedoe
+// en de dekking is veel sneller compleet (veel minder contracten te scannen).
 const CD_REGIOS = [
-    10000002 => 'The Forge',   // Jita — veruit het grootste aanbod (~34 pagina's)
-    10000055 => 'Branch',      // eigen space (1 pagina)
+    10000002 => 'Jita',   // The Forge-regio, maar we houden alleen Jita 4-4 over
 ];
 const CD_MIN_PRICE       = 200000000;  // 200 mln — daaronder zijn het vrijwel
                                        // alleen BPC-verkopen, en die zijn niet op
@@ -329,6 +330,9 @@ function cdRegioKandidaten(PDO $pdo, int $regioId, string $regioNaam, bool $forc
     $kandidaten = [];
     foreach ($alles as $c) {
         if (($c['type'] ?? '') !== 'item_exchange') continue;
+        // Alleen contracten die in Jita 4-4 opgehaald kunnen worden — de rest van
+        // The Forge (en Branch) valt hiermee weg zonder één extra ESI-call.
+        if ((int)($c['start_location_id'] ?? 0) !== CD_JITA_4_4) continue;
         $prijs = (float)($c['price'] ?? 0);
         if ($prijs < CD_MIN_PRICE || $prijs > CD_MAX_PRICE) continue;
         $kandidaten[] = [

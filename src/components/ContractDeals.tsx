@@ -6,10 +6,11 @@ import { getStructureName } from '../api/esi'
 
 // Publieke item-exchange-contracten die onder de Jita-prijs staan ("koopjesjacht").
 //
-// De data komt van api/contractdeals.php: dat scant de publieke contracten van
-// The Forge + Branch (geen token nodig) en waardeert de inhoud tegen Jita. Omdat
-// het er tienduizenden zijn wordt de nieuwste lading eerst gescand en groeit de
-// dekking met elk bezoek — vandaar de voortgangsregel en de "automatisch scannen"-knop.
+// De data komt van api/contractdeals.php: dat haalt de publieke contracten van
+// The Forge op (geen token nodig), houdt alleen die in Jita 4-4 over en waardeert
+// de inhoud tegen Jita. Omdat het er veel zijn wordt de nieuwste lading eerst
+// gescand en groeit de dekking met elk bezoek — vandaar de voortgangsregel en de
+// "automatisch scannen"-knop.
 //
 // Wat dit component er bovenop doet t.o.v. de kale feed:
 //   1. Winst ná verkoopkosten (Jita-belasting + broker fee, instelbaar) — zodat
@@ -474,7 +475,7 @@ export default function ContractDeals() {
         (min de door jou ingestelde verkoopkosten) minus de vraagprijs. Blueprint-copies tellen als 0
         (hun typeprijs zegt niets over een kopie), en staat een verkoopprijs meer dan 10× boven het bod,
         dan waarderen we conservatief op de biedprijs — dat contract krijgt de melding <em>dunne markt</em>.
-        Let op: er wordt altijd tegen Jita gewaardeerd, dus een koopje buiten The Forge moet je zelf nog verslepen.
+        Alle getoonde contracten liggen in <strong>Jita 4-4</strong>, dus je hoeft niets te verslepen.
       </p>
     </>
   )
@@ -496,8 +497,8 @@ function Uitleg() {
         Zo word je hier rijk mee 💰
       </div>
       <ol style={{ margin: 0, paddingLeft: '1.2rem' }}>
-        <li style={stap}>De scanner kijkt naar <strong>publieke contracten</strong> in Jita (The Forge)
-          en Branch waarvan de spullen méér waard zijn dan de vraagprijs.</li>
+        <li style={stap}>De scanner kijkt naar <strong>publieke contracten in Jita 4-4</strong>
+          waarvan de spullen méér waard zijn dan de vraagprijs.</li>
         <li style={stap}>Zet <strong>automatisch scannen</strong> aan en laat de pagina open staan —
           hij haalt vanzelf nieuwe contracten binnen. Verse koopjes zie je bovenaan bij <em>Nieuwste</em>.</li>
         <li style={stap}>Zie je een dik koopje? Kopieer de naam van de verkoper (knop <em>⧉ kopieer</em>),
