@@ -328,7 +328,7 @@ export default function GapScanner() {
 
   return (
     <Layout header={<PageHeader title="🕳️ Jita Gap Scanner" sub="Snelle flips in Jita: een prijs-gat in de goedkoopste orders, gefilterd op dagelijks handelsvolume (snelle verkopers)." />}>
-      <div style={{ maxWidth: 1200 }}>
+      <div style={{ width: '100%' }}>
 
       {/* Categorieën */}
       <div style={{ marginBottom: '0.7rem' }}>
