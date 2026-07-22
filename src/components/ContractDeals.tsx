@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EveImage from './EveImage'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAuth } from '../auth/AuthContext'
 import { getStructureName } from '../api/esi'
 
-// Publieke item-exchange-contracten die onder de Jita-prijs staan.
+// Publieke item-exchange-contracten die onder de Jita-prijs staan ("koopjesjacht").
 //
 // De data komt van api/contractdeals.php: dat scant de publieke contracten van
-// The Forge (geen token nodig) en waardeert de inhoud tegen Jita. Omdat het er
-// tienduizenden zijn wordt de nieuwste lading eerst gescand en groeit de dekking
-// met elk bezoek — vandaar de voortgangsregel.
+// The Forge + Branch (geen token nodig) en waardeert de inhoud tegen Jita. Omdat
+// het er tienduizenden zijn wordt de nieuwste lading eerst gescand en groeit de
+// dekking met elk bezoek — vandaar de voortgangsregel en de "automatisch scannen"-knop.
+//
+// Wat dit component er bovenop doet t.o.v. de kale feed:
+//   1. Winst ná verkoopkosten (Jita-belasting + broker fee, instelbaar) — zodat
+//      het winstcijfer klopt met wat je écht overhoudt.
+//   2. Filters (min. winst / min. marge / dunne markt / bpc verbergen) zodat je
+//      alleen echte koopjes ziet.
+//   3. Automatisch doorscannen zolang de pagina open staat.
 
 interface DealItem {
   typeId: number
@@ -50,6 +57,12 @@ interface Row {
   forCorp?: boolean
 }
 
+// Row + de client-side berekende winst ná verkoopkosten.
+interface VRow extends Row {
+  nettoNa: number       // winst na verkoopkosten (verkopen op de Jita-markt)
+  margeNa: number | null
+}
+
 interface Feed {
   ok?: boolean
   regios?: string[]
@@ -75,6 +88,11 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: 'prijs',  label: 'Vraagprijs' },
   { key: 'nieuw',  label: 'Nieuwste' },
 ]
+
+// Standaard-verkoopkosten: broker fee + verkoopbelasting samen. ~6% is realistisch
+// voor gemiddelde skills; met Accounting/Broker Relations V en goede standings zakt
+// dit richting ~3%. Instelbaar, want het bepaalt of een krappe marge nog winst is.
+const STD_KOSTEN_PCT = 6
 
 function fmtISK(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return '—'
@@ -108,6 +126,18 @@ export default function ContractDeals() {
   const [sort, setSort] = useState<Sort>('netto')
   const [open, setOpen] = useState<number | null>(null)
   const [regio, setRegio] = useState('alles')
+  const [hulpOpen, setHulpOpen] = useState(false)
+
+  // --- instellingen (filters + verkoopkosten) --------------------------------
+  const [kostenPct, setKostenPct]         = useState(STD_KOSTEN_PCT)
+  const [minWinstMln, setMinWinstMln]     = useState(0)   // in miljoen ISK
+  const [minMarge, setMinMarge]           = useState(0)   // in %
+  const [verbergDun, setVerbergDun]       = useState(false)
+  const [verbergBpc, setVerbergBpc]       = useState(false)
+  const [verbergOnbekend, setVerbergOnbekend] = useState(false)
+
+  // --- automatisch doorscannen -----------------------------------------------
+  const [auto, setAuto] = useState(false)
 
   usePageLoading(laden)
 
@@ -128,13 +158,24 @@ export default function ContractDeals() {
 
   useEffect(() => { void haal() }, [haal])
 
+  // Automatisch scannen: elke keer dat we ?action=list ophalen scant de server ook
+  // ~60 nieuwe contracten, dus herhaald ophalen laat de dekking (en dus het aantal
+  // koopjes) vanzelf groeien. We overlappen nooit twee verzoeken (guard op `laden`).
+  const ladenRef = useRef(laden)
+  ladenRef.current = laden
   useEffect(() => {
-    const open = [...new Set((feed?.rows ?? [])
+    if (!auto) return
+    const t = setInterval(() => { if (!ladenRef.current) void haal() }, 7000)
+    return () => clearInterval(t)
+  }, [auto, haal])
+
+  useEffect(() => {
+    const teOpen = [...new Set((feed?.rows ?? [])
       .filter(r => !r.locatie && r.locatieId > 2_147_483_647)
       .map(r => r.locatieId))]
-    if (!open.length || !tokens.length) return
+    if (!teOpen.length || !tokens.length) return
     let afgebroken = false
-    void Promise.all(open.map(async id => {
+    void Promise.all(teOpen.map(async id => {
       const naam = await getStructureName(id, tokens).catch(() => null)
       return [id, naam] as const
     })).then(paren => {
@@ -146,19 +187,46 @@ export default function ContractDeals() {
     return () => { afgebroken = true }
   }, [feed, tokens])
 
-  const rows = useMemo(() => {
-    const r = [...(feed?.rows ?? [])].filter(x => regio === 'alles' || x.regio === regio)
-    r.sort((a, b) => {
+  // Verrijk elke rij met winst ná verkoopkosten, filter en sorteer.
+  const rows = useMemo<VRow[]>(() => {
+    const k = kostenPct / 100
+    const verrijkt: VRow[] = (feed?.rows ?? []).map(r => {
+      // Je koopt via het contract (geen kosten), maar bij het dóórverkopen op de
+      // Jita-markt gaat er broker fee + verkoopbelasting af. Beloning (als het
+      // contract jou ISK geeft) is netto.
+      const nettoNa = r.waardeSell * (1 - k) + r.beloning - r.betaalt
+      const margeNa = r.betaalt > 0 ? (nettoNa / r.betaalt) * 100 : null
+      return { ...r, nettoNa, margeNa }
+    })
+
+    const gefilterd = verrijkt.filter(r =>
+      (regio === 'alles' || r.regio === regio) &&
+      r.nettoNa >= minWinstMln * 1e6 &&
+      (r.margeNa ?? -Infinity) >= minMarge &&
+      (!verbergDun || !r.dunneMarkt) &&
+      (!verbergBpc || !r.heeftBpc) &&
+      (!verbergOnbekend || !r.prijsOnbekend))
+
+    gefilterd.sort((a, b) => {
       switch (sort) {
-        case 'marge':  return (b.marge ?? -Infinity) - (a.marge ?? -Infinity)
+        case 'marge':  return (b.margeNa ?? -Infinity) - (a.margeNa ?? -Infinity)
         case 'waarde': return b.waardeSell - a.waardeSell
         case 'prijs':  return b.betaalt - a.betaalt
         case 'nieuw':  return new Date(b.uitgegeven).getTime() - new Date(a.uitgegeven).getTime()
-        default:       return b.nettoSell - a.nettoSell
+        default:       return b.nettoNa - a.nettoNa
       }
     })
-    return r
-  }, [feed, sort, regio])
+    return gefilterd
+  }, [feed, sort, regio, kostenPct, minWinstMln, minMarge, verbergDun, verbergBpc, verbergOnbekend])
+
+  // Statistieken op basis van wat er ná filteren overblijft, zodat de tegels met
+  // je filters meebewegen.
+  const stats = useMemo(() => {
+    const beste = rows.reduce((m, r) => Math.max(m, r.nettoNa), 0)
+    const totaalWinst = rows.reduce((s, r) => s + r.nettoNa, 0)
+    const totaalWaarde = rows.reduce((s, r) => s + r.waardeSell, 0)
+    return { aantal: rows.length, beste, totaalWinst, totaalWaarde }
+  }, [rows])
 
   const t = feed?.totalen
 
@@ -172,6 +240,9 @@ export default function ContractDeals() {
             : 'publieke item-exchange-contracten'}
         </span>
         <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
+          <button className="btn btn-sm" onClick={() => setHulpOpen(o => !o)}>
+            {hulpOpen ? '✕ uitleg' : '? hoe word ik rijk'}
+          </button>
           {feed?.bijgewerkt && (
             <span style={{ color: 'var(--text-dim)', fontSize: '.72rem' }}>
               bijgewerkt {new Date(feed.bijgewerkt).toLocaleTimeString('nl-NL',
@@ -182,24 +253,68 @@ export default function ContractDeals() {
         </div>
       </div>
 
+      {hulpOpen && <Uitleg />}
+
       {fout && <div className="card" style={{ padding: '1rem', color: 'var(--red)' }}>{fout}</div>}
 
       {t && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
-          <Stat label="Koopjes gevonden" waarde={String(t.koopjes)} kleur="var(--green)" />
-          <Stat label="Beste koopje" waarde={fmtISK(t.beste)} kleur="var(--green)" />
+          <Stat label="Koopjes (na filters)" waarde={String(stats.aantal)} kleur="var(--green)" />
+          <Stat label="Beste koopje" waarde={fmtISK(stats.beste)} kleur="var(--green)" />
+          <Stat label="Totale winst hier" waarde={fmtISK(stats.totaalWinst)} kleur="var(--green)" />
           <Stat label="Gewaardeerd" waarde={`${t.gewaardeerd} / ${t.kandidaten}`} />
-          <Stat label="Totale marktwaarde" waarde={fmtISK(t.waarde)} kleur="var(--gold)" />
-          <Stat label="Totale vraagprijs" waarde={fmtISK(t.vraagprijs)} />
+          <Stat label="Totale marktwaarde" waarde={fmtISK(stats.totaalWaarde)} kleur="var(--gold)" />
         </div>
       )}
+
+      {/* Instellingen: verkoopkosten + filters + automatisch scannen. */}
+      <div className="card" style={{ padding: '.7rem .9rem', marginBottom: '1rem',
+                                     display: 'flex', flexWrap: 'wrap', gap: '1rem 1.4rem',
+                                     alignItems: 'flex-end' }}>
+        <Veld label="Verkoopkosten %"
+              hint="Jita-belasting + broker fee die van je verkoopprijs af gaat">
+          <input type="number" min={0} max={20} step={0.5} value={kostenPct}
+                 onChange={e => setKostenPct(Math.max(0, Number(e.target.value) || 0))}
+                 style={inputStyle} />
+        </Veld>
+        <Veld label="Min. winst (mln)" hint="Verberg koopjes met minder winst dan dit">
+          <input type="number" min={0} step={10} value={minWinstMln}
+                 onChange={e => setMinWinstMln(Math.max(0, Number(e.target.value) || 0))}
+                 style={inputStyle} />
+        </Veld>
+        <Veld label="Min. marge %" hint="Verberg koopjes met een kleinere marge">
+          <input type="number" min={0} step={1} value={minMarge}
+                 onChange={e => setMinMarge(Math.max(0, Number(e.target.value) || 0))}
+                 style={inputStyle} />
+        </Veld>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+          <span style={{ fontSize: '.66rem', fontWeight: 700, letterSpacing: '.05em',
+                         textTransform: 'uppercase', color: 'var(--text-dim)' }}>Verberg risico</span>
+          <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+            <Toggle aan={verbergDun} zet={setVerbergDun} label="dunne markt" />
+            <Toggle aan={verbergBpc} zet={setVerbergBpc} label="bpc" />
+            <Toggle aan={verbergOnbekend} zet={setVerbergOnbekend} label="prijs?" />
+          </div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+          <span style={{ fontSize: '.66rem', fontWeight: 700, letterSpacing: '.05em',
+                         textTransform: 'uppercase', color: 'var(--text-dim)' }}>Automatisch</span>
+          <button
+            onClick={() => setAuto(a => !a)}
+            className="btn btn-sm"
+            style={auto
+              ? { background: 'var(--green)', color: '#04121a', fontWeight: 700 }
+              : undefined}
+          >{auto ? '● scant automatisch' : '▶ scan automatisch'}</button>
+        </div>
+      </div>
 
       {!!t?.nog_te_gaan && (
         <div className="card" style={{ padding: '.6rem .9rem', marginBottom: '1rem',
                                        fontSize: '.82rem', color: 'var(--text-dim)' }}>
           Nog {t.nog_te_gaan} contracten te scannen — de inhoud van een contract kost één
-          losse ESI-call, dus dat gaat stapsgewijs. Klik op ↻ om verder te scannen; wat al
-          gescand is blijft bewaard.
+          losse ESI-call, dus dat gaat stapsgewijs. Zet <strong>automatisch scannen</strong> aan
+          (of klik op ↻) om verder te scannen; wat al gescand is blijft bewaard.
         </div>
       )}
 
@@ -237,7 +352,8 @@ export default function ContractDeals() {
 
       {!laden && !rows.length && (
         <div className="card" style={{ padding: '1rem', color: 'var(--text-dim)' }}>
-          Nog geen koopjes gevonden. Klik op ↻ om meer contracten te scannen.
+          Geen koopjes die aan je filters voldoen. Zet de filters ruimer, of klik op ↻ /
+          zet automatisch scannen aan om meer contracten te scannen.
         </div>
       )}
 
@@ -307,9 +423,9 @@ export default function ContractDeals() {
               <div style={{ display: 'flex', gap: '1.2rem', textAlign: 'right' }}>
                 <Cel label="Vraagprijs"  waarde={fmtISK(r.betaalt)} />
                 <Cel label="Jita-waarde" waarde={fmtISK(r.waardeSell)} kleur="var(--gold)" />
-                <Cel label="Winst"       waarde={fmtISK(r.nettoSell)} kleur="var(--green)" groot />
+                <Cel label="Winst na kosten" waarde={fmtISK(r.nettoNa)} kleur="var(--green)" groot />
                 <Cel label="Marge"
-                     waarde={r.marge === null ? '—' : `+${r.marge.toFixed(0)}%`}
+                     waarde={r.margeNa === null ? '—' : `+${r.margeNa.toFixed(0)}%`}
                      kleur="var(--green)" />
               </div>
             </div>
@@ -340,8 +456,10 @@ export default function ContractDeals() {
                   </div>
                 )}
                 <div style={{ color: 'var(--text-dim)', fontSize: '.78rem', marginTop: '.4rem' }}>
-                  Direct doorverkopen aan Jita-koop-orders levert {fmtISK(r.nettoBuy)} op.
-                  Contract-id {r.id} — zoek 'm in-game via Contracts → zoeken op de titel.
+                  Bruto Jita-waarde {fmtISK(r.waardeSell)}, ná {kostenPct}% verkoopkosten houd je
+                  ± {fmtISK(r.nettoNa)} over. Direct doorverkopen aan Jita-koop-orders (buy) levert
+                  ± {fmtISK(r.nettoBuy)} op. Contract-id {r.id} — zoek 'm in-game via Contracts →
+                  zoeken op de titel of de naam van de verkoper.
                 </div>
               </div>
             )}
@@ -352,13 +470,71 @@ export default function ContractDeals() {
       <p style={{ color: 'var(--text-dim)', fontSize: '.78rem', marginTop: '1rem' }}>
         Alleen publieke item-exchange-contracten van 200 mln tot 50 mrd worden
         bekeken — daaronder zijn contracten vrijwel altijd blueprint-copies, die geen
-        marktprijs hebben. Jita-waarde = de inhoud tegen de Jita-verkoopprijs; winst = die waarde minus de
-        vraagprijs. Blueprint-copies tellen als 0 (hun typeprijs zegt niets over een kopie), en
-        staat een verkoopprijs meer dan 10× boven het bod, dan waarderen we conservatief op de
-        biedprijs — dat contract krijgt de melding <em>dunne markt</em>. Let op: er wordt altijd tegen
-        Jita gewaardeerd, dus een koopje buiten The Forge moet je zelf nog verslepen.
+        marktprijs hebben. Jita-waarde = de inhoud tegen de Jita-verkoopprijs; winst = die waarde
+        (min de door jou ingestelde verkoopkosten) minus de vraagprijs. Blueprint-copies tellen als 0
+        (hun typeprijs zegt niets over een kopie), en staat een verkoopprijs meer dan 10× boven het bod,
+        dan waarderen we conservatief op de biedprijs — dat contract krijgt de melding <em>dunne markt</em>.
+        Let op: er wordt altijd tegen Jita gewaardeerd, dus een koopje buiten The Forge moet je zelf nog verslepen.
       </p>
     </>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width: 90, padding: '.3rem .5rem', fontSize: '.85rem',
+  background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
+  borderRadius: 6,
+}
+
+// Kort, in gewone taal: hoe verdien je hier ISK mee.
+function Uitleg() {
+  const stap: React.CSSProperties = { margin: '.15rem 0' }
+  return (
+    <div className="card" style={{ padding: '1rem 1.1rem', marginBottom: '1rem', fontSize: '.85rem',
+                                   lineHeight: 1.5, borderLeft: '3px solid var(--blue)' }}>
+      <div style={{ fontWeight: 700, marginBottom: '.4rem', color: 'var(--blue)' }}>
+        Zo word je hier rijk mee 💰
+      </div>
+      <ol style={{ margin: 0, paddingLeft: '1.2rem' }}>
+        <li style={stap}>De scanner kijkt naar <strong>publieke contracten</strong> in Jita (The Forge)
+          en Branch waarvan de spullen méér waard zijn dan de vraagprijs.</li>
+        <li style={stap}>Zet <strong>automatisch scannen</strong> aan en laat de pagina open staan —
+          hij haalt vanzelf nieuwe contracten binnen. Verse koopjes zie je bovenaan bij <em>Nieuwste</em>.</li>
+        <li style={stap}>Zie je een dik koopje? Kopieer de naam van de verkoper (knop <em>⧉ kopieer</em>),
+          zoek het contract in-game via <strong>Contracts</strong> en accepteer het.</li>
+        <li style={stap}>Verkoop de spullen weer in Jita. <strong>Winst na kosten</strong> houdt al
+          rekening met verkoopbelasting + broker fee (pas het % aan naar jouw skills).</li>
+        <li style={stap}>Let op de gekleurde labels: <em>dunne markt</em> = weinig handel, prijs onzeker;
+          <em> bpc</em> = er zit een blueprint-kopie in die als 0 telt; <em>prijs?</em> = niet alles
+          heeft een marktprijs. Verberg ze met de <em>risico</em>-knoppen als je zeker wilt spelen.</li>
+      </ol>
+      <div style={{ marginTop: '.5rem', color: 'var(--text-dim)' }}>
+        Tip: begin met <strong>Min. marge 15%</strong> en <em>dunne markt</em> verbergen — dan hou je
+        alleen de betrouwbare koopjes over.
+      </div>
+    </div>
+  )
+}
+
+function Veld({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }} title={hint}>
+      <span style={{ fontSize: '.66rem', fontWeight: 700, letterSpacing: '.05em',
+                     textTransform: 'uppercase', color: 'var(--text-dim)' }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function Toggle({ aan, zet, label }: { aan: boolean; zet: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      onClick={() => zet(!aan)}
+      className="btn btn-sm"
+      style={aan
+        ? { background: '#f0932b', color: '#1a1206', fontWeight: 700 }
+        : undefined}
+    >{aan ? '✓ ' : ''}{label}</button>
   )
 }
 

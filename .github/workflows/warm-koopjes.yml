@@ -1,0 +1,40 @@
+name: Warm koopjes-scanner
+
+# Houdt de koopjesjacht "warm": scant elke 15 minuten alvast nieuwe publieke
+# contracten, zodat er altijd verse koopjes klaarstaan als je de pagina opent —
+# ook als er niemand kijkt. De scan-actie doet géén zware waardering, alleen het
+# ophalen van contract-inhoud (die permanent gecached wordt), dus dit is licht.
+#
+# Waarom nodig: de inhoud van één contract kost één losse ESI-call, en The Forge
+# heeft er duizenden. Zonder warmer groeit de dekking alleen als iemand de pagina
+# bezoekt. Met deze warmer blijft de hele lijst gescand en zie je koopjes meteen.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # elke 15 minuten (GitHub kan wat later uitvoeren bij drukte)
+  workflow_dispatch: {}        # ook handmatig te starten via de Actions-tab
+
+# Nooit twee warmers tegelijk; een lopende mag afmaken maar we starten niet dubbel.
+concurrency:
+  group: warm-koopjes
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan nieuwe contracten in rondes
+        run: |
+          URL="https://dutchlegionsdashboard.eu/api/contractdeals.php?action=scan"
+          # Elke ronde scant de server ~60 nieuwe contracten (max 12s). We doen er
+          # meerdere per run en stoppen zodra alles gescand is ("nog_te_gaan": 0).
+          for i in $(seq 1 15); do
+            resp=$(curl -s --max-time 30 "$URL" || echo '{}')
+            echo "ronde $i -> $resp"
+            nog=$(echo "$resp" | grep -o '"nog_te_gaan":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+            if [ "${nog:-0}" -eq 0 ]; then
+              echo "alles gescand, klaar"
+              break
+            fi
+            sleep 2
+          done
