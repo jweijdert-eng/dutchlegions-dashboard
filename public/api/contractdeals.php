@@ -422,8 +422,27 @@ function cdScan(PDO $pdo, array $kandidaten): array {
     return ['gescand' => $gedaan, 'nog_te_gaan' => max(0, count($todo) - $gedaan), 'bekend' => count($bekend)];
 }
 
+/**
+ * Set van alle ship-type_ids (voor de "gefit schip"-herkenning).
+ *
+ * ships.json = {scheepsnaam: typeId}; we hebben alleen de type_ids nodig als
+ * snelle lookup. Eenmaal per verzoek geladen.
+ */
+function cdShipSet(): array {
+    static $set = null;
+    if ($set !== null) return $set;
+    $set = [];
+    $ruw = @file_get_contents(__DIR__ . '/../ships.json');
+    if ($ruw !== false) {
+        $data = json_decode($ruw, true);
+        if (is_array($data)) $set = array_flip(array_map('intval', array_values($data)));
+    }
+    return $set;   // {typeId: index} → isset($set[$tid]) = is een schip
+}
+
 /** Waardeer alles wat we in de cache hebben en geef de beste deals terug. */
 function cdWaardeer(PDO $pdo, array $kandidaten): array {
+    $schepenSet = cdShipSet();
     $ids = array_column($kandidaten, 'id');
     $inhoud = [];
     foreach (array_chunk($ids, 500) as $chunk) {
@@ -459,6 +478,7 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
 
         $waardeSell = 0.0; $waardeBuy = 0.0; $kostenGeef = 0.0;
         $dun = false; $bpc = false; $prijsOnbekend = false;
+        $heeftSchip = false; $heeftInlever = false;
         $regels = [];
 
         foreach ($items as $i) {
@@ -468,6 +488,7 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
             $isBpc  = !empty($i['is_blueprint_copy']);
             if ($isBpc) $bpc = true;
             if ($p && !empty($p['thin'])) $dun = true;
+            if (isset($schepenSet[$tid])) $heeftSchip = true;   // contract bevat een schip
 
             // Een BPC is niet hetzelfde product als het originele blueprint —
             // op typeprijs waarderen zou er volledig naast zitten.
@@ -482,6 +503,7 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
                              'aantal' => $aantal, 'isBpc' => $isBpc, 'waarde' => $sell * $aantal];
             } else {
                 $kostenGeef += $sell * $aantal;      // dit moet je zelf inleveren
+                $heeftInlever = true;
             }
         }
         usort($regels, fn($a, $b) => $b['waarde'] <=> $a['waarde']);
@@ -502,6 +524,11 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
             'dunneMarkt' => $dun,
             'heeftBpc'   => $bpc,
             'prijsOnbekend' => $prijsOnbekend,
+            // Een gefit schip = een schip mét meerdere modules (ship + fit); die zijn
+            // lastiger door te verkopen dan losse items.
+            'gefitSchip' => $heeftSchip && count($regels) >= 4,
+            'heeftSchip' => $heeftSchip,
+            'heeftInlever' => $heeftInlever,
             'onbekend'   => false,
             'leeg'       => false,
         ];

@@ -44,6 +44,9 @@ interface Row {
   dunneMarkt: boolean
   heeftBpc: boolean
   prijsOnbekend: boolean
+  gefitSchip: boolean    // schip mét meerdere modules (lastig door te verkopen)
+  heeftSchip: boolean    // bevat een schip (gefit of niet)
+  heeftInlever: boolean  // je moet zelf items inleveren voor dit contract
   verlooptOp: string
   uitgegeven: string
   locatieId: number
@@ -136,6 +139,8 @@ export default function ContractDeals() {
   const [verbergDun, setVerbergDun]       = useState(false)
   const [verbergBpc, setVerbergBpc]       = useState(false)
   const [verbergOnbekend, setVerbergOnbekend] = useState(false)
+  const [verbergGefit, setVerbergGefit]   = useState(false)
+  const [verbergInlever, setVerbergInlever] = useState(false)
 
   // --- automatisch doorscannen -----------------------------------------------
   const [auto, setAuto] = useState(false)
@@ -206,7 +211,9 @@ export default function ContractDeals() {
       (r.margeNa ?? -Infinity) >= minMarge &&
       (!verbergDun || !r.dunneMarkt) &&
       (!verbergBpc || !r.heeftBpc) &&
-      (!verbergOnbekend || !r.prijsOnbekend))
+      (!verbergOnbekend || !r.prijsOnbekend) &&
+      (!verbergGefit || !r.gefitSchip) &&
+      (!verbergInlever || !r.heeftInlever))
 
     gefilterd.sort((a, b) => {
       switch (sort) {
@@ -218,7 +225,8 @@ export default function ContractDeals() {
       }
     })
     return gefilterd
-  }, [feed, sort, regio, kostenPct, minWinstMln, minMarge, verbergDun, verbergBpc, verbergOnbekend])
+  }, [feed, sort, regio, kostenPct, minWinstMln, minMarge, verbergDun, verbergBpc,
+      verbergOnbekend, verbergGefit, verbergInlever])
 
   // Statistieken op basis van wat er ná filteren overblijft, zodat de tegels met
   // je filters meebewegen.
@@ -295,6 +303,8 @@ export default function ContractDeals() {
             <Toggle aan={verbergDun} zet={setVerbergDun} label="dunne markt" />
             <Toggle aan={verbergBpc} zet={setVerbergBpc} label="bpc" />
             <Toggle aan={verbergOnbekend} zet={setVerbergOnbekend} label="prijs?" />
+            <Toggle aan={verbergGefit} zet={setVerbergGefit} label="gefit schip" />
+            <Toggle aan={verbergInlever} zet={setVerbergInlever} label="inleveritems" />
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
@@ -376,6 +386,8 @@ export default function ContractDeals() {
                   {r.dunneMarkt    && <Badge kleur="amber" tekst="dunne markt" />}
                   {r.heeftBpc      && <Badge kleur="amber" tekst="bpc" />}
                   {r.prijsOnbekend && <Badge kleur="amber" tekst="prijs?" />}
+                  {r.gefitSchip    && <Badge kleur="amber" tekst="gefit schip" />}
+                  {r.heeftInlever  && <Badge kleur="amber" tekst="inleveritems" />}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem',
                               marginTop: '.25rem', fontSize: '.82rem' }}>
@@ -510,7 +522,9 @@ function Uitleg() {
           rekening met verkoopbelasting + broker fee (pas het % aan naar jouw skills).</li>
         <li style={stap}>Let op de gekleurde labels: <em>dunne markt</em> = weinig handel, prijs onzeker;
           <em> bpc</em> = er zit een blueprint-kopie in die als 0 telt; <em>prijs?</em> = niet alles
-          heeft een marktprijs. Verberg ze met de <em>risico</em>-knoppen als je zeker wilt spelen.</li>
+          heeft een marktprijs; <em>gefit schip</em> = een schip met fit (moet je uitkleden om alles
+          los te verkopen); <em>inleveritems</em> = je moet zelf ook items inleveren. Verberg ze met
+          de <em>risico</em>-knoppen als je zeker wilt spelen.</li>
       </ol>
       <div style={{ marginTop: '.5rem', color: 'var(--text-dim)' }}>
         Tip: begin met <strong>Min. marge 15%</strong> en <em>dunne markt</em> verbergen — dan hou je
