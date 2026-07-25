@@ -1,13 +1,24 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { useAuth } from '../auth/AuthContext'
-import { getAllRegionOrders, getRegionHistory, openMarketWindow, type PublicMarketOrder, type RegionHistoryPoint } from '../api/esi'
+import { getAllRegionOrders, getStructureOrders, getRegionHistory, openMarketWindow, type PublicMarketOrder, type RegionHistoryPoint } from '../api/esi'
 import EveImage from '../components/EveImage'
 import Layout, { PageHeader } from '../components/Layout'
 
 // Jita / The Forge
 const THE_FORGE = 10000002
 const JITA_44 = 60003760
+
+// Handelshubs die de scanner kan doorzoeken. Jita = publieke regio-orders (geen
+// token nodig); de nullsec-hubs BKG-Q2 en 4-HWWF zijn PLAYER-STRUCTURES, dus die
+// haal je op via de structure-markt met je token (scope esi-markets.structure_markets.v1
+// + markt-toegang tot de structure). Dagvolume komt van de regio-historie.
+type Hub = { key: string; label: string; kind: 'region' | 'structure'; region: number; station?: number; structure?: number }
+const HUBS: Hub[] = [
+  { key: 'jita',  label: 'Jita 4-4', kind: 'region',    region: THE_FORGE, station: JITA_44 },
+  { key: 'bkg',   label: 'BKG-Q2',   kind: 'structure', region: 10000055,  structure: 1032721770598 },
+  { key: '4hwwf', label: '4-HWWF',   kind: 'structure', region: 10000003,  structure: 1053970513596 },
+]
 
 // ── Categorie-definities (via inventory-groepen/categorieën uit de SDE-bundel) ──
 // Geëxporteerd zodat de Hub-arbitrage-pagina dezelfde categorieën hergebruikt.
@@ -170,14 +181,16 @@ export default function GapScanner() {
   const [minVolume, setMinVolume] = useState(() => (loadSettings().minVolume as number) ?? 1)
   const [maxDays, setMaxDays] = useState(() => (loadSettings().maxDays as number) ?? 0)   // 0 = geen limiet
   const [sortKey, setSortKey] = useState<SortKey>(() => (loadSettings().sortKey as SortKey) ?? 'potential')
+  const [hubKey, setHubKey] = useState<string>(() => (loadSettings().hubKey as string) ?? 'jita')
+  const hub = HUBS.find(h => h.key === hubKey) ?? HUBS[0]
 
   // Instellingen bewaren zodra ze wijzigen.
   useEffect(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(
-        { cats, minGapPct, minValue, feePct, minVolume, maxDays, sortKey }))
+        { cats, minGapPct, minValue, feePct, minVolume, maxDays, sortKey, hubKey }))
     } catch { /* localStorage vol/geblokkeerd: niet erg */ }
-  }, [cats, minGapPct, minValue, feePct, minVolume, maxDays, sortKey])
+  }, [cats, minGapPct, minValue, feePct, minVolume, maxDays, sortKey, hubKey])
 
   const [orders, setOrders] = useState<PublicMarketOrder[] | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -216,10 +229,21 @@ export default function GapScanner() {
     return set
   }, [bundles, cats])
 
+  // Van hub wisselen = ander markt → oude orders/historie weg, opnieuw scannen.
+  const changeHub = (k: string) => { setHubKey(k); setOrders(null); setHistCache({}); setErr(null) }
+
   const scan = async () => {
     setLoading(true); setErr(null); setProgress({ done: 0, total: 1 })
     try {
-      const all = await getAllRegionOrders(THE_FORGE, (done, total) => setProgress({ done, total }))
+      let all: PublicMarketOrder[]
+      if (hub.kind === 'region') {
+        all = await getAllRegionOrders(hub.region, (done, total) => setProgress({ done, total }))
+      } else {
+        const t = activeTokens[0] ?? tokens[0]
+        if (!t) throw new Error('Log in / selecteer een character — een structure-markt vereist je token.')
+        all = await getStructureOrders(hub.structure!, t.accessToken)
+        if (all.length === 0) throw new Error('Geen orders opgehaald — heeft je character markt-toegang tot deze structure (en de scope esi-markets.structure_markets)?')
+      }
       setOrders(all)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Scan mislukt.')
@@ -233,7 +257,10 @@ export default function GapScanner() {
     if (!orders || !bundles || typeSet.size === 0) return []
     const byType = new Map<number, { price: number; vol: number }[]>()
     for (const o of orders) {
-      if (o.is_buy_order || o.location_id !== JITA_44 || !typeSet.has(o.type_id)) continue
+      if (o.is_buy_order || !typeSet.has(o.type_id)) continue
+      // Regio-hub: alleen orders op het hub-station. Structure-hub: alle orders
+      // komen al van die structure, dus geen locatiefilter nodig.
+      if (hub.kind === 'region' && o.location_id !== hub.station) continue
       const arr = byType.get(o.type_id) ?? []
       arr.push({ price: o.price, vol: o.volume_remain })
       byType.set(o.type_id, arr)
@@ -261,7 +288,7 @@ export default function GapScanner() {
       })
     }
     return out.sort((a, b) => b.potential - a.potential)
-  }, [orders, bundles, typeSet, minGapPct, minValue, feePct])
+  }, [orders, bundles, typeSet, minGapPct, minValue, feePct, hubKey])
 
   // Voor de gap-kandidaten de markt-historie ophalen (voor het dagvolume), parallel + gecached.
   useEffect(() => {
@@ -273,7 +300,7 @@ export default function GapScanner() {
       const batch = 15
       for (let i = 0; i < missing.length && !cancelled; i += batch) {
         const slice = missing.slice(i, i + batch)
-        const res = await Promise.all(slice.map(id => getRegionHistory(THE_FORGE, id).then(h => [id, h] as const)))
+        const res = await Promise.all(slice.map(id => getRegionHistory(hub.region, id).then(h => [id, h] as const)))
         if (cancelled) return
         setHistCache(c => { const n = { ...c }; for (const [id, h] of res) n[id] = h; return n })
         setVolProgress({ done: Math.min(i + batch, missing.length), total: missing.length })
@@ -321,15 +348,33 @@ export default function GapScanner() {
     setExpanded(typeId)
     if (!histCache[typeId]) {
       setHistLoading(typeId)
-      const h = await getRegionHistory(THE_FORGE, typeId)
+      const h = await getRegionHistory(hub.region, typeId)
       setHistCache(c => ({ ...c, [typeId]: h }))
       setHistLoading(null)
     }
   }
 
   return (
-    <Layout header={<PageHeader title="🕳️ Jita Gap Scanner" sub="Snelle flips in Jita: een prijs-gat in de goedkoopste orders, gefilterd op dagelijks handelsvolume (snelle verkopers)." />}>
+    <Layout header={<PageHeader title="🕳️ Gap Scanner" sub="Snelle flips: een prijs-gat in de goedkoopste sell-orders van een handelshub, gefilterd op dagelijks handelsvolume. Jita, of je nullsec-structures BKG-Q2 / 4-HWWF (met je token)." />}>
       <div style={{ width: '100%' }}>
+
+      {/* Markt / hub */}
+      <div style={{ marginBottom: '0.7rem' }}>
+        <div style={LABEL}>MARKT</div>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          {HUBS.map(h => (
+            <button key={h.key} onClick={() => changeHub(h.key)}
+              style={{
+                ...INPUT, cursor: 'pointer', fontWeight: 600,
+                background: hubKey === h.key ? 'var(--blue)' : 'var(--surface2)',
+                color: hubKey === h.key ? '#0a0a12' : 'var(--text)',
+                borderColor: hubKey === h.key ? 'var(--blue)' : 'var(--border)',
+              }}>
+              {h.label}{h.kind === 'structure' ? ' 🔒' : ''}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Categorieën */}
       <div style={{ marginBottom: '0.7rem' }}>
@@ -375,7 +420,7 @@ export default function GapScanner() {
           ...INPUT, cursor: loading ? 'wait' : 'pointer', fontWeight: 700,
           background: 'var(--blue)', color: '#0a0a12', borderColor: 'var(--blue)', padding: '0.4rem 1rem',
         }}>
-          {loading ? 'Scannen…' : orders ? 'Opnieuw scannen' : 'Scan Jita'}
+          {loading ? 'Scannen…' : orders ? 'Opnieuw scannen' : `Scan ${hub.label}`}
         </button>
         <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
           {typeSet.size > 0 ? `${typeSet.size.toLocaleString('nl-NL')} types in scope` : 'kies een categorie'}
