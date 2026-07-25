@@ -20,19 +20,26 @@
 require_once 'config.php';
 cors();
 
-// We waarderen én kopen alleen in Jita. ESI geeft publieke contracten alléén per
-// regio, dus we halen per hub de regio op (daar ligt de hub in) en filteren de
-// kandidaten meteen op het hub-station. Zo scannen we alléén de vijf grote
-// handelshubs — geen Branch/BKG en niet de rest van een regio.
+// ESI geeft publieke contracten alléén per regio, dus we halen per hub de regio op
+// (daar ligt de hub in) en filteren de kandidaten meteen op het hub-station/-structure.
 //
-// Per hub: regio-id => [hub-naam, station-id, systeemnaam, volledige stationnaam].
+// Per hub: regio-id => [hub-naam, locatie-id, systeemnaam, volledige stationnaam].
 // De hub-naam is meteen het filter dat de frontend als knop toont.
+//
+// De vijf grote NPC-handelshubs hebben een vast station-id + bekende stationnaam.
+// BKG-Q2 en 4-HWWF zijn nullsec-systemen: daar staan contracten in een PLAYER-
+// STRUCTURE (Upwell). We filteren dan op de structure-id van de handelshub, en
+// laten de volledige naam leeg — die lost de frontend op met het token van de
+// ingelogde gebruiker (structures kan de server niet tokenloos opzoeken).
 const CD_HUBS = [
     10000002 => ['Jita',    60003760, 'Jita',    'Jita IV - Moon 4 - Caldari Navy Assembly Plant'],
     10000043 => ['Amarr',   60008494, 'Amarr',   'Amarr VIII (Oris) - Emperor Family Academy'],
     10000032 => ['Dodixie', 60011866, 'Dodixie', 'Dodixie IX - Moon 20 - Federation Navy Assembly Plant'],
     10000030 => ['Rens',    60004588, 'Rens',    'Rens VI - Moon 8 - Brutor Tribe Treasury'],
     10000042 => ['Hek',     60005686, 'Hek',     'Hek VIII - Moon 12 - Boundless Creation Factory'],
+    // nullsec — player-structure handelshubs (naam wordt frontend-side opgelost)
+    10000055 => ['BKG-Q2',  1032721770598, 'BKG-Q2', ''],   // Branch
+    10000003 => ['4-HWWF',  1053970513596, '4-HWWF', ''],   // Vale of the Silent
 ];
 const CD_MIN_PRICE       = 200000000;  // 200 mln — daaronder zijn het vrijwel
                                        // alleen BPC-verkopen, en die zijn niet op
