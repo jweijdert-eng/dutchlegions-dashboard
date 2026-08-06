@@ -152,8 +152,14 @@ planets = {p['_key']: p for p in jrows('mapPlanets.jsonl')}
 moons = {m['_key']: m for m in jrows('mapMoons.jsonl')}
 
 # Planeten per systeem, voor de PI-opzetplanner: per planeet [romeins nummer,
-# planeettype]. Het hele universum en niet één regio — een corp verhuist, en dan
-# wil je niet dat hier een bundel voor herbouwd moet worden. 0,6 MB onverpakt.
+# planeettype, straal in km]. Het hele universum en niet één regio — een corp
+# verhuist, en dan wil je niet dat hier een bundel voor herbouwd moet worden.
+#
+# De straal doet ertoe: in PI kost een link CPU naar rato van z'n lengte, en die
+# schaalt mee met de planeet. Een gasreus van 27.000 km is veertien keer zo
+# groot als een barren van 1.900 km, dus dezelfde opstelling kost daar een
+# veelvoud. Voor een fabrieksplaneet (launchpad + vijf fabrieken, dus veel
+# links) wil je juist de kleinste planeet die je kunt krijgen.
 #
 # Let op: welke grondstof er op een planeet zit staat hier NIET in, en ook
 # nergens anders in de SDE of in ESI. Dat is een spelregel per planeettype, en
@@ -161,7 +167,7 @@ moons = {m['_key']: m for m in jrows('mapMoons.jsonl')}
 out_planets = {}
 for p in planets.values():
     out_planets.setdefault(str(p['solarSystemID']), []).append(
-        [p['celestialIndex'], p['typeID']])
+        [p['celestialIndex'], p['typeID'], round(p['radius'] / 1000)])
 for rij in out_planets.values():
     rij.sort()
 write('planets.json', out_planets)

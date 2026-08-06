@@ -69,7 +69,7 @@ const bestand = <T,>(pad: string, leeg: T) => {
 }
 const laadSchematics = bestand<Record<string, Schem>>('/schematics.json', {})
 const laadNamen = bestand<Record<string, string>>('/type-names.json', {})
-const laadPlaneten = bestand<Record<string, [number, number][]>>('/planets.json', {})
+const laadPlaneten = bestand<Record<string, [number, number, number][]>>('/planets.json', {})
 const laadSystemen = bestand<Record<string, [string, number, number]>>('/systems.json', {})
 const laadTypeInfo = bestand<Record<string, [number, number, number]>>('/type-info.json', {})
 const laadSprongen = bestand<Record<string, number[]>>('/system-jumps.json', {})
@@ -155,7 +155,7 @@ function bouwKeten(sch: Record<string, Schem>, namen: Record<string, string>,
 export default function PiOpzet() {
   const [sch, setSch] = useState<Record<string, Schem>>({})
   const [namen, setNamen] = useState<Record<string, string>>({})
-  const [planeten, setPlaneten] = useState<Record<string, [number, number][]>>({})
+  const [planeten, setPlaneten] = useState<Record<string, [number, number, number][]>>({})
   const [systemen, setSystemen] = useState<Record<string, [string, number, number]>>({})
   const [sprongen, setSprongen] = useState<Record<string, number[]>>({})
   const [prijs, setPrijs] = useState<Map<number, number>>(new Map())
@@ -238,10 +238,8 @@ export default function PiOpzet() {
       id: Number(id),
       naam: systemen[id]?.[0] ?? id,
       sprongen: d,
-      // Alleen het romeinse nummer en het planeettype; de planeet-id gebruikten
-      // we nergens en die halveerde wel de bundel.
-      planeten: (planeten[id] ?? []).map(([idx, tid]) => ({
-        idx, type: PLANEETTYPE[tid] ?? String(tid),
+      planeten: (planeten[id] ?? []).map(([idx, tid, straal]) => ({
+        idx, type: PLANEETTYPE[tid] ?? String(tid), straal,
       })),
     })).sort((a, b) => a.sprongen - b.sprongen || a.naam.localeCompare(b.naam))
   }, [thuisId, sprongen, systemen, planeten, maxSprong])
@@ -306,7 +304,8 @@ export default function PiOpzet() {
   /* welke planeten stel ik voor, verdeeld over de accounts */
   const verdeling = useMemo(() => {
     if (!plan || !eenLijn) return []
-    const gekozen: { systeem: string; sprongen: number; planeet: string; type: string; rol: string }[] = []
+    const gekozen: { systeem: string; sprongen: number; straal?: number;
+                     planeet: string; type: string; rol: string }[] = []
     const vrij = buurt.filter(s => !uitgesloten.includes(s.naam))
       .flatMap(s => s.planeten.map(p => ({ ...p, systeem: s.naam, sprongen: s.sprongen })))
 
@@ -317,16 +316,21 @@ export default function PiOpzet() {
           && !gekozen.some(g => g.planeet === `${p.systeem} ${ROMEINS[p.idx]}`))
         .sort((a, b) => a.sprongen - b.sprongen)
       for (const p of kandidaten.slice(0, nodigAantal)) {
-        gekozen.push({ systeem: p.systeem, sprongen: p.sprongen,
+        gekozen.push({ systeem: p.systeem, sprongen: p.sprongen, straal: p.straal,
           planeet: `${p.systeem} ${ROMEINS[p.idx]}`, type: p.type, rol: `${r.naam} → P1` })
       }
     }
-    /* fabrieksplaneten: het dichtst bij huis, type doet er niet toe */
+    /* Fabrieksplaneten: eerst zo dicht mogelijk bij huis, en binnen hetzelfde
+     * systeem de KLEINSTE planeet. Een link kost CPU naar rato van z'n lengte
+     * en die schaalt met de straal — een gasreus van 27.000 km is veertien keer
+     * zo groot als een barren van 1.900 km. Juist een fabrieksplaneet heeft de
+     * meeste links (launchpad naar vijf fabrieken). Het planeettype zelf doet
+     * er niet toe zolang je er niets extraheert. */
     const rest = vrij
       .filter(p => !gekozen.some(g => g.planeet === `${p.systeem} ${ROMEINS[p.idx]}`))
-      .sort((a, b) => a.sprongen - b.sprongen)
+      .sort((a, b) => a.sprongen - b.sprongen || (a.straal ?? 0) - (b.straal ?? 0))
     for (const p of rest.slice(0, plan.fabriek)) {
-      gekozen.push({ systeem: p.systeem, sprongen: p.sprongen,
+      gekozen.push({ systeem: p.systeem, sprongen: p.sprongen, straal: p.straal,
         planeet: `${p.systeem} ${ROMEINS[p.idx]}`, type: p.type, rol: 'fabriek P2/P3' })
     }
     return gekozen
@@ -508,6 +512,9 @@ export default function PiOpzet() {
                     <span style={{ width: 74, color: PLANEETKLEUR[p.type] ?? '#8a93a8' }}>{p.type}</span>
                     <span style={{ width: 58, color: 'var(--text-dim)' }}>
                       {p.sprongen === 0 ? 'thuis' : `${p.sprongen} spr`}</span>
+                    <span style={{ width: 74, textAlign: 'right', color: 'var(--text-dim)' }}
+                          title="Straal. Links kosten CPU naar rato van hun lengte, dus klein is beter.">
+                      {p.straal ? `${fmt(p.straal)} km` : ''}</span>
                     <span style={{ flex: 1, color: 'var(--text-dim)' }}>{p.rol}</span>
                   </div>
                 ))}
