@@ -243,23 +243,40 @@ export default function PiOpzet() {
   const plan = useMemo(() => {
     if (!eenLijn) return null
     const nodig = eenLijn.p0
-    const bruikbaar = new Set(buurt.filter(s => !uitgesloten.includes(s.naam))
-      .flatMap(s => s.planeten.map(p => p.type)))
+    const vrijePlaneten = buurt.filter(s => !uitgesloten.includes(s.naam))
+      .flatMap(s => s.planeten.map(p => p.type))
     const tekort = nodig.filter(r =>
-      ![...bruikbaar].some(t => (PLANEET_P0[t] ?? []).includes(r.naam)))
+      !vrijePlaneten.some(t => (PLANEET_P0[t] ?? []).includes(r.naam)))
 
-    /* per lijn: extractieplaneten per grondstof + fabrieksplaneten */
+    /* Zonder een grens op het aantal beschikbare planeten beloofde de planner
+     * 4 Robotics-lijnen terwijl er maar 6 Lava-planeten binnen bereik liggen en
+     * er 8 nodig zijn: slots genoeg, planeten niet. */
+
     /* Alleen P2 en hoger tellen mee voor de fabrieksplaneten; de P1-fabrieken
-     * draaien op de extractieplaneten waar de grondstof vandaan komt. Die
-     * stonden hier eerst óók bij, en dan passen er kunstmatig minder lijnen. */
+     * draaien op de extractieplaneten waar de grondstof vandaan komt. */
     const fabriekenPerLijn = eenLijn.stappen
       .filter(s => !s.opExtractie)
       .reduce((a, s) => a + Math.ceil(s.fabrieken), 0)
-    const beste = { lijnen: 0, extractie: 0, fabriek: 0 }
+
+    const beste = { lijnen: 0, extractie: 0, fabriek: 0, rem: '' }
     for (let L = 1; L <= 40; L++) {
-      const ex = nodig.reduce((a, r) => a + Math.ceil(r.perUur * L / Math.max(1, oogst)), 0)
+      const perGrondstof = nodig.map(r =>
+        ({ r, n: Math.ceil(r.perUur * L / Math.max(1, oogst)) }))
+      /* Twee grondstoffen van hetzelfde planeettype delen dezelfde planeten,
+       * dus tellen we het beslag per type op in plaats van per grondstof. */
+      const beslag = new Map<string, number>()
+      for (const { r, n } of perGrondstof) {
+        const types = Object.keys(PLANEET_P0).filter(ty => PLANEET_P0[ty].includes(r.naam))
+        const sleutel = types.sort().join('+')
+        beslag.set(sleutel, (beslag.get(sleutel) ?? 0) + n)
+      }
+      const teweinig = [...beslag.entries()].find(([sleutel, n]) =>
+        n > vrijePlaneten.filter(ty => sleutel.split('+').includes(ty)).length)
+
+      const ex = perGrondstof.reduce((a, x) => a + x.n, 0)
       const fab = Math.ceil(fabriekenPerLijn * L / Math.max(1, perFabriekPlaneet))
-      if (ex + fab > slots) break
+      if (teweinig) { beste.rem = `te weinig ${teweinig[0].replace('+', '/')}-planeten`; break }
+      if (ex + fab > slots) { beste.rem = 'slots op'; break }
       beste.lijnen = L; beste.extractie = ex; beste.fabriek = fab
     }
     return { ...beste, tekort, fabriekenPerLijn }
@@ -371,7 +388,7 @@ export default function PiOpzet() {
               <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
                 {plan.lijnen} productielijn{plan.lijnen === 1 ? '' : 'en'} ·{' '}
                 {plan.extractie} extractie + {plan.fabriek} fabriek = {plan.extractie + plan.fabriek}{' '}
-                van je {slots} slots
+                van je {slots} slots{plan.rem ? ` · begrensd door: ${plan.rem}` : ''}
               </div>
             </div>
             {iskDag > 0 && (
