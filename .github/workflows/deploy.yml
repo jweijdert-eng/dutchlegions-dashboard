@@ -3,6 +3,10 @@ name: Build & Deploy
 on:
   push:
     branches: [main]
+  # Ook met de hand te starten. Nodig gebleken tijdens de Actions-storing van
+  # 6 augustus 2026: pushes kwamen wel aan, maar er werd geen run aangemaakt.
+  # Zonder deze regel is de enige uitweg een lege commit pushen.
+  workflow_dispatch: {}
 
 # Serialiseer deploys: nooit twee FTP-uploads tegelijk (voorkomt race-fouten en
 # een terugdraaiende index.html). Niet annuleren — laat een lopende upload afmaken.
