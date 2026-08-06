@@ -69,7 +69,7 @@ const bestand = <T,>(pad: string, leeg: T) => {
 }
 const laadSchematics = bestand<Record<string, Schem>>('/schematics.json', {})
 const laadNamen = bestand<Record<string, string>>('/type-names.json', {})
-const laadPlaneten = bestand<Record<string, [number, number, number][]>>('/planets.json', {})
+const laadPlaneten = bestand<Record<string, [number, number][]>>('/planets.json', {})
 const laadSystemen = bestand<Record<string, [string, number, number]>>('/systems.json', {})
 const laadTypeInfo = bestand<Record<string, [number, number, number]>>('/type-info.json', {})
 const laadSprongen = bestand<Record<string, number[]>>('/system-jumps.json', {})
@@ -155,7 +155,7 @@ function bouwKeten(sch: Record<string, Schem>, namen: Record<string, string>,
 export default function PiOpzet() {
   const [sch, setSch] = useState<Record<string, Schem>>({})
   const [namen, setNamen] = useState<Record<string, string>>({})
-  const [planeten, setPlaneten] = useState<Record<string, [number, number, number][]>>({})
+  const [planeten, setPlaneten] = useState<Record<string, [number, number][]>>({})
   const [systemen, setSystemen] = useState<Record<string, [string, number, number]>>({})
   const [sprongen, setSprongen] = useState<Record<string, number[]>>({})
   const [prijs, setPrijs] = useState<Map<number, number>>(new Map())
@@ -231,8 +231,10 @@ export default function PiOpzet() {
       id: Number(id),
       naam: systemen[id]?.[0] ?? id,
       sprongen: d,
-      planeten: (planeten[id] ?? []).map(([pid, idx, tid]) => ({
-        pid, idx, type: PLANEETTYPE[tid] ?? String(tid),
+      // Alleen het romeinse nummer en het planeettype; de planeet-id gebruikten
+      // we nergens en die halveerde wel de bundel.
+      planeten: (planeten[id] ?? []).map(([idx, tid]) => ({
+        idx, type: PLANEETTYPE[tid] ?? String(tid),
       })),
     })).sort((a, b) => a.sprongen - b.sprongen || a.naam.localeCompare(b.naam))
   }, [thuisId, sprongen, systemen, planeten, maxSprong])
