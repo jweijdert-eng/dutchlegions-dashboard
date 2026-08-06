@@ -311,10 +311,21 @@ export default function PiOpzet() {
 
     for (const r of eenLijn.p0) {
       const nodigAantal = Math.ceil(r.perUur * plan.lijnen / Math.max(1, oogst))
+      /* Volgorde van voorkeur:
+       *  1. een systeem waar je toch al komt — dat scheelt een stop op je
+       *     ophaalronde, en dat weegt zwaarder dan één sprong verder;
+       *  2. dichter bij huis;
+       *  3. de kleinste planeet, want ook een extractieplaneet heeft links
+       *     (koppen naar de fabriek) en die kosten CPU naar rato van hun
+       *     lengte. Tussen 1.730 en 10.370 km zit een factor zes. */
+      const alGekozen = new Set(gekozen.map(g => g.systeem))
       const kandidaten = vrij
         .filter(p => (PLANEET_P0[p.type] ?? []).includes(r.naam)
           && !gekozen.some(g => g.planeet === `${p.systeem} ${ROMEINS[p.idx]}`))
-        .sort((a, b) => a.sprongen - b.sprongen)
+        .sort((a, b) =>
+          (alGekozen.has(a.systeem) ? 0 : 1) - (alGekozen.has(b.systeem) ? 0 : 1)
+          || a.sprongen - b.sprongen
+          || (a.straal ?? 0) - (b.straal ?? 0))
       for (const p of kandidaten.slice(0, nodigAantal)) {
         gekozen.push({ systeem: p.systeem, sprongen: p.sprongen, straal: p.straal,
           planeet: `${p.systeem} ${ROMEINS[p.idx]}`, type: p.type, rol: `${r.naam} → P1` })
