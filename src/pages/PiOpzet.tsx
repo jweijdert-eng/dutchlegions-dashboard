@@ -357,10 +357,10 @@ export default function PiOpzet() {
             {iskDag > 0 && (
               <div>
                 <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#3ecf6e' }}>
-                  {fmtISK(iskDag)} <span style={{ fontSize: '0.8rem' }}>ISK/dag</span>
+                  {fmtISK(iskDag)} <span style={{ fontSize: '0.8rem' }}>omzet/dag</span>
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                  tegen Jita sell · {fmtISK(iskDag * 30)}/maand
+                  tegen Jita sell · {fmtISK(iskDag * 30)}/maand · vóór customs-tax
                 </div>
               </div>
             )}
