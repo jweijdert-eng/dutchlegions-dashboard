@@ -150,6 +150,22 @@ def roman(n):
     return r
 planets = {p['_key']: p for p in jrows('mapPlanets.jsonl')}
 moons = {m['_key']: m for m in jrows('mapMoons.jsonl')}
+
+# Planeten per systeem, voor de PI-opzetplanner: [planeet-id, romeins nummer,
+# planeettype]. Het hele universum en niet één regio — een corp verhuist, en dan
+# wil je niet dat er een bundel opnieuw gebouwd moet worden. Onverpakt 1,2 MB,
+# maar gezipt 290 KB, dus dezelfde orde als type-names.json.
+#
+# Let op: welke grondstof er op een planeet zit staat hier NIET in, en ook
+# nergens anders in de SDE of in ESI. Dat is een spelregel per planeettype (en
+# de rijkheid zie je alleen in de client).
+out_planets = {}
+for p in planets.values():
+    out_planets.setdefault(str(p['solarSystemID']), []).append(
+        [p['_key'], p['celestialIndex'], p['typeID']])
+for rij in out_planets.values():
+    rij.sort(key=lambda r: r[1])
+write('planets.json', out_planets)
 corps = {c['_key']: en(c['name']) for c in jrows('npcCorporations.jsonl')}
 ops = {o['_key']: en(o.get('operationName')) for o in jrows('stationOperations.jsonl')}
 def celestial(st):

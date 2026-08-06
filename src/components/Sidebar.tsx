@@ -84,6 +84,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Mining',       path: '/mining',     icon: '⚒️', badge: null },
   { label: 'Planets',      path: '/planets',    icon: '🌑', badge: null },
   { label: 'PI-planner',   path: '/pi-planner', icon: '🌐', badge: null },
+  { label: 'PI-opzet',     path: '/pi-opzet',   icon: '🪐', badge: null },
   { label: 'Fittings',     path: '/fittings',   icon: '🛠️', badge: null },
   { label: 'Blueprints',   path: '/blueprints', icon: '📐', badge: null },
   { label: 'Build vs Buy', path: '/buildvsbuy', icon: '⚖️', badge: null },
