@@ -48,6 +48,9 @@ const lees = () => page.evaluate(() => {
     heeftLava: /Lava/.test(body),
     ajiUitgesloten: /AJI-MA/.test(body),
     logistiek: body.match(/P1 naar \w[\w-]*: ([\d.,]+) m³\/dag/)?.[1] ?? null,
+    accounts: [...document.body.innerText.matchAll(/ACCOUNT (\d) — (\d+) van (\d+) planeten/g)]
+      .map(m => `acc${m[1]}: ${m[2]}/${m[3]}`),
+    grens: body.match(/begrensd door: ([^\n]+)/)?.[1] ?? null,
     squallzin: body.match(/één rit per [\d,]+ dagen[^\n]*/)?.[0] ?? null,
   }
 })

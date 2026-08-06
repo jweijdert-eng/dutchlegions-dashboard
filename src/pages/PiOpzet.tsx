@@ -166,8 +166,15 @@ export default function PiOpzet() {
     localStorage.getItem('piopzet.' + sleutel) ?? leeg
   const [thuis, setThuis] = useState(bewaard('thuis', 'RF-K9W'))
   const [doel, setDoel] = useState(bewaard('doel', 'Robotics'))
-  const [slots, setSlots] = useState(Number(bewaard('slots', '21')))
-  const [accounts, setAccounts] = useState(Number(bewaard('accounts', '4')))
+  /* Per karakter apart, want Interplanetary Consolidation verschilt: één plus
+   * je skillniveau, dus V geeft zes planeten en IV vijf. "6,5,5,5" is dus vier
+   * karakters met samen 21 slots. Eén getal voor het totaal zou de verdeling
+   * scheef maken. */
+  const [perAccount, setPerAccount] = useState(bewaard('peraccount', '6,5,5,5'))
+  const accountSlots = useMemo(() => perAccount.split(/[,;\s]+/)
+    .map(x => Math.max(0, Math.min(6, parseInt(x) || 0))).filter(Boolean), [perAccount])
+  const slots = accountSlots.reduce((a, b) => a + b, 0) || 1
+  const accounts = accountSlots.length || 1
   const [maxSprong, setMaxSprong] = useState(Number(bewaard('maxsprong', '2')))
   const [oogst, setOogst] = useState(Number(bewaard('oogst', '12000')))
   const [perFabriekPlaneet, setPerFabriekPlaneet] = useState(Number(bewaard('perplaneet', '5')))
@@ -175,10 +182,10 @@ export default function PiOpzet() {
     JSON.parse(bewaard('uit', '["AJI-MA"]')))
 
   useEffect(() => {
-    const w = { thuis, doel, slots, accounts, maxsprong: maxSprong, oogst,
+    const w = { thuis, doel, peraccount: perAccount, maxsprong: maxSprong, oogst,
                 perplaneet: perFabriekPlaneet, uit: JSON.stringify(uitgesloten) }
     for (const [k, v] of Object.entries(w)) localStorage.setItem('piopzet.' + k, String(v))
-  }, [thuis, doel, slots, accounts, maxSprong, oogst, perFabriekPlaneet, uitgesloten])
+  }, [thuis, doel, perAccount, maxSprong, oogst, perFabriekPlaneet, uitgesloten])
 
   useEffect(() => {
     let leeft = true
@@ -352,12 +359,10 @@ export default function PiOpzet() {
             style={{ ...invoer, width: 168 }}>
             {doelen.map(d => <option key={d} value={d}>{d}</option>)}
           </select></label>
-        <label style={label}>PLANEETSLOTS
-          <input type="number" min={1} max={100} value={slots}
-            onChange={e => setSlots(Math.max(1, +e.target.value || 1))} style={invoer} /></label>
-        <label style={label}>ACCOUNTS
-          <input type="number" min={1} max={20} value={accounts}
-            onChange={e => setAccounts(Math.max(1, +e.target.value || 1))} style={invoer} /></label>
+        <label style={label} title="Planeten per karakter, gescheiden door komma's. Max 6 (Interplanetary Consolidation V).">
+          PLANETEN PER ACCOUNT
+          <input value={perAccount} onChange={e => setPerAccount(e.target.value)}
+            style={{ ...invoer, width: 96 }} /></label>
         <label style={label}>MAX SPRONGEN
           <input type="number" min={0} max={6} value={maxSprong}
             onChange={e => setMaxSprong(Math.max(0, +e.target.value || 0))} style={invoer} /></label>
@@ -478,13 +483,23 @@ export default function PiOpzet() {
             color: 'var(--text-dim)' }}>
             VOORSTEL — {verdeling.length} planeten over {accounts} accounts
           </h3>
-          {Array.from({ length: accounts }, (_, a) => {
-            const mijn = verdeling.filter((_, i) => i % accounts === a)
+          {(() => {
+            /* Vullen tot de grens van elk karakter in plaats van om en om
+               ronddelen: het ene account kan er zes, de andere vijf. */
+            const vakjes: typeof verdeling[] = accountSlots.map(() => [])
+            let a = 0
+            for (const pl of verdeling) {
+              while (a < vakjes.length && vakjes[a].length >= accountSlots[a]) a++
+              if (a >= vakjes.length) break
+              vakjes[a].push(pl)
+            }
+            return vakjes
+          })().map((mijn, a) => {
             if (!mijn.length) return null
             return (
               <div key={a} style={{ marginBottom: '0.7rem' }}>
                 <div style={{ fontSize: '0.7rem', color: 'var(--gold,#f0c040)', fontWeight: 700 }}>
-                  ACCOUNT {a + 1} — {mijn.length} planeten
+                  ACCOUNT {a + 1} — {mijn.length} van {accountSlots[a]} planeten
                 </div>
                 {mijn.map(p => (
                   <div key={p.planeet} style={{ display: 'flex', gap: 8, fontSize: '0.78rem',
