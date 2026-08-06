@@ -213,13 +213,33 @@ zf.close()
 
 # SDE-versie (officiële build) — voor weergave + update-detectie
 ver = json.loads(urllib.request.urlopen(LATEST, timeout=30).read().decode().splitlines()[0])
+versiepad = os.path.join(PUB, 'sde-version.json')
+
+# `generatedAt` alleen verzetten als CCP echt een nieuwe SDE heeft uitgebracht.
+#
+# Waarom dit ertoe doet: de workflow kijkt met `git status public/` of er iets
+# veranderd is. Zetten we hier elke keer de klok van nu neer, dan ziet git altijd
+# een wijziging — ook als de SDE al weken dezelfde is. Gevolg was een commit,
+# een volledige build én een FTP-upload van de hele site, elke dag opnieuw, voor
+# één tijdstempel. Zelfde SDE erin hoort zelfde bestanden eruit te geven.
+vorige = {}
+try:
+    with open(versiepad, encoding='utf-8') as f:
+        vorige = json.load(f)
+except (OSError, ValueError):
+    pass
+
+zelfde = (vorige.get('build') == ver.get('buildNumber')
+          and vorige.get('releaseDate') == ver.get('releaseDate'))
 version = {
     'build': ver.get('buildNumber'),
     'releaseDate': ver.get('releaseDate'),
-    'generatedAt': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'generatedAt': (vorige.get('generatedAt') if zelfde and vorige.get('generatedAt')
+                    else datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')),
 }
-with open(os.path.join(PUB, 'sde-version.json'), 'w', encoding='utf-8') as f:
+with open(versiepad, 'w', encoding='utf-8') as f:
     json.dump(version, f, ensure_ascii=False)
-print(f'  sde-version.json: build #{version["build"]} ({version["releaseDate"]})')
+print(f'  sde-version.json: build #{version["build"]} ({version["releaseDate"]})'
+      + ('  — ongewijzigd, tijdstempel blijft staan' if zelfde else '  — NIEUW'))
 
 print('Klaar.')
