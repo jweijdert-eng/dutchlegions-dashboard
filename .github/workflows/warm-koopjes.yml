@@ -9,10 +9,24 @@ name: Warm koopjes-scanner
 # heeft er duizenden. Zonder warmer groeit de dekking alleen als iemand de pagina
 # bezoekt. Met deze warmer blijft de hele lijst gescand en zie je koopjes meteen.
 
+# UITGEZET op 2026-08-06 — de klok staat uit, handmatig starten kan nog.
+#
+# Waarom: deze repo is privé, en dan kosten Actions-minuten geld. Elke 15
+# minuten = 96 runs per dag ≈ 2.900 per maand, en GitHub rondt elke job af naar
+# een hele minuut — dus alleen deze warmer at het gratis quotum van 2.000
+# minuten al op. Voor een taak die niets anders doet dan één URL aantikken start
+# GitHub een complete Ubuntu-machine op.
+#
+# Gevolg van het uitzetten: de dekking groeit alleen nog als iemand de
+# koopjespagina opent. De pagina blijft gewoon werken, maar nieuwe contracten
+# staan er niet meteen in.
+#
+# Terugzetten: haal het `#` voor de twee schedule-regels weg. Of laat het draaien
+# waar het thuishoort — de Pi draait toch al 24/7 en doet dit voor niets.
 on:
-  schedule:
-    - cron: '*/15 * * * *'   # elke 15 minuten (GitHub kan wat later uitvoeren bij drukte)
-  workflow_dispatch: {}        # ook handmatig te starten via de Actions-tab
+  # schedule:
+  #   - cron: '*/15 * * * *'   # elke 15 minuten
+  workflow_dispatch: {}        # handmatig te starten via de Actions-tab
 
 # Nooit twee warmers tegelijk; een lopende mag afmaken maar we starten niet dubbel.
 concurrency:
