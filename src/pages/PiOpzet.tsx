@@ -38,14 +38,19 @@ const PLANEETKLEUR: Record<string, string> = {
  *
  * Dit is een SPELREGEL, geen data: het staat niet in de SDE en niet in ESI.
  * Ik heb het er niet uit kunnen halen, dus het staat hier met de hand — stabiel
- * al jaren, maar als CCP het ooit wijzigt moet dit mee. */
+ * al jaren, maar als CCP het ooit wijzigt moet dit mee.
+ *
+ * De namen moeten LETTERLIJK kloppen met die in de SDE, anders lijkt een
+ * grondstof nergens te halen en valt een heel product af. Twee die dat hier
+ * deden: het is 'Microorganisms' (één woord, niet 'Micro Organisms'), en
+ * 'Heavy Water' komt in géén enkel recept voor — die stond er ten onrechte. */
 const PLANEET_P0: Record<string, string[]> = {
-  Temperate: ['Aqueous Liquids', 'Autotrophs', 'Carbon Compounds', 'Complex Organisms', 'Micro Organisms'],
-  Ice: ['Aqueous Liquids', 'Heavy Water', 'Micro Organisms', 'Noble Gas', 'Planktic Colonies'],
+  Temperate: ['Aqueous Liquids', 'Autotrophs', 'Carbon Compounds', 'Complex Organisms', 'Microorganisms'],
+  Ice: ['Aqueous Liquids', 'Microorganisms', 'Noble Gas', 'Planktic Colonies'],
   Gas: ['Aqueous Liquids', 'Base Metals', 'Ionic Solutions', 'Noble Gas', 'Reactive Gas'],
-  Oceanic: ['Aqueous Liquids', 'Carbon Compounds', 'Complex Organisms', 'Micro Organisms', 'Planktic Colonies'],
+  Oceanic: ['Aqueous Liquids', 'Carbon Compounds', 'Complex Organisms', 'Microorganisms', 'Planktic Colonies'],
   Lava: ['Base Metals', 'Felsic Magma', 'Heavy Metals', 'Non-CS Crystals', 'Suspended Plasma'],
-  Barren: ['Aqueous Liquids', 'Base Metals', 'Carbon Compounds', 'Micro Organisms', 'Noble Metals'],
+  Barren: ['Aqueous Liquids', 'Base Metals', 'Carbon Compounds', 'Microorganisms', 'Noble Metals'],
   Storm: ['Aqueous Liquids', 'Base Metals', 'Ionic Solutions', 'Noble Gas', 'Suspended Plasma'],
   Plasma: ['Base Metals', 'Heavy Metals', 'Noble Metals', 'Non-CS Crystals', 'Suspended Plasma'],
 }
@@ -85,48 +90,61 @@ async function jitaPrijzen(ids: number[]): Promise<Map<number, number>> {
 /* ── de keten uitrekenen ───────────────────────────────────────────────── */
 interface Stap { naam: string; typeId: number; fabrieken: number; perUur: number;
                  tier: number; opExtractie: boolean }
-interface Keten { stappen: Stap[]; p0: { naam: string; perUur: number }[] }
+interface Keten { doelId: number; stappen: Stap[]; p0: { naam: string; perUur: number }[] }
 
 function bouwKeten(sch: Record<string, Schem>, namen: Record<string, string>,
                    doel: string, lijnen: number): Keten | null {
+  /* Koppelen op type-id en niet op naam. Drie schematics heten net anders dan
+   * hun product — 'Ukomi Superconductor' maakt 'Ukomi Superconductors',
+   * enkelvoud tegen meervoud, net als High-Tech Transmitter(s) en Transcranial
+   * Microcontroller(s). Op naam matchen zag die als grondstof, waardoor elke
+   * keten die ze gebruikt (de meeste P4's) stukliep op "geen planeet levert
+   * High-Tech Transmitters". */
+  const opId = new Map<number, Schem>()
   const opNaam = new Map<string, Schem>()
-  for (const s of Object.values(sch)) opNaam.set(s.schematic_name, s)
+  for (const s of Object.values(sch)) {
+    opNaam.set(s.schematic_name, s)
+    const uit = s.pins.find(p => !p.is_input)
+    if (uit) opId.set(uit.type_id, s)
+  }
   const start = opNaam.get(doel)
   if (!start) return null
 
-  const stappen = new Map<string, Stap>()
+  const stappen = new Map<number, Stap>()
   const p0 = new Map<string, number>()
 
-  const loop = (naam: string, fabrieken: number, tier: number) => {
-    const s = opNaam.get(naam)
-    if (!s) { p0.set(naam, (p0.get(naam) ?? 0) + fabrieken); return }   // fabrieken = stuks/uur
+  const loop = (s: Schem, fabrieken: number, tier: number) => {
     const uit = s.pins.find(p => !p.is_input)!
     const perUur = uit.quantity * (3600 / s.cycle_time) * fabrieken
-    const b = stappen.get(naam)
+    const b = stappen.get(uit.type_id)
     if (b) { b.fabrieken += fabrieken; b.perUur += perUur }
     else {
-      // Een stap die alleen P0 als invoer heeft is P1, en die fabriek hoort op
-      // de extractieplaneet zelf — anders sleep je vier keer zo veel volume.
-      const alleenP0 = s.pins.filter(p => p.is_input)
-        .every(p => !opNaam.has(namen[String(p.type_id)] ?? ''))
-      stappen.set(naam, { naam, typeId: uit.type_id, fabrieken, perUur, tier,
-                          opExtractie: alleenP0 })
+      // Alleen P0 als invoer = een P1-fabriek, en die hoort op de
+      // extractieplaneet zelf; anders sleep je vier keer zo veel volume.
+      const alleenP0 = s.pins.filter(p => p.is_input).every(p => !opId.has(p.type_id))
+      stappen.set(uit.type_id, {
+        naam: namen[String(uit.type_id)] ?? s.schematic_name,
+        typeId: uit.type_id, fabrieken, perUur, tier, opExtractie: alleenP0,
+      })
     }
     for (const inp of s.pins.filter(p => p.is_input)) {
-      const inNaam = namen[String(inp.type_id)] ?? String(inp.type_id)
-      const nodig = inp.quantity * (3600 / s.cycle_time) * fabrieken     // stuks/uur
-      const bron = opNaam.get(inNaam)
-      if (!bron) { p0.set(inNaam, (p0.get(inNaam) ?? 0) + nodig); continue }
+      const nodig = inp.quantity * (3600 / s.cycle_time) * fabrieken   // stuks/uur
+      const bron = opId.get(inp.type_id)
+      if (!bron) {
+        const rn = namen[String(inp.type_id)] ?? String(inp.type_id)
+        p0.set(rn, (p0.get(rn) ?? 0) + nodig)
+        continue
+      }
       const bronUit = bron.pins.find(p => !p.is_input)!
-      const perFabriek = bronUit.quantity * (3600 / bron.cycle_time)
-      loop(inNaam, nodig / perFabriek, tier - 1)
+      loop(bron, nodig / (bronUit.quantity * (3600 / bron.cycle_time)), tier - 1)
     }
   }
-  loop(doel, lijnen, 9)
+  loop(start, lijnen, 9)
 
   const lijst = [...stappen.values()].sort((a, b) => b.tier - a.tier)
-  lijst.forEach((s, i) => { s.tier = lijst.length - i })   // netjes hernummeren
+  lijst.forEach((s, i) => { s.tier = lijst.length - i })
   return {
+    doelId: start.pins.find(p => !p.is_input)!.type_id,
     stappen: lijst,
     p0: [...p0.entries()].map(([naam, perUur]) => ({ naam, perUur }))
       .sort((a, b) => a.naam.localeCompare(b.naam)),
@@ -185,10 +203,10 @@ export default function PiOpzet() {
 
   /* alle P2/P3/P4-recepten om uit te kiezen */
   const doelen = useMemo(() => {
-    const opNaam = new Set(Object.values(sch).map(s => s.schematic_name))
+    const maakt = new Set(Object.values(sch)
+      .map(s => s.pins.find(p => !p.is_input)?.type_id).filter(Boolean))
     return [...Object.values(sch)]
-      .filter(s => s.pins.filter(p => p.is_input)
-        .every(p => opNaam.has(namen[String(p.type_id)] ?? '')))
+      .filter(s => s.pins.filter(p => p.is_input).some(p => maakt.has(p.type_id)))
       .map(s => s.schematic_name).sort()
   }, [sch, namen])
 
@@ -255,7 +273,7 @@ export default function PiOpzet() {
   /* Het eindproduct staat vooraan: de lijst is aflopend op tier gesorteerd.
    * Stond hier eerst [length - 1], en dat is juist de láágste trap — de teller
    * riep dan 5.760 Robotics/dag terwijl het er 216 zijn. */
-  const doelStap = eenLijn?.stappen.find(s => s.naam === doel) ?? eenLijn?.stappen[0]
+  const doelStap = eenLijn?.stappen.find(s => s.typeId === eenLijn.doelId)
   const perDag = (doelStap?.perUur ?? 0) * 24 * (plan?.lijnen ?? 0)
   const iskDag = perDag * (prijs.get(doelStap?.typeId ?? 0) ?? 0)
 
