@@ -2,9 +2,15 @@ name: Update SDE
 
 on:
   schedule:
-    # EVE-downtime is 11:00 UTC; CCP brengt nieuwe SDE/patches tijdens die downtime uit.
-    # 12:00 UTC = 1u buffer erna → een nieuwe SDE staat dezelfde dag live.
-    - cron: '0 12 * * *'   # elke dag 12:00 UTC (na EVE-downtime)
+    # EVE-downtime is 11:00 UTC; CCP brengt nieuwe SDE/patches tijdens die
+    # downtime uit. 12:00 UTC = 1 uur buffer erna.
+    #
+    # Eén keer per week, op vrijdag. CCP brengt de SDE bijna elke werkdag uit
+    # (27 releases in twee maanden, verspreid over ma t/m vr — er is geen vaste
+    # patchdag), dus vrijdag pakt op wat er die week is verschenen. Prijs: je
+    # data kan tot een week oud zijn, en tussentijdse builds sla je over — je
+    # haalt altijd alleen de nieuwste op.
+    - cron: '0 12 * * 5'   # vrijdag 12:00 UTC (na EVE-downtime)
   workflow_dispatch: {}     # handmatig te starten
 
 permissions:
