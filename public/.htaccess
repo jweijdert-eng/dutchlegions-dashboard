@@ -2,3 +2,22 @@ Options -MultiViews
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.html [QSA,L]
+
+# index.html nooit laten cachen.
+#
+# De bundels in /assets hebben een hash in hun naam en mogen daarom een week
+# blijven staan; index.html is het enige bestand dat naar die hashes verwijst.
+# Zonder deze regel stuurt de server hem zonder Cache-Control, mag de browser
+# hem naar eigen inzicht bewaren, en blijf je een oude versie zien terwijl er
+# allang een nieuwe gedeployd is. Precies dat gebeurde op 6 augustus 2026: de
+# site was bijgewerkt, de browser toonde de opzet van uren eerder.
+<FilesMatch "^index\.html$">
+  Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
+
+# De SDE-bundels wisselen alleen als CCP iets uitbrengt (nu wekelijks), maar ze
+# hebben geen hash in hun naam. Een dag cachen scheelt verkeer zonder dat je
+# lang met verouderde data zit.
+<FilesMatch "\.json$">
+  Header set Cache-Control "public, max-age=86400"
+</FilesMatch>
