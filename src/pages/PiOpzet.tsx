@@ -29,6 +29,9 @@ const SQUALL = 45000
  * waarden en geen meting. Links kosten er nog bovenop, naar rato van hun
  * lengte; vandaar dat de planner de kleinste planeten uitkiest. */
 const CPU = { launchpad: 3600, ecu: 400, basis: 200, geavanceerd: 500, opslag: 500 }
+/* Een Storage Facility houdt 12.000 m³ vast tegen 500 CPU; een launchpad 10.000
+ * tegen 3.600. Een launchpad kan als enige naar de customs office schieten, dus
+ * daar heb je er één van nodig — al het bufferen doe je met storage. */
 const ccBudget = (niveau: number) => 1675 + 2300 * niveau
 
 /* Planeettypes. De id's staan in de SDE, de namen niet in type-names.json. */
@@ -553,7 +556,7 @@ export default function PiOpzet() {
       {/* ── de opstelling op een planeet ── */}
       {plan && plan.lijnen > 0 && (() => {
         const ex = CPU.launchpad + 2 * CPU.ecu + 2 * CPU.basis
-        const fa = CPU.launchpad + perFabriekPlaneet * CPU.geavanceerd
+        const fa = CPU.launchpad + CPU.opslag + perFabriekPlaneet * CPU.geavanceerd
         const budget = ccBudget(ccNiveau)
         const balk = (n: number) => n > budget
           ? { color: 'var(--red)' } : { color: '#3ecf6e' }
@@ -574,9 +577,11 @@ export default function PiOpzet() {
               <div style={{ minWidth: 280 }}>
                 <b style={{ fontSize: '0.82rem' }}>Extractieplaneet ({plan.extractie}×)</b>
                 <pre style={{ margin: '.4rem 0', fontSize: '.72rem', lineHeight: 1.5,
-                  color: 'var(--text-dim)' }}>{`   extractor ──┐
-               ├── LAUNCHPAD ──┬── basis-fabriek
-   extractor ──┘               └── basis-fabriek`}</pre>
+                  color: 'var(--text-dim)' }}>{`      extractor   basis-fabriek
+               \   /
+                LAUNCHPAD
+               /   \
+      extractor   basis-fabriek`}</pre>
                 <div style={{ fontSize: '.74rem', color: 'var(--text-dim)' }}>
                   Twee extractors op de hotspot, de launchpad ertussen, twee
                   basisfabrieken die er P1 van maken. Extractorkoppen zijn gratis —
@@ -590,13 +595,15 @@ export default function PiOpzet() {
               <div style={{ minWidth: 280 }}>
                 <b style={{ fontSize: '0.82rem' }}>Fabrieksplaneet ({plan.fabriek}×)</b>
                 <pre style={{ margin: '.4rem 0', fontSize: '.72rem', lineHeight: 1.5,
-                  color: 'var(--text-dim)' }}>{`   fabriek ──┐   ┌── fabriek
-             ├───┤
-   fabriek ──┘   └── fabriek
-        alle vier aan de LAUNCHPAD`}</pre>
+                  color: 'var(--text-dim)' }}>{`   fabriek   STORAGE   fabriek
+          \    |    /
+           LAUNCHPAD
+          /    |    \
+   fabriek   fabriek   fabriek`}</pre>
                 <div style={{ fontSize: '.74rem', color: 'var(--text-dim)' }}>
-                  Launchpad in het midden, fabrieken er strak omheen. Alles loopt
-                  via de launchpad, dus die links wil je zo kort mogelijk.
+                  Launchpad in het midden, fabrieken er strak omheen. Eén storage
+                  erbij voor de buffer: die houdt 12.000 m³ vast tegen 500 CPU,
+                  waar een tweede launchpad er 3.600 zou kosten voor minder ruimte.
                 </div>
                 <div style={{ marginTop: '.4rem', fontSize: '.8rem', ...balk(fa) }}>
                   {fmt(fa)} van {fmt(budget)} CPU
