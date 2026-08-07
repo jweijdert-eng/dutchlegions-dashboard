@@ -23,6 +23,14 @@ interface Schem { schematic_name: string; cycle_time: number; pins: Pin[] }
  * cargo — opgevraagd uit ESI, dogma-attribuut 5646. */
 const SQUALL = 45000
 
+/* CPU-verbruik per gebouw, opgevraagd uit ESI (dogma 49 'CPU Load').
+ * Het budget van een command center is 1.675 plus 2.300 per niveau Command
+ * Center Upgrades — dat laatste geeft ESI niet prijs, dus dat zijn de bekende
+ * waarden en geen meting. Links kosten er nog bovenop, naar rato van hun
+ * lengte; vandaar dat de planner de kleinste planeten uitkiest. */
+const CPU = { launchpad: 3600, ecu: 400, basis: 200, geavanceerd: 500, opslag: 500 }
+const ccBudget = (niveau: number) => 1675 + 2300 * niveau
+
 /* Planeettypes. De id's staan in de SDE, de namen niet in type-names.json. */
 const PLANEETTYPE: Record<number, string> = {
   11: 'Temperate', 12: 'Ice', 13: 'Gas', 2014: 'Oceanic', 2015: 'Lava',
@@ -178,14 +186,16 @@ export default function PiOpzet() {
   const [maxSprong, setMaxSprong] = useState(Number(bewaard('maxsprong', '2')))
   const [oogst, setOogst] = useState(Number(bewaard('oogst', '12000')))
   const [perFabriekPlaneet, setPerFabriekPlaneet] = useState(Number(bewaard('perplaneet', '5')))
+  const [ccNiveau, setCcNiveau] = useState(Number(bewaard('ccniveau', '4')))
   const [uitgesloten, setUitgesloten] = useState<string[]>(
     JSON.parse(bewaard('uit', '["AJI-MA"]')))
 
   useEffect(() => {
     const w = { thuis, doel, peraccount: perAccount, maxsprong: maxSprong, oogst,
-                perplaneet: perFabriekPlaneet, uit: JSON.stringify(uitgesloten) }
+                perplaneet: perFabriekPlaneet, ccniveau: ccNiveau,
+                uit: JSON.stringify(uitgesloten) }
     for (const [k, v] of Object.entries(w)) localStorage.setItem('piopzet.' + k, String(v))
-  }, [thuis, doel, perAccount, maxSprong, oogst, perFabriekPlaneet, uitgesloten])
+  }, [thuis, doel, perAccount, maxSprong, oogst, perFabriekPlaneet, ccNiveau, uitgesloten])
 
   useEffect(() => {
     let leeft = true
@@ -385,6 +395,11 @@ export default function PiOpzet() {
           P0/UUR PER PLANEET
           <input type="number" min={1000} step={1000} value={oogst}
             onChange={e => setOogst(Math.max(1, +e.target.value || 1))} style={invoer} /></label>
+        <label style={label} title="Command Center Upgrades. Bepaalt hoeveel CPU en powergrid je command center levert.">
+          CCU-NIVEAU
+          <input type="number" min={0} max={5} value={ccNiveau}
+            onChange={e => setCcNiveau(Math.max(0, Math.min(5, +e.target.value || 0)))}
+            style={invoer} /></label>
         <label style={label}>FABRIEKEN/PLANEET
           <input type="number" min={1} max={12} value={perFabriekPlaneet}
             onChange={e => setPerFabriekPlaneet(Math.max(1, +e.target.value || 1))} style={invoer} /></label>
@@ -534,6 +549,64 @@ export default function PiOpzet() {
           })}
         </div>
       )}
+
+      {/* ── de opstelling op een planeet ── */}
+      {plan && plan.lijnen > 0 && (() => {
+        const ex = CPU.launchpad + 2 * CPU.ecu + 2 * CPU.basis
+        const fa = CPU.launchpad + perFabriekPlaneet * CPU.geavanceerd
+        const budget = ccBudget(ccNiveau)
+        const balk = (n: number) => n > budget
+          ? { color: 'var(--red)' } : { color: '#3ecf6e' }
+        return (
+          <div style={kaart}>
+            <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.72rem', letterSpacing: '0.1em',
+              color: 'var(--text-dim)' }}>DE OPSTELLING PER PLANEET</h3>
+            <div style={{ fontSize: '.74rem', color: 'var(--text-dim)', marginBottom: '.7rem' }}>
+              Hieronder staat wát er op een planeet komt en wat dat aan CPU kost.
+              Het echte neerzetten en verbinden doe je op het oppervlak — daar is{' '}
+              <a href="https://industrialeve.com/colony-builder/" target="_blank"
+                 rel="noreferrer" style={{ color: 'var(--gold,#f0c040)' }}>
+                de colony builder van industrialeve.com</a> handig voor. Die kan
+              je opzet niet vanaf hier inladen, dus kies daar zelf het planeettype
+              en zet de gebouwen hieronder neer.
+            </div>
+            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 280 }}>
+                <b style={{ fontSize: '0.82rem' }}>Extractieplaneet ({plan.extractie}×)</b>
+                <pre style={{ margin: '.4rem 0', fontSize: '.72rem', lineHeight: 1.5,
+                  color: 'var(--text-dim)' }}>{`   extractor ──┐
+               ├── LAUNCHPAD ──┬── basis-fabriek
+   extractor ──┘               └── basis-fabriek`}</pre>
+                <div style={{ fontSize: '.74rem', color: 'var(--text-dim)' }}>
+                  Twee extractors op de hotspot, de launchpad ertussen, twee
+                  basisfabrieken die er P1 van maken. Extractorkoppen zijn gratis —
+                  alleen de links tússen gebouwen kosten CPU.
+                </div>
+                <div style={{ marginTop: '.4rem', fontSize: '.8rem', ...balk(ex) }}>
+                  {fmt(ex)} van {fmt(budget)} CPU
+                  <span style={{ color: 'var(--text-dim)' }}> · rest voor links</span>
+                </div>
+              </div>
+              <div style={{ minWidth: 280 }}>
+                <b style={{ fontSize: '0.82rem' }}>Fabrieksplaneet ({plan.fabriek}×)</b>
+                <pre style={{ margin: '.4rem 0', fontSize: '.72rem', lineHeight: 1.5,
+                  color: 'var(--text-dim)' }}>{`   fabriek ──┐   ┌── fabriek
+             ├───┤
+   fabriek ──┘   └── fabriek
+        alle vier aan de LAUNCHPAD`}</pre>
+                <div style={{ fontSize: '.74rem', color: 'var(--text-dim)' }}>
+                  Launchpad in het midden, fabrieken er strak omheen. Alles loopt
+                  via de launchpad, dus die links wil je zo kort mogelijk.
+                </div>
+                <div style={{ marginTop: '.4rem', fontSize: '.8rem', ...balk(fa) }}>
+                  {fmt(fa)} van {fmt(budget)} CPU
+                  <span style={{ color: 'var(--text-dim)' }}> · rest voor links</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── wat er in de buurt ligt ── */}
       <div style={kaart}>
