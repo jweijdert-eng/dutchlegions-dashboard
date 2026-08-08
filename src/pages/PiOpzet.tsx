@@ -24,15 +24,20 @@ interface Schem { schematic_name: string; cycle_time: number; pins: Pin[] }
 const SQUALL = 45000
 
 /* CPU-verbruik per gebouw, opgevraagd uit ESI (dogma 49 'CPU Load').
- * Het budget van een command center is 1.675 plus 2.300 per niveau Command
- * Center Upgrades — dat laatste geeft ESI niet prijs, dus dat zijn de bekende
- * waarden en geen meting. Links kosten er nog bovenop, naar rato van hun
- * lengte; vandaar dat de planner de kleinste planeten uitkiest. */
+ *
+ * Het budget van een command center is 1.675 plus 5.000 per niveau Command
+ * Center Upgrades. ESI geeft die bonus niet prijs, dus dit is nagerekend aan
+ * een echte kolonie: een character met CCU 4 had een launchpad plus achttien
+ * advanced factories staan — 12.600 CPU — en de game liet dat toe. Met de
+ * 2.300 per niveau die hier eerst stond zou dat niet gepast hebben.
+ *
+ * Links kosten er nog bovenop, naar rato van hun lengte; vandaar dat de planner
+ * de kleinste planeten uitkiest. */
 const CPU = { launchpad: 3600, ecu: 400, basis: 200, geavanceerd: 500, opslag: 500 }
 /* Een Storage Facility houdt 12.000 m³ vast tegen 500 CPU; een launchpad 10.000
  * tegen 3.600. Een launchpad kan als enige naar de customs office schieten, dus
  * daar heb je er één van nodig — al het bufferen doe je met storage. */
-const ccBudget = (niveau: number) => 1675 + 2300 * niveau
+const ccBudget = (niveau: number) => 1675 + 5000 * niveau
 
 /* Planeettypes. De id's staan in de SDE, de namen niet in type-names.json. */
 const PLANEETTYPE: Record<number, string> = {
