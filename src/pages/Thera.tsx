@@ -5,9 +5,9 @@ import { useMyRole } from '../hooks/useMyRole'
 import { useAuth } from '../auth/AuthContext'
 import { setWaypoint } from '../api/esi'
 
-// Thera/Turnur-wachtpost: welke wormhole-verbindingen komen er nú uit in Delve
-// (of vlak bij de staging)? Data uit EVE-Scout via api/thera.php, die de nieuwe
-// gaten ook meteen naar Discord stuurt. Zie de admin-kaart onderaan.
+// Thera/Turnur-wachtpost: welke wormhole-verbindingen komen er nú uit in de
+// bewaakte systemen? Data uit EVE-Scout via api/thera.php, die nieuwe gaten ook
+// meteen naar Discord stuurt. Waaklijst en webhook staan in het ⚙-paneel.
 
 interface Row {
   op_lijst: boolean
@@ -58,6 +58,24 @@ interface Cfg {
   pollUrl: string
 }
 
+// ── Stijl (zelfde look als de andere pagina's) ──
+const INPUT: CSSProperties = {
+  background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2,
+  color: 'var(--text)', fontSize: '0.75rem', padding: '0.35rem 0.5rem', outline: 'none',
+}
+const LABEL: CSSProperties = {
+  fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.25rem',
+}
+const TH: CSSProperties = {
+  textAlign: 'left', padding: '0.4rem 0.7rem', color: 'var(--text-dim)', fontSize: '0.58rem',
+  fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+}
+const TD: CSSProperties = { textAlign: 'left', padding: '0.4rem 0.7rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }
+const PANEL: CSSProperties = {
+  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.6rem 0.8rem',
+}
+const KNOP: CSSProperties = { ...INPUT, cursor: 'pointer', fontWeight: 600 }
+
 function fmtRest(iso: string | null, now: number) {
   if (!iso) return '—'
   const ms = Date.parse(iso) - now
@@ -83,7 +101,7 @@ function secClass(sec: number) {
 function jumpKleur(j: number | null) {
   if (j === null) return 'var(--text-dim)'
   if (j <= 3) return 'var(--red)'
-  if (j <= 6) return '#f0932b'
+  if (j <= 6) return 'var(--gold)'
   return 'var(--text-dim)'
 }
 
@@ -95,6 +113,7 @@ export default function Thera() {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [cfg, setCfg] = useState<Cfg | null>(null)
   const [cfgOpen, setCfgOpen] = useState(false)
+  const [zoneOpen, setZoneOpen] = useState(false)
 
   const isAdmin = useMyRole() === 'admin'
   const { activeTokens } = useAuth()
@@ -174,75 +193,92 @@ export default function Thera() {
   return (
     <Layout header={
       <PageHeader
-        title="Thera-wachtpost"
-        sub={`wormholes vanuit Thera & Turnur die uitkomen in ${zoneTekst} — live via EVE-Scout`}
+        title="🌀 Thera-wachtpost"
+        sub={`Wormholes vanuit Thera & Turnur die uitkomen in ${zoneTekst}. Live uit EVE-Scout; nieuwe gaten gaan automatisch naar Discord.`}
       />
     }>
-      <style>{`@keyframes theraPuls{0%,100%{opacity:1}50%{opacity:.45}}`}</style>
-      {msg && (
-        <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 50, padding: '.6rem .9rem',
-          borderRadius: 8, fontSize: '.82rem', fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.4)',
-          background: msg.ok ? 'rgba(62,207,110,.16)' : 'rgba(224,85,85,.16)',
-          border: `1px solid ${msg.ok ? 'rgba(62,207,110,.55)' : 'rgba(224,85,85,.55)'}`,
-          color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.text}</div>
-      )}
-      {fout && <div className="card" style={{ padding: '1rem', color: 'var(--red)' }}>{fout}</div>}
+      {/* Zacht pulseren: trekt de aandacht zonder het getal onleesbaar te maken. */}
+      <style>{`@keyframes theraPuls{0%,100%{opacity:1}50%{opacity:.72}}`}</style>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
-        <Stat label="Open gaten" waarde={String(feed?.aantal ?? 0)} />
-        <Stat label="In de waakzone" waarde={String(feed?.op_lijst ?? 0)} kleur="var(--gold)"
-              sub={waaklijst.length ? `${waaklijst.length} systemen bewaakt` : undefined}
-              subKleur="var(--text-dim)" />
-        <Stat label="≤ 3 sprongen" waarde={String(feed?.dichtbij ?? 0)} kleur="var(--red)"
-              alert={!!feed?.dichtbij} sub={feed?.dichtbij ? '⚠ vlak naast de deur' : undefined} />
-        <Stat label="Discord-melding" waarde={feed?.discord ? 'aan' : 'uit'}
-              kleur={feed?.discord ? 'var(--green)' : 'var(--text-dim)'} />
+      {msg && (
+        <div style={{
+          position: 'fixed', right: 18, bottom: 18, zIndex: 50, padding: '0.5rem 0.8rem', borderRadius: 4,
+          fontSize: '0.72rem', fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.4)',
+          background: msg.ok ? 'rgba(62,207,110,.14)' : 'rgba(224,85,85,.14)',
+          border: `1px solid ${msg.ok ? 'var(--green)' : 'var(--red)'}`,
+          color: msg.ok ? 'var(--green)' : 'var(--red)',
+        }}>{msg.text}</div>
+      )}
+
+      {fout && (
+        <div style={{ ...PANEL, color: 'var(--red)', fontSize: '0.75rem', marginBottom: '0.7rem' }}>{fout}</div>
+      )}
+
+      {/* Tellers */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.7rem' }}>
+        <Tegel label="OPEN GATEN" waarde={feed?.aantal ?? 0} />
+        <Tegel label="IN DE WAAKZONE" waarde={feed?.op_lijst ?? 0} kleur="var(--gold)"
+               sub={waaklijst.length ? `${waaklijst.length} systemen bewaakt` : undefined} />
+        <Tegel label="≤ 3 SPRONGEN" waarde={feed?.dichtbij ?? 0} kleur="var(--red)"
+               alarm={!!feed?.dichtbij} sub={feed?.dichtbij ? 'vlak naast de deur' : undefined} />
+        <Tegel label="DISCORD" waarde={feed?.discord ? 'aan' : 'uit'}
+               kleur={feed?.discord ? 'var(--green)' : 'var(--text-dim)'} />
       </div>
 
-      {!!waaklijst.length && (
-        <details style={{ marginBottom: '.8rem' }}>
-          <summary style={{ cursor: 'pointer', fontSize: '.72rem', color: 'var(--text-dim)' }}>
-            Waakzone: {waaklijst.length} systemen
-          </summary>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.4rem' }}>
-            {waaklijst.map(s => (
-              <span key={s} style={{ fontSize: '.68rem', padding: '.1rem .45rem', borderRadius: 999,
-                background: 'rgba(240,147,43,.1)', border: '1px solid rgba(240,147,43,.35)' }}>{s}</span>
-            ))}
-          </div>
-        </details>
-      )}
-
-      <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '.8rem' }}>
-        <span style={{ color: 'var(--text-dim)', fontSize: '.8rem' }}>
+      {/* Waakzone + acties */}
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        {!!waaklijst.length && (
+          <button onClick={() => setZoneOpen(o => !o)} style={{ ...KNOP, fontSize: '0.66rem' }}>
+            {zoneOpen ? '▾' : '▸'} Waakzone ({waaklijst.length})
+          </button>
+        )}
+        <span style={{ fontSize: '0.66rem', color: 'var(--text-dim)' }}>
           Afstanden vanaf <strong style={{ color: 'var(--text)' }}>{feed?.home_naam ?? '—'}</strong>
         </span>
         <span style={{ flex: 1 }} />
         {feed?.bijgewerkt && (
-          <span style={{ color: 'var(--text-dim)', fontSize: '.72rem' }}>
+          <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
             bijgewerkt {new Date(feed.bijgewerkt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
-        <button className="btn btn-sm" onClick={() => void haal(true)} disabled={laden}>↻</button>
-        {isAdmin && <button className="btn btn-sm" onClick={() => setCfgOpen(o => !o)}>⚙ Meldingen</button>}
+        <button onClick={() => void haal(true)} disabled={laden} style={{ ...KNOP, fontSize: '0.66rem' }}>↻ Ververs</button>
+        {isAdmin && (
+          <button onClick={() => setCfgOpen(o => !o)}
+            style={{ ...KNOP, fontSize: '0.66rem', borderColor: cfgOpen ? 'var(--blue)' : 'var(--border)' }}>
+            ⚙ Meldingen
+          </button>
+        )}
       </div>
 
+      {zoneOpen && !!waaklijst.length && (
+        <div style={{ ...PANEL, display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.7rem' }}>
+          {waaklijst.map(s => (
+            <span key={s} style={{
+              fontSize: '0.66rem', padding: '0.1rem 0.4rem', borderRadius: 2, fontFamily: 'monospace',
+              background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text-dim)',
+            }}>{s}</span>
+          ))}
+        </div>
+      )}
+
       {!laden && !rows.length && (
-        <div className="card" style={{ padding: '1rem', color: 'var(--text-dim)' }}>
+        <div style={{ ...PANEL, color: 'var(--text-dim)', fontSize: '0.75rem' }}>
           Op dit moment geen bekende Thera/Turnur-verbinding naar {zoneTekst}. Rustig aan het front — of nog niet gescout.
         </div>
       )}
 
       {!!rows.length && (
-        <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.86rem' }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ color: 'var(--text-dim)', textAlign: 'left' }}>
-                {['Systeem', 'Afstand', 'Vanuit', 'Signatures', 'Max schip', 'Verloopt', 'Gezien'].map(h => (
-                  <th key={h} style={{ padding: '.6rem .7rem', fontSize: '.64rem', fontWeight: 700,
-                    letterSpacing: '.05em', textTransform: 'uppercase', whiteSpace: 'nowrap',
-                    borderBottom: '1px solid var(--border)' }}>{h}</th>
-                ))}
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
+                <th style={TH}>Systeem</th>
+                <th style={TH}>Afstand</th>
+                <th style={TH}>Vanuit</th>
+                <th style={TH}>Signatures</th>
+                <th style={TH}>Max schip</th>
+                <th style={TH}>Verloopt</th>
+                <th style={TH}>Gezien</th>
               </tr>
             </thead>
             <tbody>
@@ -251,44 +287,44 @@ export default function Thera() {
                 return (
                   <tr key={r.sig_id} style={{
                     borderBottom: '1px solid var(--border)',
-                    borderLeft: `3px solid ${dichtbij ? 'var(--red)' : r.op_lijst ? 'var(--gold)' : 'transparent'}`,
-                    background: dichtbij ? 'rgba(224,85,85,.06)' : r.op_lijst ? 'rgba(240,147,43,.06)' : undefined,
+                    borderLeft: `2px solid ${dichtbij ? 'var(--red)' : r.op_lijst ? 'var(--gold)' : 'transparent'}`,
+                    background: dichtbij ? 'rgba(224,85,85,.06)' : undefined,
                   }}>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
-                      <span style={{ color: secClass(r.sec), fontWeight: 700, marginRight: '.35rem',
+                    <td style={TD}>
+                      <span style={{ color: secClass(r.sec), fontWeight: 700, marginRight: '0.35rem',
                                      fontVariantNumeric: 'tabular-nums' }}>{r.sec.toFixed(1)}</span>
                       <button onClick={() => void zetRoute(r)} title={`Route naar ${r.system} zetten (Set Destination)`}
                         style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
                                  fontWeight: 600, color: 'var(--blue)', cursor: 'pointer' }}>{r.system}</button>
                       <a href={`https://evemaps.dotlan.net/system/${encodeURIComponent(r.system.replace(/ /g, '_'))}`}
                          target="_blank" rel="noopener" title={`${r.system} op dotlan`}
-                         style={{ marginLeft: '.4rem', textDecoration: 'none', fontSize: '.8rem', opacity: .65 }}>🗺</a>
-                      <div style={{ color: 'var(--text-dim)', fontSize: '.66rem' }}>{r.region}</div>
+                         style={{ marginLeft: '0.35rem', textDecoration: 'none', fontSize: '0.72rem', opacity: .6 }}>🗺</a>
+                      <div style={{ color: 'var(--text-dim)', fontSize: '0.62rem' }}>{r.region}</div>
                     </td>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap', fontWeight: 800,
-                                 color: jumpKleur(r.jumps), animation: dichtbij ? 'theraPuls 1.6s ease-in-out infinite' : undefined }}>
+                    <td style={{ ...TD, fontWeight: 700, color: jumpKleur(r.jumps),
+                                 animation: dichtbij ? 'theraPuls 1.6s ease-in-out infinite' : undefined }}>
                       {r.jumps === null ? '—' : `${r.jumps} spr.`}
                     </td>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '.62rem', fontWeight: 800, padding: '.12rem .4rem', borderRadius: 5,
-                        background: 'rgba(0,180,216,.12)', border: '1px solid rgba(0,180,216,.4)',
-                        color: '#7fe0ff' }}>{r.out_system}</span>
-                      <div style={{ color: 'var(--text-dim)', fontSize: '.66rem' }}>{r.wh_type || '—'}</div>
+                    <td style={TD}>
+                      <span style={{
+                        fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.06em', padding: '0.1rem 0.35rem',
+                        borderRadius: 2, background: 'var(--surface2)', border: '1px solid var(--border)',
+                        color: 'var(--blue)',
+                      }}>{r.out_system.toUpperCase()}</span>
+                      <div style={{ color: 'var(--text-dim)', fontSize: '0.62rem' }}>{r.wh_type || '—'}</div>
                     </td>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: '.78rem' }}>
+                    <td style={{ ...TD, fontFamily: 'monospace', fontSize: '0.72rem' }}>
                       <button onClick={() => kopieer(r.in_sig)} title="kopieer sig-id"
                         style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
                                  color: 'var(--text)', cursor: 'pointer' }}>{r.in_sig || '???'}</button>
                       <span style={{ color: 'var(--text-dim)' }}> · hier</span>
-                      <div style={{ color: 'var(--text-dim)' }}>{r.out_sig || '???'} · {r.out_system}</div>
+                      <div style={{ color: 'var(--text-dim)', fontSize: '0.66rem' }}>{r.out_sig || '???'} · {r.out_system}</div>
                     </td>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>{r.maat || '—'}</td>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtRest(r.expires_at, now)}
-                    </td>
-                    <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap', color: 'var(--text-dim)', fontSize: '.72rem' }}>
+                    <td style={TD}>{r.maat || '—'}</td>
+                    <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>{fmtRest(r.expires_at, now)}</td>
+                    <td style={{ ...TD, color: 'var(--text-dim)', fontSize: '0.66rem' }}>
                       {fmtSinds(r.first_seen, now)}
-                      {r.door && <div style={{ fontSize: '.64rem' }}>door {r.door}</div>}
+                      {r.door && <div style={{ fontSize: '0.6rem' }}>door {r.door}</div>}
                     </td>
                   </tr>
                 )
@@ -299,16 +335,15 @@ export default function Thera() {
       )}
 
       {!!feed?.gesloten?.length && (
-        <div className="card" style={{ padding: '.8rem 1rem', marginTop: '1rem' }}>
-          <div style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.05em',
-                        textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: '.4rem' }}>
-            Recent verdwenen (laatste 3 uur)
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem' }}>
+        <div style={{ marginTop: '0.7rem' }}>
+          <div style={LABEL}>RECENT VERDWENEN (LAATSTE 3 UUR)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
             {feed.gesloten.map(r => (
-              <span key={r.sig_id} style={{ fontSize: '.72rem', padding: '.15rem .5rem', borderRadius: 999,
-                background: 'rgba(255,255,255,.05)', border: '1px solid var(--border)', color: 'var(--text-dim)' }}>
-                {r.system} ← {r.out_system} · {r.closed_at ? fmtSinds(r.closed_at, now) : ''} geleden
+              <span key={r.sig_id} style={{
+                fontSize: '0.66rem', padding: '0.1rem 0.4rem', borderRadius: 2,
+                background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text-dim)',
+              }}>
+                {r.system} ← {r.out_system} · {r.closed_at ? `${fmtSinds(r.closed_at, now)} geleden` : ''}
               </span>
             ))}
           </div>
@@ -316,91 +351,94 @@ export default function Thera() {
       )}
 
       {cfgOpen && isAdmin && (
-        <div className="card" style={{ padding: '1rem', marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '.7rem' }}>
-          <div style={{ fontSize: '.85rem', fontWeight: 700 }}>⚙ Discord-melding</div>
-          {!cfg && <div style={{ color: 'var(--text-dim)', fontSize: '.75rem' }}>Instellingen laden…</div>}
+        <div style={{ ...PANEL, marginTop: '0.7rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={LABEL}>⚙ DISCORD-MELDING</div>
+          {!cfg && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Instellingen laden…</div>}
           {cfg && (
             <>
-              <label style={{ fontSize: '.7rem', color: 'var(--text-dim)' }}>
-                Webhook-URL (Discord → kanaalinstellingen → Integraties → Webhooks)
+              <div>
+                <div style={LABEL}>WEBHOOK-URL (DISCORD → KANAALINSTELLINGEN → INTEGRATIES)</div>
                 <input value={cfg.webhook} onChange={e => setCfg({ ...cfg, webhook: e.target.value })}
-                  placeholder="https://discord.com/api/webhooks/…"
-                  style={inputStyle} />
-              </label>
-              <div style={{ display: 'flex', gap: '.7rem', flexWrap: 'wrap' }}>
-                <label style={{ fontSize: '.7rem', color: 'var(--text-dim)', flex: '1 1 180px' }}>
-                  Ping bij melding (leeg = geen)
-                  <input value={cfg.ping} onChange={e => setCfg({ ...cfg, ping: e.target.value })}
-                    placeholder="@here of &lt;@&amp;rolid&gt;" style={inputStyle} />
-                </label>
-                <label style={{ fontSize: '.7rem', color: 'var(--text-dim)', flex: '1 1 140px' }}>
-                  Staging-systeem (id)
-                  <input value={cfg.home} onChange={e => setCfg({ ...cfg, home: Number(e.target.value) || 0 })}
-                    style={inputStyle} />
-                </label>
-                <label style={{ fontSize: '.7rem', color: 'var(--text-dim)', flex: '1 1 120px' }}>
-                  Ook melden binnen … sprongen (0 = uit)
-                  <input type="number" min={0} max={15} value={cfg.maxJumps}
-                    onChange={e => setCfg({ ...cfg, maxJumps: Number(e.target.value) })} style={inputStyle} />
-                </label>
+                  placeholder="https://discord.com/api/webhooks/…" style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
               </div>
-              <label style={{ fontSize: '.7rem', color: 'var(--text-dim)' }}>
-                Waaklijst — systemen die in de gaten gehouden worden ({cfg.systems.length} nu).
-                Namen of id's, gescheiden door komma, spatie of enter.
+
+              <div>
+                <div style={LABEL}>WAAKLIJST — {cfg.systems.length} SYSTEMEN (NAAM OF ID, GESCHEIDEN DOOR SPATIE OF KOMMA)</div>
                 <textarea value={cfg.systems.join(' ')}
                   onChange={e => setCfg({ ...cfg, systems: e.target.value.split(/[\s,]+/).filter(Boolean) })}
-                  rows={4} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} />
-              </label>
-              <label style={{ fontSize: '.7rem', color: 'var(--text-dim)' }}>
-                Hele regio's erbij (komma-gescheiden id's, leeg = alleen de waaklijst — 10000060 = Delve, 10000050 = Querious, 10000063 = Period Basis)
+                  rows={4} style={{ ...INPUT, width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                                    fontFamily: 'monospace', lineHeight: 1.6 }} />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 170px' }}>
+                  <div style={LABEL}>PING BIJ MELDING (LEEG = GEEN)</div>
+                  <input value={cfg.ping} onChange={e => setCfg({ ...cfg, ping: e.target.value })}
+                    placeholder="@here" style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: '1 1 130px' }}>
+                  <div style={LABEL}>IJKPUNT AFSTAND (SYSTEEM-ID)</div>
+                  <input value={cfg.home} onChange={e => setCfg({ ...cfg, home: Number(e.target.value) || 0 })}
+                    style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: '1 1 130px' }}>
+                  <div style={LABEL}>OOK MELDEN BINNEN … SPRONGEN (0 = UIT)</div>
+                  <input type="number" min={0} max={25} value={cfg.maxJumps}
+                    onChange={e => setCfg({ ...cfg, maxJumps: Number(e.target.value) })}
+                    style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+
+              <div>
+                <div style={LABEL}>HELE REGIO'S ERBIJ (ID'S; LEEG = ALLEEN DE WAAKLIJST)</div>
                 <input value={cfg.regions.join(', ')}
                   onChange={e => setCfg({ ...cfg, regions: e.target.value.split(',').map(s => Number(s.trim())).filter(Boolean) })}
-                  style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '.75rem', display: 'flex', alignItems: 'center', gap: '.4rem' }}>
+                  placeholder="10000060 = Delve · 10000050 = Querious · 10000063 = Period Basis"
+                  style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+
+              <label style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <input type="checkbox" checked={cfg.enabled} onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
                 Meldingen aan
               </label>
-              <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
-                <button className="btn btn-sm" onClick={() => void bewaar()}>Opslaan</button>
-                <button className="btn btn-sm" onClick={() => void testDiscord()}>Testbericht</button>
+
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <button onClick={() => void bewaar()}
+                  style={{ ...KNOP, background: 'var(--blue)', color: '#0a0a12', borderColor: 'var(--blue)' }}>Opslaan</button>
+                <button onClick={() => void testDiscord()} style={KNOP}>Testbericht</button>
               </div>
-              <div style={{ fontSize: '.66rem', color: 'var(--text-dim)', wordBreak: 'break-all' }}>
-                Cron-URL (elke 5 min aantikken, bv. vanaf de Pi):<br />
-                <code>{cfg.pollUrl}</code>
+
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', wordBreak: 'break-all' }}>
+                Cron-URL (elke 5 min aantikken, bijvoorbeeld vanaf de Pi):<br />
+                <code style={{ color: 'var(--text)' }}>{cfg.pollUrl}</code>
               </div>
             </>
           )}
         </div>
       )}
 
-      <p style={{ color: 'var(--text-dim)', fontSize: '.72rem', marginTop: '1rem', lineHeight: 1.5 }}>
-        Bron: <a href="https://www.eve-scout.com/" target="_blank" rel="noopener">EVE-Scout</a> (publieke API, geen token).
-        Gaten worden gescout door vrijwilligers — wat hier níet staat kan er wél zijn. <strong>Klik een systeem</strong> om
-        in-game de route te zetten, klik een sig-id om het te kopiëren. Nieuwe verbindingen gaan automatisch naar Discord.
-      </p>
+      <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', marginTop: '0.8rem', lineHeight: 1.6 }}>
+        Bron: <a href="https://www.eve-scout.com/" target="_blank" rel="noopener"
+          style={{ color: 'var(--blue)' }}>EVE-Scout</a> (publieke API, geen token). Gaten worden gescout door
+        vrijwilligers — wat hier níet staat, kan er wél zijn. Klik een systeem om in-game de route te zetten,
+        klik een sig-id om het te kopiëren.
+      </div>
     </Layout>
   )
 }
 
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', marginTop: '.25rem', background: '#05050e',
-  border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)',
-  fontSize: '.72rem', padding: '.35rem .5rem', outline: 'none',
-  boxSizing: 'border-box', fontFamily: 'inherit',
-}
-
-function Stat({ label, waarde, kleur, sub, alert, subKleur }: {
-  label: string; waarde: string; kleur?: string; sub?: string; alert?: boolean; subKleur?: string
+function Tegel({ label, waarde, kleur, sub, alarm }: {
+  label: string; waarde: string | number; kleur?: string; sub?: string; alarm?: boolean
 }) {
   return (
-    <div className="card" style={{ padding: '.55rem .8rem', flex: '1 1 130px', minWidth: 110,
-      border: alert ? '1px solid rgba(224,85,85,.5)' : undefined,
-      background: alert ? 'rgba(224,85,85,.08)' : undefined }}>
-      <div style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.05em',
-                    textTransform: 'uppercase', color: 'var(--text-dim)' }}>{label}</div>
-      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: kleur }}>{waarde}</div>
-      {sub && <div style={{ fontSize: '.64rem', fontWeight: 700, color: subKleur ?? 'var(--red)' }}>{sub}</div>}
+    <div style={{
+      ...PANEL, flex: '1 1 140px', minWidth: 120,
+      borderColor: alarm ? 'var(--red)' : 'var(--border)',
+      background: alarm ? 'rgba(224,85,85,.07)' : 'var(--surface)',
+    }}>
+      <div style={LABEL}>{label}</div>
+      <div style={{ fontSize: '1.15rem', fontWeight: 700, color: kleur, lineHeight: 1.2 }}>{waarde}</div>
+      {sub && <div style={{ fontSize: '0.6rem', color: alarm ? 'var(--red)' : 'var(--text-dim)' }}>{sub}</div>}
     </div>
   )
 }
