@@ -22,6 +22,7 @@ const CorpKillboard = lz(() => import('./pages/CorpKillboard'))
 const EnemyDossier  = lz(() => import('./pages/EnemyDossier'))
 const SovTimer      = lz(() => import('./pages/SovTimer'))
 const Thera         = lz(() => import('./pages/Thera'))
+const Alarm         = lz(() => import('./pages/Alarm'))
 const FleetPayout   = lz(() => import('./pages/FleetPayout'))
 const JumpBridges   = lz(() => import('./pages/JumpBridges'))
 const Ansiblex      = lz(() => import('./pages/Ansiblex'))
@@ -241,6 +242,7 @@ function AppRoutes() {
       <Route path="/enemy-dossier" element={<ProtectedRoute><EnemyDossier /></ProtectedRoute>} />
       <Route path="/sov-timer" element={<ProtectedRoute><SovTimer /></ProtectedRoute>} />
       <Route path="/thera"     element={<ProtectedRoute><Thera /></ProtectedRoute>} />
+      <Route path="/alarm"     element={<ProtectedRoute><Alarm /></ProtectedRoute>} />
       <Route path="/fleet-payout" element={<ProtectedRoute><FleetPayout /></ProtectedRoute>} />
       <Route path="/jumpbridges" element={<ProtectedRoute><JumpBridges /></ProtectedRoute>} />
       <Route path="/ansiblex" element={<ProtectedRoute><Ansiblex /></ProtectedRoute>} />

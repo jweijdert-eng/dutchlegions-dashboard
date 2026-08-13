@@ -673,6 +673,33 @@ export async function getBlueprints(id: number, token: string): Promise<Blueprin
   return results
 }
 
+export interface CharacterLocation { solar_system_id: number; station_id?: number; structure_id?: number }
+export interface CharacterShip { ship_type_id: number; ship_name: string; ship_item_id: number }
+
+// Waar zit dit character nu? Scope esi-location.read_location.v1.
+//
+// LET OP — bewust langs esiGet: die houdt elk antwoord minimaal 30s vast, terwijl
+// ESI zelf op max-age=5 zit. Voor het ratting-alarm is dat het verschil tussen op
+// tijd waarschuwen en te laat. Hier dus altijd vers ophalen.
+export async function getCharacterLocation(id: number, token: string): Promise<CharacterLocation | null> {
+  try {
+    const res = await esiFetch(`${BASE}/characters/${id}/location/?datasource=tranquility`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.ok ? await res.json() as CharacterLocation : null
+  } catch { return null }
+}
+
+// In welk schip zit hij? Scope esi-location.read_ship_type.v1 (optioneel).
+export async function getCharacterShip(id: number, token: string): Promise<CharacterShip | null> {
+  try {
+    const res = await esiFetch(`${BASE}/characters/${id}/ship/?datasource=tranquility`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.ok ? await res.json() as CharacterShip : null
+  } catch { return null }
+}
+
 export const getCharacterAttributes = (id: number, token: string) =>
   esiGet<CharacterAttributes>(`/characters/${id}/attributes/`, token)
 
