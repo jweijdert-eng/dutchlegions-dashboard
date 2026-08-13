@@ -10,6 +10,7 @@ import { setWaypoint } from '../api/esi'
 // gaten ook meteen naar Discord stuurt. Zie de admin-kaart onderaan.
 
 interface Row {
+  op_lijst: boolean
   sig_id: string
   system_id: number
   system: string
@@ -35,7 +36,9 @@ interface Feed {
   gesloten?: Row[]
   aantal?: number
   dichtbij?: number
+  op_lijst?: number
   in_regio?: number
+  waaklijst?: string[]
   home?: number
   home_naam?: string
   max_jumps?: number
@@ -51,6 +54,7 @@ interface Cfg {
   home: number
   maxJumps: number
   regions: number[]
+  systems: string[]
   pollUrl: string
 }
 
@@ -160,13 +164,18 @@ export default function Thera() {
   }, [toon])
 
   const rows = feed?.rows ?? []
-  const regioTekst = useMemo(() => (feed?.regios ?? []).map(r => r.naam).join(', ') || 'Delve', [feed])
+  const waaklijst = feed?.waaklijst ?? []
+  const regioTekst = useMemo(() => (feed?.regios ?? []).map(r => r.naam).join(', '), [feed])
+  // Waar kijken we naar? Waaklijst, hele regio's, of beide.
+  const zoneTekst = waaklijst.length
+    ? `${waaklijst.length} bewaakte systemen${regioTekst ? ` + ${regioTekst}` : ''}`
+    : (regioTekst || 'niets — stel een waaklijst in')
 
   return (
     <Layout header={
       <PageHeader
         title="Thera-wachtpost"
-        sub={`wormholes vanuit Thera & Turnur die uitkomen in ${regioTekst} — live via EVE-Scout`}
+        sub={`wormholes vanuit Thera & Turnur die uitkomen in ${zoneTekst} — live via EVE-Scout`}
       />
     }>
       <style>{`@keyframes theraPuls{0%,100%{opacity:1}50%{opacity:.45}}`}</style>
@@ -181,12 +190,28 @@ export default function Thera() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
         <Stat label="Open gaten" waarde={String(feed?.aantal ?? 0)} />
-        <Stat label={`In ${regioTekst}`} waarde={String(feed?.in_regio ?? 0)} kleur="var(--gold)" />
+        <Stat label="In de waakzone" waarde={String(feed?.op_lijst ?? 0)} kleur="var(--gold)"
+              sub={waaklijst.length ? `${waaklijst.length} systemen bewaakt` : undefined}
+              subKleur="var(--text-dim)" />
         <Stat label="≤ 3 sprongen" waarde={String(feed?.dichtbij ?? 0)} kleur="var(--red)"
               alert={!!feed?.dichtbij} sub={feed?.dichtbij ? '⚠ vlak naast de deur' : undefined} />
         <Stat label="Discord-melding" waarde={feed?.discord ? 'aan' : 'uit'}
               kleur={feed?.discord ? 'var(--green)' : 'var(--text-dim)'} />
       </div>
+
+      {!!waaklijst.length && (
+        <details style={{ marginBottom: '.8rem' }}>
+          <summary style={{ cursor: 'pointer', fontSize: '.72rem', color: 'var(--text-dim)' }}>
+            Waakzone: {waaklijst.length} systemen
+          </summary>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.4rem' }}>
+            {waaklijst.map(s => (
+              <span key={s} style={{ fontSize: '.68rem', padding: '.1rem .45rem', borderRadius: 999,
+                background: 'rgba(240,147,43,.1)', border: '1px solid rgba(240,147,43,.35)' }}>{s}</span>
+            ))}
+          </div>
+        </details>
+      )}
 
       <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '.8rem' }}>
         <span style={{ color: 'var(--text-dim)', fontSize: '.8rem' }}>
@@ -204,7 +229,7 @@ export default function Thera() {
 
       {!laden && !rows.length && (
         <div className="card" style={{ padding: '1rem', color: 'var(--text-dim)' }}>
-          Op dit moment geen bekende Thera/Turnur-verbinding naar {regioTekst}. Rustig aan het front — of nog niet gescout.
+          Op dit moment geen bekende Thera/Turnur-verbinding naar {zoneTekst}. Rustig aan het front — of nog niet gescout.
         </div>
       )}
 
@@ -226,8 +251,8 @@ export default function Thera() {
                 return (
                   <tr key={r.sig_id} style={{
                     borderBottom: '1px solid var(--border)',
-                    borderLeft: `3px solid ${dichtbij ? 'var(--red)' : 'transparent'}`,
-                    background: dichtbij ? 'rgba(224,85,85,.06)' : undefined,
+                    borderLeft: `3px solid ${dichtbij ? 'var(--red)' : r.op_lijst ? 'var(--gold)' : 'transparent'}`,
+                    background: dichtbij ? 'rgba(224,85,85,.06)' : r.op_lijst ? 'rgba(240,147,43,.06)' : undefined,
                   }}>
                     <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
                       <span style={{ color: secClass(r.sec), fontWeight: 700, marginRight: '.35rem',
@@ -242,7 +267,7 @@ export default function Thera() {
                     </td>
                     <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap', fontWeight: 800,
                                  color: jumpKleur(r.jumps), animation: dichtbij ? 'theraPuls 1.6s ease-in-out infinite' : undefined }}>
-                      {r.jumps === null ? `> ${feed?.max_jumps ?? 6}` : `${r.jumps} spr.`}
+                      {r.jumps === null ? '—' : `${r.jumps} spr.`}
                     </td>
                     <td style={{ padding: '.5rem .7rem', whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: '.62rem', fontWeight: 800, padding: '.12rem .4rem', borderRadius: 5,
@@ -314,13 +339,20 @@ export default function Thera() {
                     style={inputStyle} />
                 </label>
                 <label style={{ fontSize: '.7rem', color: 'var(--text-dim)', flex: '1 1 120px' }}>
-                  Ook melden binnen … sprongen
+                  Ook melden binnen … sprongen (0 = uit)
                   <input type="number" min={0} max={15} value={cfg.maxJumps}
                     onChange={e => setCfg({ ...cfg, maxJumps: Number(e.target.value) })} style={inputStyle} />
                 </label>
               </div>
               <label style={{ fontSize: '.7rem', color: 'var(--text-dim)' }}>
-                Regio-id's (komma-gescheiden — 10000060 = Delve, 10000050 = Querious, 10000063 = Period Basis)
+                Waaklijst — systemen die in de gaten gehouden worden ({cfg.systems.length} nu).
+                Namen of id's, gescheiden door komma, spatie of enter.
+                <textarea value={cfg.systems.join(' ')}
+                  onChange={e => setCfg({ ...cfg, systems: e.target.value.split(/[\s,]+/).filter(Boolean) })}
+                  rows={4} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} />
+              </label>
+              <label style={{ fontSize: '.7rem', color: 'var(--text-dim)' }}>
+                Hele regio's erbij (komma-gescheiden id's, leeg = alleen de waaklijst — 10000060 = Delve, 10000050 = Querious, 10000063 = Period Basis)
                 <input value={cfg.regions.join(', ')}
                   onChange={e => setCfg({ ...cfg, regions: e.target.value.split(',').map(s => Number(s.trim())).filter(Boolean) })}
                   style={inputStyle} />
@@ -358,8 +390,8 @@ const inputStyle: CSSProperties = {
   boxSizing: 'border-box', fontFamily: 'inherit',
 }
 
-function Stat({ label, waarde, kleur, sub, alert }: {
-  label: string; waarde: string; kleur?: string; sub?: string; alert?: boolean
+function Stat({ label, waarde, kleur, sub, alert, subKleur }: {
+  label: string; waarde: string; kleur?: string; sub?: string; alert?: boolean; subKleur?: string
 }) {
   return (
     <div className="card" style={{ padding: '.55rem .8rem', flex: '1 1 130px', minWidth: 110,
@@ -368,7 +400,7 @@ function Stat({ label, waarde, kleur, sub, alert }: {
       <div style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.05em',
                     textTransform: 'uppercase', color: 'var(--text-dim)' }}>{label}</div>
       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: kleur }}>{waarde}</div>
-      {sub && <div style={{ fontSize: '.64rem', fontWeight: 700, color: 'var(--red)' }}>{sub}</div>}
+      {sub && <div style={{ fontSize: '.64rem', fontWeight: 700, color: subKleur ?? 'var(--red)' }}>{sub}</div>}
     </div>
   )
 }

@@ -28,10 +28,19 @@ cors();
 const ES_URL          = 'https://api.eve-scout.com/v2/public/signatures';
 const ES_TTL          = 120;          // feed maximaal 2 minuten oud
 const ES_UA           = 'dutchlegions-dashboard (thera-wachtpost)';
-const ES_HOME_DEF     = 30004759;     // 1DQ1-A
-const ES_REGIONS_DEF  = [10000060];   // Delve
-const ES_JUMPS_DEF    = 6;            // ook melden binnen 6 sprongen van staging
-const ES_BFS_MAX      = 15;           // niet verder rekenen dan dit
+const ES_HOME_DEF     = 30004759;     // 1DQ1-A — alleen voor de afstandsweergave
+const ES_REGIONS_DEF  = [];           // hele regio's bewaken: standaard uit
+const ES_JUMPS_DEF    = 0;            // "ook melden binnen X sprongen": standaard uit
+const ES_BFS_MAX      = 15;           // afstand rekenen tot maximaal 15 sprongen
+
+// Standaard-waaklijst: de vier constellaties in Delve die in de gaten gehouden
+// moeten worden (screenshot van de sterrenkaart, 2026-08-13).
+const ES_SYSTEMS_DEF = [
+    30004784, 30004785, 30004786, 30004787, 30004788, 30004789,   // Y5C-YD … 5-6QW7
+    30004744, 30004745, 30004746, 30004747, 30004748, 30004749,   // T-IPZB … 4O-239
+    30004724, 30004725, 30004726, 30004727, 30004728, 30004729,   // 1B-VKF … R5-MM8, T-J6HT
+    30004766, 30004767, 30004768, 30004769, 30004770, 30004771,   // PS-94K … RF-K9W
+];
 
 // Kleuren van de Discord-embed: hoe dichterbij, hoe roder.
 const ES_KLEUR_DICHT  = 0xE23C3C;
@@ -93,10 +102,16 @@ function theraConfig(PDO $pdo): array {
         theraSet($pdo, ['thera_poll_key' => $key]);
     }
 
-    $regions = json_decode($rows['thera_regions'] ?? '', true);
-    if (!is_array($regions) || !$regions) $regions = ES_REGIONS_DEF;
+    // Let op: een léég opgeslagen lijstje is een geldige keuze ("niets bewaken"),
+    // dus alleen terugvallen op de standaard als de sleutel helemaal ontbreekt.
+    $regions = array_key_exists('thera_regions', $rows) ? json_decode((string)$rows['thera_regions'], true) : null;
+    if (!is_array($regions)) $regions = ES_REGIONS_DEF;
+
+    $systems = array_key_exists('thera_systems', $rows) ? json_decode((string)$rows['thera_systems'], true) : null;
+    if (!is_array($systems)) $systems = ES_SYSTEMS_DEF;
 
     return [
+        'systems'   => array_values(array_map('intval', $systems)),
         'enabled'   => ($rows['thera_enabled'] ?? '1') === '1',
         'webhook'   => trim((string)($rows['thera_webhook'] ?? '')),
         'ping'      => trim((string)($rows['thera_ping'] ?? '')),
@@ -109,6 +124,19 @@ function theraConfig(PDO $pdo): array {
 }
 
 // ---------------------------------------------------------------- statische kaart
+/** Naam → id voor alle systemen (hoofdletterongevoelig), voor de waaklijst. */
+function theraNaarId(string $naam): int {
+    static $idx = null;
+    if ($idx === null) {
+        $idx = [];
+        foreach (theraSystems() as $id => $v) $idx[strtoupper((string)($v[0] ?? ''))] = (int)$id;
+    }
+    $naam = strtoupper(trim($naam));
+    if ($naam === '') return 0;
+    if (ctype_digit($naam)) return (int)$naam;
+    return $idx[$naam] ?? 0;
+}
+
 /** systems.json → [id => [naam, sec, region_id]] (staat naast dit script in de webroot). */
 function theraSystems(): array {
     static $cache = null;
@@ -173,8 +201,11 @@ function theraVervers(PDO $pdo, array $cfg): ?array {
     if ($feed === null) return null;
 
     $systems = theraSystems();
-    $dist    = $cfg['max_jumps'] > 0 ? theraAfstanden($cfg['home'], $cfg['max_jumps']) : [];
+    // Afstand altijd berekenen: die staat ook bij gaten die om een andere reden
+    // gemeld worden (waaklijst/regio), zodat je meteen ziet hoe ver het is.
+    $dist    = theraAfstanden($cfg['home'], ES_BFS_MAX);
     $regios  = array_flip($cfg['regions']);
+    $waak    = array_flip($cfg['systems']);
     $now     = time();
 
     $gezien = [];
@@ -210,9 +241,12 @@ function theraVervers(PDO $pdo, array $cfg): ?array {
             $rid = $k['rid'] ?: (int)($sys[2] ?? 0);
             $sprongen = $dist[$sid] ?? null;
 
-            $inRegio = isset($regios[$rid]);
-            $dichtbij = $sprongen !== null && $sprongen <= $cfg['max_jumps'];
-            if (!$inRegio && !$dichtbij) continue;
+            // Drie redenen om te melden: het staat op de waaklijst, het ligt in
+            // een bewaakte regio, of het ligt binnen X sprongen van de staging.
+            $opLijst  = isset($waak[$sid]);
+            $inRegio  = isset($regios[$rid]);
+            $dichtbij = $cfg['max_jumps'] > 0 && $sprongen !== null && $sprongen <= $cfg['max_jumps'];
+            if (!$opLijst && !$inRegio && !$dichtbij) continue;
 
             $exp = !empty($s['expires_at']) ? strtotime($s['expires_at']) : null;
             $ins->execute([
@@ -285,12 +319,13 @@ function dotlan(string $sys): string {
 
 /** Discord-bericht voor één nieuw gat. */
 function theraEmbed(array $r, array $cfg, string $homeNaam): array {
-    $jumps = $r['jumps'] === null ? null : (int)$r['jumps'];
-    $kleur = ($jumps !== null && $jumps <= 3) ? ES_KLEUR_DICHT
-           : (in_array((int)$r['region_id'], $cfg['regions'], true) ? ES_KLEUR_REGIO : ES_KLEUR_VER);
+    $jumps   = $r['jumps'] === null ? null : (int)$r['jumps'];
+    $opLijst = in_array((int)($r['system_id'] ?? 0), $cfg['systems'], true);
+    $kleur   = ($jumps !== null && $jumps <= 3) ? ES_KLEUR_DICHT
+             : (($opLijst || in_array((int)$r['region_id'], $cfg['regions'], true)) ? ES_KLEUR_REGIO : ES_KLEUR_VER);
 
     $maat  = ES_MAAT[$r['max_size']] ?? ($r['max_size'] ?: 'onbekend');
-    $afst  = $jumps === null ? 'meer dan ' . $cfg['max_jumps'] . ' sprongen'
+    $afst  = $jumps === null ? 'meer dan ' . ES_BFS_MAX . ' sprongen'
                              : ($jumps === 0 ? 'in ' . $homeNaam . ' zelf' : $jumps . ' sprongen van ' . $homeNaam);
     $exp   = $r['expires_at'] ? strtotime($r['expires_at'] . ' UTC') : null;
 
@@ -364,8 +399,10 @@ function theraLijst(PDO $pdo, array $cfg): array {
                            WHERE closed_at IS NOT NULL AND closed_at > (UTC_TIMESTAMP() - INTERVAL 3 HOUR)
                            ORDER BY closed_at DESC LIMIT 15")->fetchAll(PDO::FETCH_ASSOC);
 
-    $vorm = function (array $r): array {
+    $waak = array_flip($cfg['systems']);
+    $vorm = function (array $r) use ($waak): array {
         return [
+            'op_lijst'  => isset($waak[(int)$r['system_id']]),
             'sig_id'    => $r['sig_id'],
             'system_id' => (int)$r['system_id'],
             'system'    => $r['system_name'],
@@ -394,7 +431,9 @@ function theraLijst(PDO $pdo, array $cfg): array {
         'gesloten'   => array_map($vorm, $recent),
         'aantal'     => count($open),
         'dichtbij'   => count(array_filter($open, fn($r) => $r['jumps'] !== null && $r['jumps'] <= 3)),
+        'op_lijst'   => count(array_filter($open, fn($r) => $r['op_lijst'])),
         'in_regio'   => count(array_filter($open, fn($r) => in_array($r['region_id'], $cfg['regions'], true))),
+        'waaklijst'  => array_map(fn($id) => $systems[(string)$id][0] ?? ('#' . $id), $cfg['systems']),
         'home'       => $cfg['home'],
         'home_naam'  => $systems[(string)$cfg['home']][0] ?? ('#' . $cfg['home']),
         'max_jumps'  => $cfg['max_jumps'],
@@ -429,6 +468,24 @@ if ($actie === 'config' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $regs = array_values(array_unique(array_filter(array_map('intval', (array)$body['regions']))));
         $kv['thera_regions'] = json_encode(array_slice($regs, 0, 12));
     }
+    // Waaklijst mag als naam ("RF-K9W") of als id binnenkomen; onbekende namen
+    // gaan terug naar de gebruiker in plaats van stilletjes te verdwijnen.
+    if (array_key_exists('systems', $body)) {
+        $ids = []; $onbekend = [];
+        foreach ((array)$body['systems'] as $s) {
+            $naam = trim((string)$s);
+            if ($naam === '') continue;
+            $id = theraNaarId($naam);
+            if ($id && isset(theraSystems()[(string)$id])) $ids[] = $id;
+            else $onbekend[] = $naam;
+        }
+        if ($onbekend) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Onbekend systeem: ' . implode(', ', array_slice($onbekend, 0, 5))]);
+            exit;
+        }
+        $kv['thera_systems'] = json_encode(array_values(array_unique($ids)));
+    }
     theraSet($pdo, $kv);
     echo json_encode(['ok' => true]);
     exit;
@@ -437,6 +494,7 @@ if ($actie === 'config' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($actie === 'config') {
     requireAdmin();
     $cfg = theraConfig($pdo);
+    $sys = theraSystems();
     echo json_encode([
         'ok'        => true,
         'enabled'   => $cfg['enabled'],
@@ -445,6 +503,7 @@ if ($actie === 'config') {
         'home'      => $cfg['home'],
         'maxJumps'  => $cfg['max_jumps'],
         'regions'   => $cfg['regions'],
+        'systems'   => array_map(fn($id) => $sys[(string)$id][0] ?? (string)$id, $cfg['systems']),
         'pollUrl'   => 'https://dutchlegionsdashboard.eu/api/thera.php?action=poll&key=' . $cfg['poll_key'],
     ]);
     exit;
