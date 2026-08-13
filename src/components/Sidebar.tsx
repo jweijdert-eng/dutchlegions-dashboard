@@ -75,6 +75,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Corp Killboard', path: '/corp-killboard', icon: '💀', badge: null },
   { label: 'Vijand-dossier', path: '/enemy-dossier', icon: '🕵️', badge: null },
   { label: 'Sov Timers',   path: '/sov-timer',   icon: '⏳', badge: null },
+  { label: 'Thera-wachtpost', path: '/thera',   icon: '🌀', badge: null },
   { label: 'Wars',         path: '/wars',       icon: '🗡️', badge: null },
   { label: 'Fleet',        path: '/fleet',      icon: '🛰️', badge: null },
   { label: 'Fleet Payout', path: '/fleet-payout', icon: '💸', badge: null },
@@ -111,7 +112,7 @@ const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
   { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/jita-today', '/market', '/jita-scanner', '/gap-scanner', '/hub-arbitrage', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build-profit', '/build'] },
-  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/fleet', '/fleet-payout', '/ansiblex', '/ratting'] },
+  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/thera', '/fleet', '/fleet-payout', '/ansiblex', '/ratting'] },
 ]
 
 const NAV_LS_KEY = 'nav_layout_v1'
