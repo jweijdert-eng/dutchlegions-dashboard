@@ -71,10 +71,22 @@ const TH: CSSProperties = {
   fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap',
 }
 const TD: CSSProperties = { textAlign: 'left', padding: '0.4rem 0.7rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }
+const KNOP: CSSProperties = { ...INPUT, cursor: 'pointer', fontWeight: 600, fontSize: '0.66rem' }
+// Alleen panelen die écht een kader nodig hebben (instellingen, foutmelding).
 const PANEL: CSSProperties = {
   background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.6rem 0.8rem',
 }
-const KNOP: CSSProperties = { ...INPUT, cursor: 'pointer', fontWeight: 600 }
+// Pil zoals op de sov-pagina: kleine hoofdletters in een gekleurd randje.
+function pil(kleur: string, bg: string): CSSProperties {
+  return {
+    fontSize: '0.56rem', fontWeight: 800, letterSpacing: '0.05em', padding: '0.1rem 0.4rem',
+    borderRadius: 999, whiteSpace: 'nowrap', color: kleur, background: bg, border: `1px solid ${kleur}`,
+  }
+}
+// Hoe groter het gat, hoe zwaarder wat erdoor kan: capital rood, battleship goud.
+function maatKleur(size: string) {
+  return size === 'xlarge' ? 'var(--red)' : size === 'large' ? 'var(--gold)' : 'var(--text-dim)'
+}
 
 function fmtRest(iso: string | null, now: number) {
   if (!iso) return '—'
@@ -268,10 +280,11 @@ export default function Thera() {
       )}
 
       {!!rows.length && (
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
+        <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th style={TH}>Status</th>
                 <th style={TH}>Systeem</th>
                 <th style={TH}>Afstand</th>
                 <th style={TH}>Vanuit</th>
@@ -284,12 +297,21 @@ export default function Thera() {
             <tbody>
               {rows.map(r => {
                 const dichtbij = r.jumps !== null && r.jumps <= 3
+                // Minder dan een uur te gaan: het gat is bijna weg.
+                const eindigtBijna = !!r.expires_at && Date.parse(r.expires_at) - now < 3600_000
                 return (
                   <tr key={r.sig_id} style={{
                     borderBottom: '1px solid var(--border)',
                     borderLeft: `2px solid ${dichtbij ? 'var(--red)' : r.op_lijst ? 'var(--gold)' : 'transparent'}`,
                     background: dichtbij ? 'rgba(224,85,85,.06)' : undefined,
                   }}>
+                    <td style={TD}>
+                      {dichtbij
+                        ? <span style={pil('var(--red)', 'rgba(224,85,85,.14)')}>⚠ VLAKBIJ</span>
+                        : r.op_lijst
+                          ? <span style={pil('var(--gold)', 'rgba(240,192,64,.12)')}>WAAKZONE</span>
+                          : <span style={pil('var(--text-dim)', 'rgba(255,255,255,.04)')}>buiten zone</span>}
+                    </td>
                     <td style={TD}>
                       <span style={{ color: secClass(r.sec), fontWeight: 700, marginRight: '0.35rem',
                                      fontVariantNumeric: 'tabular-nums' }}>{r.sec.toFixed(1)}</span>
@@ -306,11 +328,9 @@ export default function Thera() {
                       {r.jumps === null ? '—' : `${r.jumps} spr.`}
                     </td>
                     <td style={TD}>
-                      <span style={{
-                        fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.06em', padding: '0.1rem 0.35rem',
-                        borderRadius: 2, background: 'var(--surface2)', border: '1px solid var(--border)',
-                        color: 'var(--blue)',
-                      }}>{r.out_system.toUpperCase()}</span>
+                      <span style={{ ...pil('var(--blue)', 'rgba(0,180,216,.12)'), color: '#7fe0ff' }}>
+                        {r.out_system.toUpperCase()}
+                      </span>
                       <div style={{ color: 'var(--text-dim)', fontSize: '0.62rem' }}>{r.wh_type || '—'}</div>
                     </td>
                     <td style={{ ...TD, fontFamily: 'monospace', fontSize: '0.72rem' }}>
@@ -320,8 +340,14 @@ export default function Thera() {
                       <span style={{ color: 'var(--text-dim)' }}> · hier</span>
                       <div style={{ color: 'var(--text-dim)', fontSize: '0.66rem' }}>{r.out_sig || '???'} · {r.out_system}</div>
                     </td>
-                    <td style={TD}>{r.maat || '—'}</td>
-                    <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>{fmtRest(r.expires_at, now)}</td>
+                    <td style={TD}>
+                      <span style={{ fontWeight: 700, color: maatKleur(r.max_size) }}>{r.maat || '—'}</span>
+                    </td>
+                    <td style={{ ...TD, fontVariantNumeric: 'tabular-nums', fontWeight: 700,
+                                 color: eindigtBijna ? 'var(--red)' : 'var(--text)' }}>
+                      {fmtRest(r.expires_at, now)}
+                      {eindigtBijna && <div style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--red)' }}>sluit bijna</div>}
+                    </td>
                     <td style={{ ...TD, color: 'var(--text-dim)', fontSize: '0.66rem' }}>
                       {fmtSinds(r.first_seen, now)}
                       {r.door && <div style={{ fontSize: '0.6rem' }}>door {r.door}</div>}
@@ -427,18 +453,22 @@ export default function Thera() {
   )
 }
 
+// Teller: plat op de achtergrond, zoals op de andere pagina's. Alleen als er
+// iets aan de hand is krijgt hij een rood kader — dat valt dan ook echt op.
 function Tegel({ label, waarde, kleur, sub, alarm }: {
   label: string; waarde: string | number; kleur?: string; sub?: string; alarm?: boolean
 }) {
   return (
     <div style={{
-      ...PANEL, flex: '1 1 140px', minWidth: 120,
-      borderColor: alarm ? 'var(--red)' : 'var(--border)',
-      background: alarm ? 'rgba(224,85,85,.07)' : 'var(--surface)',
+      flex: '1 1 150px', minWidth: 130, padding: alarm ? '0.5rem 0.7rem' : '0.5rem 0.1rem',
+      border: alarm ? '1px solid var(--red)' : '1px solid transparent',
+      borderRadius: alarm ? 4 : undefined,
+      background: alarm ? 'rgba(224,85,85,.07)' : undefined,
     }}>
       <div style={LABEL}>{label}</div>
-      <div style={{ fontSize: '1.15rem', fontWeight: 700, color: kleur, lineHeight: 1.2 }}>{waarde}</div>
-      {sub && <div style={{ fontSize: '0.6rem', color: alarm ? 'var(--red)' : 'var(--text-dim)' }}>{sub}</div>}
+      <div style={{ fontSize: '1.4rem', fontWeight: 700, color: kleur, lineHeight: 1.15,
+                    fontVariantNumeric: 'tabular-nums' }}>{waarde}</div>
+      {sub && <div style={{ fontSize: '0.6rem', fontWeight: 600, color: alarm ? 'var(--red)' : 'var(--text-dim)' }}>{sub}</div>}
     </div>
   )
 }
