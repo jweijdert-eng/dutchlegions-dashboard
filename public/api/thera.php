@@ -182,9 +182,9 @@ function theraVervers(PDO $pdo, array $cfg): ?array {
         'INSERT INTO thera_sigs
             (sig_id, system_id, system_name, region_id, region_name, sec, jumps, out_system,
              in_sig, out_sig, wh_type, max_size, gemeld_door, expires_at, first_seen, last_seen)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())
          ON DUPLICATE KEY UPDATE
-            last_seen = NOW(), closed_at = NULL, jumps = VALUES(jumps),
+            last_seen = UTC_TIMESTAMP(), closed_at = NULL, jumps = VALUES(jumps),
             expires_at = VALUES(expires_at), max_size = VALUES(max_size), in_sig = VALUES(in_sig)');
 
     foreach ($feed as $s) {
@@ -239,12 +239,12 @@ function theraVervers(PDO $pdo, array $cfg): ?array {
     // Alles wat níet meer in de feed staat is gesloten (of verlopen).
     if ($gezien) {
         $in = implode(',', array_fill(0, count($gezien), '?'));
-        $st = $pdo->prepare("UPDATE thera_sigs SET closed_at = NOW()
+        $st = $pdo->prepare("UPDATE thera_sigs SET closed_at = UTC_TIMESTAMP()
                              WHERE closed_at IS NULL AND sig_id NOT IN ($in)");
         $st->execute($gezien);
         $dicht = $st->rowCount();
     } else {
-        $dicht = $pdo->exec("UPDATE thera_sigs SET closed_at = NOW() WHERE closed_at IS NULL");
+        $dicht = $pdo->exec("UPDATE thera_sigs SET closed_at = UTC_TIMESTAMP() WHERE closed_at IS NULL");
     }
 
     theraSet($pdo, ['thera_last_poll' => (string)$now]);
@@ -324,18 +324,18 @@ function theraMeld(PDO $pdo, array $cfg): int {
 
     $rows = $pdo->query("SELECT * FROM thera_sigs
                          WHERE notified_at IS NULL AND closed_at IS NULL
-                           AND first_seen > (NOW() - INTERVAL 6 HOUR)
+                           AND first_seen > (UTC_TIMESTAMP() - INTERVAL 6 HOUR)
                          ORDER BY jumps IS NULL, jumps ASC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
     if (!$rows) {
         // Oude, nooit gemelde gaten niet alsnog posten — alleen stil afvinken.
-        $pdo->exec("UPDATE thera_sigs SET notified_at = NOW()
-                    WHERE notified_at IS NULL AND first_seen <= (NOW() - INTERVAL 6 HOUR)");
+        $pdo->exec("UPDATE thera_sigs SET notified_at = UTC_TIMESTAMP()
+                    WHERE notified_at IS NULL AND first_seen <= (UTC_TIMESTAMP() - INTERVAL 6 HOUR)");
         return 0;
     }
 
     $systems  = theraSystems();
     $homeNaam = $systems[(string)$cfg['home']][0] ?? ('#' . $cfg['home']);
-    $claim    = $pdo->prepare('UPDATE thera_sigs SET notified_at = NOW()
+    $claim    = $pdo->prepare('UPDATE thera_sigs SET notified_at = UTC_TIMESTAMP()
                                WHERE sig_id = ? AND notified_at IS NULL');
     $terug    = $pdo->prepare('UPDATE thera_sigs SET notified_at = NULL WHERE sig_id = ?');
 
@@ -361,7 +361,7 @@ function theraLijst(PDO $pdo, array $cfg): array {
                          WHERE closed_at IS NULL
                          ORDER BY jumps IS NULL, jumps ASC, expires_at ASC")->fetchAll(PDO::FETCH_ASSOC);
     $recent = $pdo->query("SELECT * FROM thera_sigs
-                           WHERE closed_at IS NOT NULL AND closed_at > (NOW() - INTERVAL 3 HOUR)
+                           WHERE closed_at IS NOT NULL AND closed_at > (UTC_TIMESTAMP() - INTERVAL 3 HOUR)
                            ORDER BY closed_at DESC LIMIT 15")->fetchAll(PDO::FETCH_ASSOC);
 
     $vorm = function (array $r): array {
