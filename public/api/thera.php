@@ -31,7 +31,8 @@ const ES_UA           = 'dutchlegions-dashboard (thera-wachtpost)';
 const ES_HOME_DEF     = 30004759;     // 1DQ1-A — alleen voor de afstandsweergave
 const ES_REGIONS_DEF  = [];           // hele regio's bewaken: standaard uit
 const ES_JUMPS_DEF    = 0;            // "ook melden binnen X sprongen": standaard uit
-const ES_BFS_MAX      = 15;           // afstand rekenen tot maximaal 15 sprongen
+const ES_BFS_MAX      = 25;           // afstand rekenen tot maximaal 25 sprongen
+                                      // (de waakzone ligt 9–19 sprongen van 1DQ1-A)
 
 // Standaard-waaklijst: de vier constellaties in Delve die in de gaten gehouden
 // moeten worden (screenshot van de sterrenkaart, 2026-08-13).
