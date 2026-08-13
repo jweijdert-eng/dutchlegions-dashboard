@@ -8,6 +8,7 @@ import EveImage from '../components/EveImage'
 import { fetchSiteConfig, applyAccent, type CorpLink, type JumpBridge } from '../hooks/useSiteConfig'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { DEFAULT_INTEL_CHANNELS, type IntelChannel } from '../utils/intelChannels'
+import TheraSettings from '../components/TheraSettings'
 
 const ADMIN_CHAR_ID = 1831618559
 const ROLE_COLOR: Record<string, string> = { admin: '#e05555', recruiter: 'var(--blue)', member: 'var(--text-dim)' }
@@ -180,6 +181,7 @@ export default function Admin() {
   const [bridgesOpen, setBridgesOpen] = useState(false)
   const [intelChannels, setIntelChannels] = useState<IntelChannel[]>([])
   const [intelOpen, setIntelOpen] = useState(false)
+  const [theraOpen, setTheraOpen] = useState(false)
   const [cfgSaved, setCfgSaved] = useState(false)
   const [bpCount, setBpCount] = useState<number | null | undefined>(undefined) // undefined=laden, null=fout
   const [sdeVer, setSdeVer] = useState<{ build: number | null; releaseDate: string | null; latest: number | null } | null>(null)
@@ -1257,6 +1259,23 @@ export default function Admin() {
                   style={{ marginLeft: 'auto', background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
+              </>)}
+            </div>
+
+            {/* Thera-wachtpost: Discord-webhook + waaklijst (api/thera.php) */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
+              <div onClick={() => setTheraOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>🌀 Thera-meldingen <span style={{ fontSize: '0.66rem', fontWeight: 400, color: 'var(--text-dim)' }}>(Discord-webhook)</span></div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{theraOpen ? '▲' : '▼'}</span>
+              </div>
+              {theraOpen && (<>
+                <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.5rem', marginBottom: '0.7rem' }}>
+                  Nieuwe wormholes vanuit Thera/Turnur die uitkomen in de bewaakte systemen worden naar dit
+                  Discord-kanaal gestuurd. De lijst zelf staat op de <a href="/thera" style={{ color: 'var(--blue)' }}>Thera-wachtpost</a>.
+                </div>
+                {adminToken
+                  ? <TheraSettings token={adminToken.accessToken} />
+                  : <div style={{ fontSize: '0.7rem', color: 'var(--red)' }}>Log in met je admin-character om dit te kunnen wijzigen.</div>}
               </>)}
             </div>
 

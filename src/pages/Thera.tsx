@@ -4,6 +4,7 @@ import { usePageLoading } from '../hooks/usePageLoading'
 import { useMyRole } from '../hooks/useMyRole'
 import { useAuth } from '../auth/AuthContext'
 import { setWaypoint } from '../api/esi'
+import TheraSettings from '../components/TheraSettings'
 
 // Thera/Turnur-wachtpost: welke wormhole-verbindingen komen er nú uit in de
 // bewaakte systemen? Data uit EVE-Scout via api/thera.php, die nieuwe gaten ook
@@ -45,17 +46,6 @@ interface Feed {
   regios?: { id: number; naam: string }[]
   discord?: boolean
   bijgewerkt?: string
-}
-
-interface Cfg {
-  enabled: boolean
-  webhook: string
-  ping: string
-  home: number
-  maxJumps: number
-  regions: number[]
-  systems: string[]
-  pollUrl: string
 }
 
 // ── Stijl (zelfde look als de andere pagina's) ──
@@ -123,13 +113,14 @@ export default function Thera() {
   const [fout, setFout] = useState('')
   const [now, setNow] = useState(() => Date.now())
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
-  const [cfg, setCfg] = useState<Cfg | null>(null)
   const [cfgOpen, setCfgOpen] = useState(false)
   const [zoneOpen, setZoneOpen] = useState(false)
 
   const isAdmin = useMyRole() === 'admin'
-  const { activeTokens } = useAuth()
+  const { activeTokens, tokens, mainCharId } = useAuth()
   const tok = activeTokens[0]
+  // Instellingen horen bij je hoofd-character: die heeft de admin-rol, een alt niet.
+  const adminTok = tokens.find(t => t.characterId === mainCharId) ?? tokens[0]
 
   const toon = useCallback((text: string, ok: boolean) => {
     setMsg({ text, ok }); setTimeout(() => setMsg(null), 3500)
@@ -155,34 +146,6 @@ export default function Thera() {
   // Feed zelf ververst server-side elke 2 min; hier elke minuut stil ophalen.
   useEffect(() => { const t = setInterval(() => void haal(false, true), 60_000); return () => clearInterval(t) }, [haal])
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1_000); return () => clearInterval(t) }, [])
-
-  // Instellingen ophalen zodra een admin het paneel opent.
-  useEffect(() => {
-    if (!cfgOpen || cfg || !isAdmin || !tok) return
-    void (async () => {
-      const res = await fetch(`/api/thera.php?action=config&token=${encodeURIComponent(tok.accessToken)}`)
-      if (res.ok) setCfg(await res.json() as Cfg)
-      else toon('Instellingen ophalen mislukt (ben je ingelogd als admin?).', false)
-    })()
-  }, [cfgOpen, cfg, isAdmin, tok, toon])
-
-  const bewaar = useCallback(async () => {
-    if (!cfg || !tok) return
-    const res = await fetch('/api/thera.php?action=config', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...cfg, token: tok.accessToken }),
-    })
-    const d = await res.json().catch(() => ({}))
-    toon(res.ok && d.ok ? '✅ Opgeslagen' : (d.error || 'Opslaan mislukt'), !!(res.ok && d.ok))
-    if (res.ok) void haal(true, true)
-  }, [cfg, tok, toon, haal])
-
-  const testDiscord = useCallback(async () => {
-    if (!tok) return
-    const res = await fetch(`/api/thera.php?action=test&token=${encodeURIComponent(tok.accessToken)}`)
-    const d = await res.json().catch(() => ({}))
-    toon(d.ok ? '✅ Testbericht verstuurd naar Discord' : (d.error || 'Versturen mislukt'), !!d.ok)
-  }, [tok, toon])
 
   const zetRoute = useCallback(async (r: Row) => {
     if (!tok) { toon('Log in om een route te zetten.', false); return }
@@ -377,69 +340,11 @@ export default function Thera() {
       )}
 
       {cfgOpen && isAdmin && (
-        <div style={{ ...PANEL, marginTop: '0.7rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          <div style={LABEL}>⚙ DISCORD-MELDING</div>
-          {!cfg && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Instellingen laden…</div>}
-          {cfg && (
-            <>
-              <div>
-                <div style={LABEL}>WEBHOOK-URL (DISCORD → KANAALINSTELLINGEN → INTEGRATIES)</div>
-                <input value={cfg.webhook} onChange={e => setCfg({ ...cfg, webhook: e.target.value })}
-                  placeholder="https://discord.com/api/webhooks/…" style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
-              </div>
-
-              <div>
-                <div style={LABEL}>WAAKLIJST — {cfg.systems.length} SYSTEMEN (NAAM OF ID, GESCHEIDEN DOOR SPATIE OF KOMMA)</div>
-                <textarea value={cfg.systems.join(' ')}
-                  onChange={e => setCfg({ ...cfg, systems: e.target.value.split(/[\s,]+/).filter(Boolean) })}
-                  rows={4} style={{ ...INPUT, width: '100%', boxSizing: 'border-box', resize: 'vertical',
-                                    fontFamily: 'monospace', lineHeight: 1.6 }} />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 170px' }}>
-                  <div style={LABEL}>PING BIJ MELDING (LEEG = GEEN)</div>
-                  <input value={cfg.ping} onChange={e => setCfg({ ...cfg, ping: e.target.value })}
-                    placeholder="@here" style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
-                </div>
-                <div style={{ flex: '1 1 130px' }}>
-                  <div style={LABEL}>IJKPUNT AFSTAND (SYSTEEM-ID)</div>
-                  <input value={cfg.home} onChange={e => setCfg({ ...cfg, home: Number(e.target.value) || 0 })}
-                    style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
-                </div>
-                <div style={{ flex: '1 1 130px' }}>
-                  <div style={LABEL}>OOK MELDEN BINNEN … SPRONGEN (0 = UIT)</div>
-                  <input type="number" min={0} max={25} value={cfg.maxJumps}
-                    onChange={e => setCfg({ ...cfg, maxJumps: Number(e.target.value) })}
-                    style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
-                </div>
-              </div>
-
-              <div>
-                <div style={LABEL}>HELE REGIO'S ERBIJ (ID'S; LEEG = ALLEEN DE WAAKLIJST)</div>
-                <input value={cfg.regions.join(', ')}
-                  onChange={e => setCfg({ ...cfg, regions: e.target.value.split(',').map(s => Number(s.trim())).filter(Boolean) })}
-                  placeholder="10000060 = Delve · 10000050 = Querious · 10000063 = Period Basis"
-                  style={{ ...INPUT, width: '100%', boxSizing: 'border-box' }} />
-              </div>
-
-              <label style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <input type="checkbox" checked={cfg.enabled} onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
-                Meldingen aan
-              </label>
-
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <button onClick={() => void bewaar()}
-                  style={{ ...KNOP, background: 'var(--blue)', color: '#0a0a12', borderColor: 'var(--blue)' }}>Opslaan</button>
-                <button onClick={() => void testDiscord()} style={KNOP}>Testbericht</button>
-              </div>
-
-              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', wordBreak: 'break-all' }}>
-                Cron-URL (elke 5 min aantikken, bijvoorbeeld vanaf de Pi):<br />
-                <code style={{ color: 'var(--text)' }}>{cfg.pollUrl}</code>
-              </div>
-            </>
-          )}
+        <div style={{ ...PANEL, marginTop: '0.7rem' }}>
+          <div style={{ ...LABEL, marginBottom: '0.5rem' }}>⚙ DISCORD-MELDING</div>
+          {adminTok
+            ? <TheraSettings token={adminTok.accessToken} onSaved={() => void haal(true, true)} />
+            : <div style={{ fontSize: '0.72rem', color: 'var(--red)' }}>Log in om dit te kunnen wijzigen.</div>}
         </div>
       )}
 
