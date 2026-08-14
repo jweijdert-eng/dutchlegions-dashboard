@@ -99,7 +99,6 @@ export default function Alarm() {
   const [laden, setLaden] = useState(true)
 
   const audio = useRef<AudioContext | null>(null)
-  const gemeld = useRef<Set<string>>(new Set())
   const oudeTitel = useRef<string>('')
 
   const intelHook = useIntelSystems(scherp && set.intel)
@@ -237,19 +236,6 @@ export default function Alarm() {
     return () => { clearInterval(t); document.title = oudeTitel.current || 'EVE Dashboard' }
   }, [alarmen.length])
 
-  // Systeemmelding, één keer per dreiging per character.
-  useEffect(() => {
-    if (!scherp || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-    for (const a of alarmen) {
-      const k = `${a.charId}:${a.dreiging.key}`
-      if (gemeld.current.has(k)) continue
-      gemeld.current.add(k)
-      new Notification(`⚠ ${a.jumps === 0 ? 'IN JOUW SYSTEEM' : `${a.jumps} sprongen`} — ${a.naam}`, {
-        body: `${a.dreiging.systeem}: ${a.dreiging.tekst}`,
-      })
-    }
-  }, [alarmen, scherp])
-
   // ── Scherp zetten (hier mag het geluid aan van de browser) ────────────────
   const zetScherp = useCallback(async () => {
     if (scherp) { setScherp(false); audio.current?.close().catch(() => {}); audio.current = null; return }
@@ -258,10 +244,6 @@ export default function Alarm() {
       audio.current = new Ctx()
       await audio.current.resume()
     } catch { /* geen geluid, de rest werkt wel */ }
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      void Notification.requestPermission()
-    }
-    gemeld.current.clear()
     setScherp(true)
   }, [scherp])
 
