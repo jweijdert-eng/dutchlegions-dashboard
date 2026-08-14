@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import Layout, { PageHeader } from '../components/Layout'
-import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
+import { useEsiStandings } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
+import { effectiveStanding, standingColor, rowBg, isVriendelijk, standingTeken, standingUitleg } from '../utils/standingView'
 import { useLocalChat } from '../hooks/useLocalChat'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { useTranslate } from '../utils/translate'
@@ -20,26 +21,6 @@ function hashColor(name: string): string {
   return COLORS[Math.abs(hash) % COLORS.length]
 }
 
-function effectiveStanding(name: string, ownNames: string[], esi: EsiStanding, manual: Record<string, Standing>): EsiStanding | 'own' {
-  if (ownNames.some(n => n.toLowerCase() === name.toLowerCase())) return 'own'
-  // Alleen eigen + expliciet blauw = vriend; al het andere (neutraal/onbekend/rood) = vijand.
-  const s = manual[name] ?? esi
-  return s === 'friend' ? 'friend' : 'enemy'
-}
-
-function standingColor(s: EsiStanding | 'own', fallback: string): string {
-  if (s === 'own' || s === 'friend') return 'var(--green)'   // eigen + vriend = groen
-  if (s === 'enemy')  return 'var(--red)'                    // neutraal/vijand = rood
-  return fallback
-}
-
-function rowBg(s: EsiStanding | 'own', isMention: boolean, alt: boolean): string {
-  if (s === 'enemy')              return 'rgba(224,85,85,0.09)'
-  if (s === 'friend' || s === 'own') return 'rgba(62,207,110,0.07)'
-  if (isMention)                  return 'rgba(240,192,64,0.06)'
-  return alt ? 'rgba(15,15,34,0.35)' : 'transparent'
-}
-
 interface ContextMenu { x: number; y: number; name: string }
 
 export default function LocalChat() {
@@ -54,7 +35,7 @@ export default function LocalChat() {
   const [onlyMentions, setOnlyMentions] = useState(false)
   const [manuals,      setManuals]      = useState<Record<string, Standing>>(getStandings)
   const [contextMenu,  setContextMenu]  = useState<ContextMenu | null>(null)
-  const [filter,       setFilter]       = useState<EsiStanding | null>(null)
+  const [filter,       setFilter]       = useState<'friend' | 'enemy' | null>(null)
 
   const userScrolled = useRef(false)
   const listRef      = useRef<HTMLDivElement>(null)
@@ -131,7 +112,8 @@ useEffect(() => {
   const displayed = messages.filter(m => {
     const esi      = getEsiStanding(m.sender)
     const standing = effectiveStanding(m.sender, ownNames, esi, manuals)
-    if (filter && standing !== filter) return false
+    if (filter === 'friend' && !isVriendelijk(standing)) return false
+    if (filter === 'enemy' && standing !== 'enemy') return false
     if (onlyMentions && !ownNames.some(n =>
       m.message.toLowerCase().includes(n.toLowerCase()) ||
       m.sender.toLowerCase() === n.toLowerCase()
@@ -367,11 +349,12 @@ useEffect(() => {
                       <td style={{ ...TD, width: 170, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 170, borderLeft: standing === 'enemy' ? '2px solid var(--red)' : (standing === 'friend' || standing === 'own') ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : '2px solid transparent' }}>
                         <span
                           onContextMenu={e => standing !== 'own' && openMenu(e, m.sender)}
-                          title={standing !== 'own' ? 'Rechtermuisknop voor handmatige override' : undefined}
+                          title={`${standingUitleg(standing)}${standing !== 'own' ? ' — rechtermuisknop voor handmatige override' : ''}`}
                           style={{ fontWeight: 600, fontSize: '0.72rem', color, cursor: standing !== 'own' ? 'context-menu' : 'default' }}
                         >
-                          {standing === 'friend' && <span style={{ marginRight: '0.2rem', fontSize: '0.55rem' }}>▲</span>}
-                          {standing === 'enemy'  && <span style={{ marginRight: '0.2rem', fontSize: '0.55rem' }}>▼</span>}
+                          {standingTeken(standing) && (
+                            <span style={{ marginRight: '0.2rem', fontSize: '0.55rem' }}>{standingTeken(standing)}</span>
+                          )}
                           {highlight(m.sender)}
                           {manuals[m.sender] && <span style={{ fontSize: '0.5rem', marginLeft: '0.2rem', opacity: 0.5 }}>✎</span>}
                         </span>

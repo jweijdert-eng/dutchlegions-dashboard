@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { useEsiStandings, type EsiStanding } from '../hooks/useEsiStandings'
+import { useEsiStandings } from '../hooks/useEsiStandings'
 import { getStandings, setStanding, type Standing } from '../utils/localStandings'
+import { effectiveStanding, standingColor, rowBg, isVriendelijk, standingTeken } from '../utils/standingView'
 import { useLocalChat } from '../hooks/useLocalChat'
 import { useMemberSettings, setMemberSettings } from '../utils/memberSettings'
 import { useTranslate } from '../utils/translate'
@@ -15,26 +16,6 @@ function hashColor(name: string): string {
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
   return COLORS[Math.abs(hash) % COLORS.length]
-}
-
-function effectiveStanding(name: string, ownNames: string[], esi: EsiStanding, manual: Record<string, Standing>): EsiStanding | 'own' {
-  if (ownNames.some(n => n.toLowerCase() === name.toLowerCase())) return 'own'
-  // Alleen eigen + expliciet blauw = vriend; al het andere (neutraal/onbekend/rood) = vijand.
-  const s = manual[name] ?? esi
-  return s === 'friend' ? 'friend' : 'enemy'
-}
-
-function standingColor(s: EsiStanding | 'own', fallback: string): string {
-  if (s === 'own' || s === 'friend') return 'var(--green)'   // eigen + vriend = groen
-  if (s === 'enemy')  return 'var(--red)'                    // neutraal/vijand = rood
-  return fallback
-}
-
-function rowBg(s: EsiStanding | 'own', isMention: boolean, alt: boolean): string {
-  if (s === 'enemy')                 return 'rgba(224,85,85,0.09)'
-  if (s === 'friend' || s === 'own') return 'rgba(62,207,110,0.07)'
-  if (isMention)                     return 'rgba(240,192,64,0.06)'
-  return alt ? 'rgba(15,15,34,0.3)' : 'transparent'
 }
 
 interface ContextMenu { x: number; y: number; name: string }
@@ -117,7 +98,7 @@ export default function LocalChatWidget() {
                 const isMention = standing !== 'own' && ownNames.some(n => m.message.toLowerCase().includes(n.toLowerCase()))
                 const bg       = rowBg(standing, isMention, i % 2 === 0)
                 const color    = standingColor(standing, hashColor(m.sender))
-                const border   = standing === 'enemy' ? '2px solid var(--red)' : (standing === 'friend' || standing === 'own') ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : 'none'
+                const border   = standing === 'enemy' ? '2px solid var(--red)' : standing === 'alliance' ? '2px solid #7fe0ff' : isVriendelijk(standing) ? '2px solid var(--green)' : isMention ? '2px solid var(--gold)' : 'none'
 
                 return (
                   <div key={i} style={{ background: bg, padding: '0.25rem 0.4rem', borderRadius: 2, borderLeft: border, paddingLeft: border !== 'none' ? '0.3rem' : '0.4rem' }}>
@@ -129,8 +110,9 @@ export default function LocalChatWidget() {
                         title={standing !== 'own' ? 'Rechtermuisknop voor handmatige override' : undefined}
                         style={{ fontWeight: 600, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, cursor: standing !== 'own' ? 'context-menu' : 'default' }}
                       >
-                        {standing === 'friend' && <span style={{ marginRight: '0.2rem', fontSize: '0.55rem' }}>▲</span>}
-                        {standing === 'enemy'  && <span style={{ marginRight: '0.2rem', fontSize: '0.55rem' }}>▼</span>}
+                        {standingTeken(standing) && (
+                          <span style={{ marginRight: '0.2rem', fontSize: '0.55rem' }}>{standingTeken(standing)}</span>
+                        )}
                         {m.sender}
                         {manuals[m.sender] && <span style={{ fontSize: '0.5rem', marginLeft: '0.2rem', opacity: 0.6 }}>✎</span>}
                       </span>

@@ -56,7 +56,10 @@ async function fetchCharInfo(characterId: number): Promise<CharInfo> {
   return res.json() as Promise<CharInfo>
 }
 
-export type EsiStanding = 'friend' | 'enemy' | 'neutral'
+// 'corp'/'alliance' = zit in jóuw corp of alliance. Die staan niet in de
+// contactenlijst (je zet geen standing op jezelf), dus zonder deze twee kleurde
+// je eigen corp rood.
+export type EsiStanding = 'friend' | 'enemy' | 'neutral' | 'corp' | 'alliance'
 
 function toStanding(value: number | undefined): EsiStanding {
   if (value === undefined) return 'neutral'
@@ -72,6 +75,8 @@ export function useEsiStandings(token: TokenData | undefined): (name: string) =>
   const [nameIds,   setNameIds]   = useState<Map<string, number>>(new Map())
   // character id → { corporation_id, alliance_id }
   const [charInfos, setCharInfos] = useState<Map<number, CharInfo>>(new Map())
+  // Mijn eigen corp/alliance — iedereen daaruit is per definitie vriendelijk.
+  const [eigen, setEigen] = useState<CharInfo | null>(null)
 
   const seenNamesRef    = useRef<Set<string>>(new Set())
   const seenCharIds     = useRef<Set<number>>(new Set())
@@ -88,7 +93,11 @@ export function useEsiStandings(token: TokenData | undefined): (name: string) =>
     ;(async () => {
       const map = new Map<number, number>()
       let corpId: number | undefined, allianceId: number | undefined
-      try { const info = await fetchCharInfo(token.characterId); corpId = info.corporation_id; allianceId = info.alliance_id } catch { /* ignore */ }
+      try {
+        const info = await fetchCharInfo(token.characterId)
+        corpId = info.corporation_id; allianceId = info.alliance_id
+        if (!cancelled) setEigen(info)
+      } catch { /* ignore */ }
       if (allianceId) { try { (await fetchContactsAt(`/alliances/${allianceId}/contacts/`, token.accessToken)).forEach(c => map.set(c.contact_id, c.standing)) } catch { /* geen scope/rol */ } }
       if (corpId)     { try { (await fetchContactsAt(`/corporations/${corpId}/contacts/`, token.accessToken)).forEach(c => map.set(c.contact_id, c.standing)) } catch { /* geen scope/rol */ } }
       try { (await fetchContactsAt(`/characters/${token.characterId}/contacts/`, token.accessToken)).forEach(c => map.set(c.contact_id, c.standing)) } catch { /* geen scope */ }
@@ -159,11 +168,19 @@ export function useEsiStandings(token: TokenData | undefined): (name: string) =>
       return 'neutral'
     }
 
+    // 2. Eigen corp/alliance — gaat vóór de contactenlijst, want daar staan je
+    //    eigen mensen niet in en anders vallen ze door naar 'neutral' (= rood).
+    if (eigen) {
+      if (info.corporation_id === eigen.corporation_id) return 'corp'
+      if (eigen.alliance_id && info.alliance_id === eigen.alliance_id) return 'alliance'
+    }
+
+    // 3. Corp / alliance standing uit de contacten
     if (contacts.has(info.corporation_id)) return toStanding(contacts.get(info.corporation_id))
     if (info.alliance_id && contacts.has(info.alliance_id)) return toStanding(contacts.get(info.alliance_id))
 
     return 'neutral'
-  }, [contacts, nameIds, charInfos, queueName, queueCharInfo])
+  }, [contacts, nameIds, charInfos, eigen, queueName, queueCharInfo])
 
   return getStanding
 }
