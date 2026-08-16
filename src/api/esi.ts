@@ -537,6 +537,33 @@ export const getPlanets      = (id: number, token: string) => esiGet<Planet[]>(`
 export const getPlanetDetail = (charId: number, planetId: number, token: string) =>
   esiGet<PlanetDetail>(`/characters/${charId}/planets/${planetId}/`, token)
 
+// Naam + systeem + type van een planeet. /universe/names/ kent planeten NIET
+// (alleen characters, systemen, types, …), dus dit moet per planeet. Het is
+// statische SDE-data, dus we bewaren het in localStorage — anders kost elke
+// herlaad opnieuw een call per kolonie.
+export interface PlanetUniverse { name: string; system_id: number; type_id: number }
+const _planetInfoCache = new Map<number, PlanetUniverse>()
+export async function getPlanetInfo(planetId: number): Promise<PlanetUniverse | null> {
+  const hit = _planetInfoCache.get(planetId)
+  if (hit) return hit
+  const key = `planet_info_${planetId}`
+  const stored = localStorage.getItem(key)
+  if (stored) {
+    try {
+      const p = JSON.parse(stored) as PlanetUniverse
+      if (p?.name && p.system_id) { _planetInfoCache.set(planetId, p); return p }
+    } catch { /* stuk item — gewoon opnieuw ophalen */ }
+  }
+  try {
+    const d = await esiGet<{ name: string; system_id: number; type_id: number }>(`/universe/planets/${planetId}/`)
+    const p: PlanetUniverse = { name: d.name, system_id: d.system_id, type_id: d.type_id }
+    _planetInfoCache.set(planetId, p)
+    _planetTypeCache.set(planetId, d.type_id)
+    try { localStorage.setItem(key, JSON.stringify(p)) } catch { /* vol is niet erg */ }
+    return p
+  } catch { return null }
+}
+
 const _planetTypeCache = new Map<number, number>()
 export async function getPlanetTypeId(planetId: number): Promise<number | null> {
   if (_planetTypeCache.has(planetId)) return _planetTypeCache.get(planetId)!
