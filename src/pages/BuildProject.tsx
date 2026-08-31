@@ -4,7 +4,7 @@ import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
-import { getAssets, getBlueprints, getIndustryJobs, getStructureInfo, getStructureStatus, resolveNames, tokenScopes } from '../api/esi'
+import { getAssets, getBlueprints, getIndustryJobs, getSkillsInfo, getStructureInfo, getStructureStatus, resolveNames, tokenScopes } from '../api/esi'
 
 const STRUCTURE_SCOPE = 'esi-universe.read_structures.v1'
 
@@ -24,8 +24,11 @@ interface Project {
   updatedAt: number
 }
 
-interface CompactBp { m: [number, number][]; p: [number, number] }
-interface Recipe { perRun: number; materials: [number, number][]; bpId: number }
+// s = skill-eisen om de blueprint te mógen gebruiken ([[skillTypeId, level], …]).
+// Ze veranderen niets aan de materiaalhoeveelheden — EVE laat skills het verbruik
+// niet beïnvloeden — maar zonder die skills kun je de job niet starten.
+interface CompactBp { m: [number, number][]; p: [number, number]; s?: [number, number][] }
+interface Recipe { perRun: number; materials: [number, number][]; bpId: number; skills: [number, number][] }
 
 // ── SDE-data (eenmalig laden, gedeeld) ──────────────────────────────────────
 let _namesInflight: Promise<Record<string, string>> | null = null
@@ -42,7 +45,7 @@ function loadRecipes(): Promise<Map<number, Recipe>> {
       const byProduct = new Map<number, Recipe>()
       for (const [bid, bp] of Object.entries(bps)) {
         const [prodId, perRun] = bp.p
-        if (!byProduct.has(prodId)) byProduct.set(prodId, { perRun, materials: bp.m, bpId: Number(bid) })
+        if (!byProduct.has(prodId)) byProduct.set(prodId, { perRun, materials: bp.m, bpId: Number(bid), skills: bp.s ?? [] })
       }
       return byProduct
     })
@@ -241,6 +244,12 @@ export default function BuildProject() {
   const [jobActive, setJobActive] = useState<Set<number>>(new Set())
   const [jobLocIds, setJobLocIds] = useState<Set<number>>(new Set())
   const [locTrouble, setLocTrouble] = useState<string | null>(null)
+
+  // Wie bouwt er? Skills veranderen de aantallen niet, maar bepalen wél of je de job
+  // überhaupt kunt starten — en dat verschilt per character.
+  const [builderId, setBuilderId] = useState<number | null>(null)
+  const builder = tokens.find(t => t.characterId === (builderId ?? mainCharId ?? charId)) ?? tokens[0] ?? null
+  const [builderSkills, setBuilderSkills] = useState<Map<number, number> | null>(null)
   const [bpOwned, setBpOwned] = useState<Map<number, { bpo: boolean; me: number }>>(new Map())  // key = blueprint-type-id
   const [invLoading, setInvLoading] = useState(false)
   const [useSupply, setUseSupply] = useState(true)
@@ -265,7 +274,7 @@ export default function BuildProject() {
         // alleen onthouden als het recept ook écht uit reactions.json komt; bij
         // overlap wint manufacturing en is het dus geen reactie-stap
         if (merged.has(prodId)) continue
-        merged.set(prodId, { perRun, materials: bp.m, bpId: Number(bid) })
+        merged.set(prodId, { perRun, materials: bp.m, bpId: Number(bid), skills: bp.s ?? [] })
         rset.add(prodId)
       }
       setRecipes(merged); setReactionSet(rset)
@@ -384,6 +393,22 @@ export default function BuildProject() {
   }, [activeTokens.map(t => t.characterId).join(','), recipes])
 
   useEffect(() => { refreshInventory() }, [refreshInventory])
+
+  // Skills van de bouwer. active_skill_level is wat in-game telt (een getrainde skill
+  // die niet actief is, mag je niet gebruiken).
+  useEffect(() => {
+    if (!builder) { setBuilderSkills(null); return }
+    let stale = false
+    getSkillsInfo(builder.characterId, builder.accessToken)
+      .then(info => {
+        if (stale) return
+        const m = new Map<number, number>()
+        for (const s of info.skills ?? []) m.set(s.skill_id, s.active_skill_level)
+        setBuilderSkills(m)
+      })
+      .catch(() => { if (!stale) setBuilderSkills(null) })
+    return () => { stale = true }
+  }, [builder?.characterId, builder?.accessToken])
 
   const active = projects.find(p => p.id === activeId) ?? null
 
@@ -645,6 +670,35 @@ export default function BuildProject() {
     return <span style={{ ...badge, color: 'var(--red)' }} title="Je hebt deze blueprint (nog) niet">⚠ geen BP</span>
   }
 
+  // Kan de bouwer deze blueprint gebruiken? Geeft de skills terug die hij mist.
+  // Zolang de skills nog niet binnen zijn (of niet op te halen waren) zwijgen we,
+  // want een valse waarschuwing is erger dan geen.
+  const skillGap = (typeId: number): Array<{ id: number; need: number; have: number }> => {
+    const r = recipes.get(typeId)
+    if (!r || !builderSkills || r.skills.length === 0) return []
+    return r.skills
+      .map(([id, need]) => ({ id, need, have: builderSkills.get(id) ?? 0 }))
+      .filter(s => s.have < s.need)
+  }
+  const skillBadge = (typeId: number) => {
+    const gap = skillGap(typeId)
+    if (gap.length === 0) return null
+    return <span style={{ ...badge, color: 'var(--red)' }}
+      title={`${builder?.characterName ?? 'Deze bouwer'} kan dit niet bouwen:\n`
+        + gap.map(g => `${nameOf(g.id)} ${g.need} (nu ${g.have})`).join('\n')}>
+      ⚠ skills
+    </span>
+  }
+
+  // Hoeveel bouwstappen de gekozen bouwer niet kan starten.
+  const skillMissing = useMemo(() => {
+    if (!bom || !builderSkills) return 0
+    return bom.builds.filter(b => {
+      const r = recipes.get(b.typeId)
+      return r?.skills.some(([id, need]) => (builderSkills.get(id) ?? 0) < need)
+    }).length
+  }, [bom, builderSkills, recipes])
+
   // Te maken met Planetary Interaction?
   const piBadge = (typeId: number) => piSet.has(typeId)
     ? <span style={{ ...badge, color: '#9b8cff' }} title="Te produceren met Planetary Interaction">🪐 PI</span>
@@ -709,6 +763,21 @@ export default function BuildProject() {
           )}
           {useSupply && locTrouble && (
             <div style={{ fontSize: '0.6rem', color: 'var(--gold)', margin: '4px 2px 0', lineHeight: 1.35 }}>⚠ {locTrouble}</div>
+          )}
+          {tokens.length > 0 && (
+            <label style={{ display: 'block', fontSize: '0.6rem', color: 'var(--text-dim)', margin: '8px 2px 0' }}
+              title="Skills bepalen niet hoeveel materiaal je nodig hebt — EVE laat skills het verbruik niet beïnvloeden — maar wel of je de job mag starten.">
+              Bouwer
+              <select value={builder?.characterId ?? ''} onChange={e => setBuilderId(Number(e.target.value))}
+                style={{ ...input, width: '100%', marginTop: 2, fontSize: '0.66rem' }}>
+                {tokens.map(t => <option key={t.characterId} value={t.characterId}>{t.characterName}</option>)}
+              </select>
+            </label>
+          )}
+          {skillMissing > 0 && (
+            <div style={{ fontSize: '0.6rem', color: 'var(--red)', margin: '4px 2px 0', lineHeight: 1.35 }}>
+              ⚠ {skillMissing} bouwstap{skillMissing === 1 ? '' : 'pen'} kan {builder?.characterName} niet starten — zie de ⚠ skills-labels
+            </div>
           )}
           <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {projects.length === 0 && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Nog geen projecten.</div>}
@@ -843,6 +912,7 @@ export default function BuildProject() {
                           {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                           {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                           {bpBadge(n.typeId)}
+                          {skillBadge(n.typeId)}
                           {piBadge(n.typeId)}
                           {n.typeId !== active.targetTypeId && adviceBadge(n.typeId)}
                         </div>
@@ -883,6 +953,7 @@ export default function BuildProject() {
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                         {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                         {bpBadge(b.typeId)}
+                        {skillBadge(b.typeId)}
                         {piBadge(b.typeId)}
                       </div>
                       {(() => { const v = verdict(b.typeId); return v ? (
@@ -932,6 +1003,7 @@ export default function BuildProject() {
                           ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen {v.build === 0 ? '· eigen mineralen' : `−${v.savePct}%`}</span>
                           : null })()}
                         {buildable && bpBadge(b.typeId)}
+                        {buildable && skillBadge(b.typeId)}
                         {piBadge(b.typeId)}
                       </div>
                     </div>

@@ -7,8 +7,8 @@ Geen third-party Fuzzwork-SQLite meer; alle bundels zijn 1-op-1 geverifieerd ide
 Draai: python tools/build-sde.py  (daarna committen + pushen)
 
 Output (compact, meegedeployd met de site → geen lokale server nodig):
-  public/blueprints.json  { bpId: { m:[[matId,qty],...], p:[prodId,qty] } }   (manufacturing)
-  public/reactions.json   { formulaId: { m:[[matId,qty],...], p:[prodId,qty] } } (reacties)
+  public/blueprints.json  { bpId: { m:[[matId,qty],...], p:[prodId,qty], s:[[skillId,lvl],...] } }
+  public/reactions.json   { formulaId: { m:[...], p:[...], s:[...] } }        (reacties)
   public/type-names.json  { typeId: "Naam" }                                  (published types, en)
   public/schematics.json  { id: { schematic_name, cycle_time, pins:[{type_id,is_input,quantity}] } } (PI)
 """
@@ -51,7 +51,8 @@ for bid, b in bp.items():
         'm': [[m['type_id'], m['quantity']] for m in (mfg.get('materials') or {}).values()],
         'p': [prod['type_id'], prod['quantity']],
     }
-write('blueprints.json', out_bp)
+# NB: blueprints.json en reactions.json worden pas verderop weggeschreven — de
+# skill-eisen komen uit CCP's JSONL en die is hier nog niet gedownload.
 
 # Reacties (reaction-formula's) — zelfde compacte vorm als manufacturing
 out_rx = {}
@@ -67,7 +68,7 @@ for bid, b in bp.items():
         'm': [[m['type_id'], m['quantity']] for m in (rx.get('materials') or {}).values()],
         'p': [prod['type_id'], prod['quantity']],
     }
-write('reactions.json', out_rx)
+
 
 # Type-namen (published, Engels)
 types = load('types.json')
@@ -100,6 +101,22 @@ def jrows(name):
 
 def en(o):
     return o.get('en') if isinstance(o, dict) else o   # SDE-namen zijn {en, de, …}
+
+# Skill-eisen om een blueprint te mógen gebruiken → 's' op de recepten hierboven.
+# EVE Ref laat ze weg, CCP's blueprints.jsonl heeft ze wél (camelCase: typeID/level).
+# Skills veranderen niets aan de materiaalhoeveelheden — dit is puur "mag ik dit
+# bouwen"; het dashboard zet er een waarschuwing bij als de bouwer ze mist.
+for row in jrows('blueprints.jsonl'):
+    bid = str(row['_key'])
+    for act, doel in (('manufacturing', out_bp), ('reaction', out_rx)):
+        a = (row.get('activities') or {}).get(act) or {}
+        sk = sorted([[s['typeID'], s['level']] for s in (a.get('skills') or []) if s.get('typeID')])
+        if sk and bid in doel:
+            doel[bid]['s'] = sk
+write('blueprints.json', out_bp)
+write('reactions.json', out_rx)
+print(f"    met skill-eisen: {sum(1 for r in out_bp.values() if 's' in r)} blueprints, "
+      f"{sum(1 for r in out_rx.values() if 's' in r)} reacties")
 
 # Solar systems + 2D-kaartcoördinaten in één pass.
 # security: 4 decimalen → de app rondt zelf naar 1 (anders dubbel afronden: Jita 0.9459 → 1.0).
