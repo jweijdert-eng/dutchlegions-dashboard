@@ -407,7 +407,7 @@ export default function BuildProject() {
     if (!tree) return m
     const calc = (n: TreeNode): number => {
       const c = n.children.length === 0
-        ? n.qty * (prices.get(n.typeId) ?? 0)
+        ? (MINERAL_IDS.has(n.typeId) ? 0 : n.qty * (prices.get(n.typeId) ?? 0))
         : n.children.reduce((s, ch) => s + calc(ch), 0)
       m.set(n, c)
       return c
@@ -547,6 +547,7 @@ export default function BuildProject() {
     if (!r) return null
     let build = 0
     for (const [m, q] of r.materials) {
+      if (MINERAL_IDS.has(m)) continue     // kost geen ISK, dus ook geen reden om af te haken
       const p = prices.get(m) ?? 0
       if (!p) return null                 // onbekende materiaalprijs → geen betrouwbaar advies
       build += applyME(q, me) * p
@@ -554,7 +555,11 @@ export default function BuildProject() {
     build = build / r.perRun
     const buy = prices.get(typeId) ?? 0
     if (!buy) return null
-    return { build, buy, cheaper: build < buy ? 'build' : 'buy', savePct: buy > 0 ? Math.round(Math.abs(buy - build) / buy * 100) : 0 }
+    // De besparing afzetten tegen het alternatief dat je láát liggen, dus tegen de
+    // duurste van de twee. Kopen voor 7,18 i.p.v. bouwen voor 9,20 scheelt 22%, niet
+    // 28% — dat laatste is hoeveel duurder bouwen is, een andere vraag.
+    const ref = Math.max(build, buy)
+    return { build, buy, cheaper: build < buy ? 'build' : 'buy', savePct: ref > 0 ? Math.round(Math.abs(buy - build) / ref * 100) : 0 }
   }
   const targetVerdict = active ? verdict(active.targetTypeId) : null
 
@@ -583,7 +588,7 @@ export default function BuildProject() {
     const build = v.cheaper === 'build'
     return <span style={{ ...badge, color: build ? '#3ecf6e' : '#7fb0ff', fontWeight: 700 }}
       title={`Zelf bouwen ~${fmtISK(v.build)}/st vs kopen ~${fmtISK(v.buy)}/st`}>
-      👍 advies: {build ? 'bouwen' : 'kopen'} ({v.savePct}% goedkoper)</span>
+      👍 advies: {build ? 'bouwen' : 'kopen'} ({v.build === 0 ? 'alleen eigen mineralen' : `${v.savePct}% goedkoper`})</span>
   }
 
   if (!charId) return <Layout header={<PageHeader title="Bouwproject" />}><div style={{ padding: '2rem', color: 'var(--text-dim)' }}>Log in om bouwprojecten te beheren.</div></Layout>
@@ -672,7 +677,9 @@ export default function BuildProject() {
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>
                       Eindproduct: zelf bouwen ~{fmtISK(targetVerdict.build)} vs kopen ~{fmtISK(targetVerdict.buy)} /st →{' '}
                       <strong style={{ color: targetVerdict.cheaper === 'build' ? '#3ecf6e' : 'var(--gold)' }}>
-                        {targetVerdict.cheaper === 'build' ? `zelf bouwen ${targetVerdict.savePct}% goedkoper` : `kopen ${targetVerdict.savePct}% goedkoper`}
+                        {targetVerdict.build === 0 ? 'zelf bouwen — alleen eigen mineralen'
+                          : targetVerdict.cheaper === 'build' ? `zelf bouwen ${targetVerdict.savePct}% goedkoper`
+                          : `kopen ${targetVerdict.savePct}% goedkoper`}
                       </strong>
                     </div>
                   )}
@@ -736,7 +743,10 @@ export default function BuildProject() {
                         </div>
                         <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <span>{fmtNum(n.qty)} {isB ? 'te bouwen' : 'nodig'}{isB && n.runs > 0 ? ` · ${n.runs} run${n.runs !== 1 ? 's' : ''}` : ''}</span>
-                          {(() => { const c = nodeCost.get(n) ?? 0; if (c <= 0) return null
+                          {(() => {
+                            // Mineralen mijn je zelf, dus geen ISK-bedrag maar een pikhouweel
+                            if (MINERAL_IDS.has(n.typeId)) return <span style={{ color: '#f0c674' }} title="Zelf mijnen of uit reprocessing — kost je geen ISK">⛏️ zelf</span>
+                            const c = nodeCost.get(n) ?? 0; if (c <= 0) return null
                             const buy = isB ? (prices.get(n.typeId) ?? 0) * n.qty : 0
                             return <span style={{ color: isB ? '#7fd1ff' : 'var(--text-dim)' }} title={isB ? 'Materiaalkosten om deze sub-assemblage zelf te bouwen' : 'Aankoopkosten (Jita sell)'}>
                               {isB ? '🔧 ' : '🛒 '}~{fmtISK(c)} ISK{buy > 0 ? <span style={{ color: c < buy ? '#3ecf6e' : 'var(--gold)' }}> (kopen ~{fmtISK(buy)})</span> : null}
@@ -788,7 +798,7 @@ export default function BuildProject() {
                       </div>
                       {(() => { const v = verdict(b.typeId); return v ? (
                         <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: 1 }}>
-                          🔧 {fmtISK(v.build)} vs 🛒 {fmtISK(v.buy)} /st · <span style={{ color: v.cheaper === 'build' ? '#3ecf6e' : 'var(--gold)' }}>{v.cheaper === 'build' ? `bouwen −${v.savePct}%` : `kopen −${v.savePct}%`}</span>
+                          🔧 {fmtISK(v.build)} vs 🛒 {fmtISK(v.buy)} /st · <span style={{ color: v.cheaper === 'build' ? '#3ecf6e' : 'var(--gold)' }}>{v.build === 0 ? 'bouwen · eigen mineralen' : v.cheaper === 'build' ? `bouwen −${v.savePct}%` : `kopen −${v.savePct}%`}</span>
                         </div>) : null })()}
                     </div>
                     <button onClick={() => toggleBuild(b.typeId)} style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
