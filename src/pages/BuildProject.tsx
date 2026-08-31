@@ -232,9 +232,12 @@ export default function BuildProject() {
   // Voorraad (assets) per locatie + lopende productie (industry jobs, globaal)
   const [ownedByLoc, setOwnedByLoc] = useState<Map<number, Map<number, number>>>(new Map())
   const [locLabels, setLocLabels] = useState<Map<number, string>>(new Map())
-  const [locFilter, setLocFilter] = useState<number | 'all'>('all')
+  // Leeg = alle locaties. Zo is er geen dode toestand waarin je niets hebt aangevinkt
+  // en er stilletjes nul voorraad wordt geteld.
+  const [locSel, setLocSel] = useState<Set<number>>(new Set())
   const [jobOutputMap, setJobOutputMap] = useState<Map<number, number>>(new Map())
   const [jobActive, setJobActive] = useState<Set<number>>(new Set())
+  const [jobLocIds, setJobLocIds] = useState<Set<number>>(new Set())
   const [bpOwned, setBpOwned] = useState<Map<number, { bpo: boolean; me: number }>>(new Map())  // key = blueprint-type-id
   const [invLoading, setInvLoading] = useState(false)
   const [useSupply, setUseSupply] = useState(true)
@@ -281,6 +284,7 @@ export default function BuildProject() {
       const allRaw: Raw[] = []
       const jobOut = new Map<number, number>()
       const jobAct = new Set<number>()
+      const jobLocs = new Set<number>()      // waar je op dit moment bouwt
       const bpById = new Map<number, { bpo: boolean; me: number }>()
       await Promise.all(activeTokens.map(async t => {
         const [assets, jobs, blueprints] = await Promise.all([
@@ -290,8 +294,12 @@ export default function BuildProject() {
         ])
         for (const a of assets) allRaw.push({ ...a, owner: t.characterId } as Raw)
         for (const j of jobs) {
-          if (j.activity_id !== 1 || !j.product_type_id) continue            // alleen manufacturing
           if (j.status !== 'active' && j.status !== 'ready' && j.status !== 'paused') continue
+          // De werkplaats zelf onthouden, ongeacht de activiteit — ook een reactie-job
+          // wijst je bouwlocatie aan.
+          const site = j.facility_id || j.station_id || j.output_location_id
+          if (site) jobLocs.add(site)
+          if (j.activity_id !== 1 || !j.product_type_id) continue            // alleen manufacturing
           const perRun = recipes.get(j.product_type_id)?.perRun ?? 1
           jobOut.set(j.product_type_id, (jobOut.get(j.product_type_id) ?? 0) + j.runs * perRun)
           jobAct.add(j.product_type_id)
@@ -328,15 +336,26 @@ export default function BuildProject() {
         m.set(a.type_id, (m.get(a.type_id) ?? 0) + a.quantity)
       }
 
+      // De plek waar je bouwt hoort ook in de lijst, ook als daar (nog) niets van jou
+      // ligt — anders kun je je bouwlocatie pas kiezen nadat je er voorraad heen hebt
+      // gebracht, precies wanneer je het filter niet meer nodig hebt.
+      for (const id of jobLocs) if (!byLoc.has(id)) {
+        byLoc.set(id, new Map())
+        if (!rootType.has(id)) rootType.set(id, id >= 1_000_000_000 ? 'structure' : 'station')
+      }
+
       // Locatienamen: SDE/ESI voor stations & systemen, getStructureInfo voor citadels
       const ids = [...byLoc.keys()]
       const nameMap = await resolveNames(ids).catch(() => new Map<number, string>())
+      // Namen opzoeken met ÁLLE tokens, niet alleen de actieve: docking-rechten hangen
+      // aan het character, niet aan wat de kiezer bovenin toevallig aan staat heeft.
+      // Anders heet je eigen citadel 'Locatie 1035…' zodra je een ander character kiest.
       await Promise.all(ids.filter(id => !nameMap.get(id) && rootType.get(id) === 'structure')
-        .map(async id => { const info = await getStructureInfo(id, activeTokens).catch(() => null); if (info?.name) nameMap.set(id, info.name) }))
+        .map(async id => { const info = await getStructureInfo(id, tokens).catch(() => null); if (info?.name) nameMap.set(id, info.name) }))
 
       setOwnedByLoc(byLoc)
-      setLocLabels(new Map(ids.map(id => [id, nameMap.get(id) ?? `Locatie ${id}`])))
-      setJobOutputMap(jobOut); setJobActive(jobAct); setBpOwned(bpById)
+      setLocLabels(new Map(ids.map(id => [id, nameMap.get(id) ?? `Structuur ${id} (naam onbekend)`])))
+      setJobOutputMap(jobOut); setJobActive(jobAct); setBpOwned(bpById); setJobLocIds(jobLocs)
     } finally { setInvLoading(false) }
   }, [activeTokens.map(t => t.characterId).join(','), recipes])
 
@@ -344,29 +363,40 @@ export default function BuildProject() {
 
   const active = projects.find(p => p.id === activeId) ?? null
 
-  // Voorraad op de gekozen locatie (of alles opgeteld)
+  // Voorraad op de gekozen locaties bij elkaar opgeteld (leeg = alles meetellen).
+  // Zo kun je bijvoorbeeld je bouwlocatie én Jita samen als voorraad rekenen.
   const ownedMap = useMemo(() => {
-    if (locFilter === 'all') {
-      const m = new Map<number, number>()
-      for (const loc of ownedByLoc.values()) for (const [id, q] of loc) m.set(id, (m.get(id) ?? 0) + q)
-      return m
+    const m = new Map<number, number>()
+    for (const [loc, types] of ownedByLoc) {
+      if (locSel.size > 0 && !locSel.has(loc)) continue
+      for (const [id, q] of types) m.set(id, (m.get(id) ?? 0) + q)
     }
-    return ownedByLoc.get(locFilter) ?? new Map<number, number>()
-  }, [ownedByLoc, locFilter])
+    return m
+  }, [ownedByLoc, locSel])
 
+  // Je bouwlocaties bovenaan, daarna de rest op hoeveel er ligt — je zoekt hier
+  // negen van de tien keer de plek waar je jobs draaien.
   const locOptions = useMemo(() =>
     [...ownedByLoc.keys()]
-      .map(id => ({ id, label: locLabels.get(id) ?? `Locatie ${id}`, count: ownedByLoc.get(id)!.size }))
-      .sort((a, b) => b.count - a.count),
-  [ownedByLoc, locLabels])
+      .map(id => ({ id, label: locLabels.get(id) ?? `Locatie ${id}`, count: ownedByLoc.get(id)!.size, build: jobLocIds.has(id) }))
+      .sort((a, b) => Number(b.build) - Number(a.build) || b.count - a.count),
+  [ownedByLoc, locLabels, jobLocIds])
 
   // Verdwijnt de gekozen locatie na een verversing (alles verplaatst, of een character
   // niet meer ingelogd), dan vindt de <select> geen bijpassende optie meer en toont hij
   // 'Alle locaties' — terwijl de filter nog op het oude id staat en dus stilletjes nul
   // voorraad meetelt. Daarom meeschakelen naar 'all'.
   useEffect(() => {
-    if (locFilter !== 'all' && ownedByLoc.size > 0 && !ownedByLoc.has(locFilter)) setLocFilter('all')
-  }, [ownedByLoc, locFilter])
+    if (locSel.size === 0 || ownedByLoc.size === 0) return
+    const keep = [...locSel].filter(id => ownedByLoc.has(id))
+    if (keep.length !== locSel.size) setLocSel(new Set(keep))
+  }, [ownedByLoc, locSel])
+
+  const toggleLoc = (id: number) => setLocSel(prev => {
+    const n = new Set(prev)
+    n.has(id) ? n.delete(id) : n.add(id)
+    return n
+  })
 
   // Voorraad + in-productie als beschikbare 'supply' voor de netto-berekening
   const supply = useMemo(() => {
@@ -636,13 +666,22 @@ export default function BuildProject() {
               <span style={{ color: 'var(--gold)' }}> · {tokens.length - activeTokens.length} buiten beeld</span>}
           </div>
           {useSupply && locOptions.length > 0 && (
-            <select value={locFilter === 'all' ? 'all' : String(locFilter)}
-              onChange={e => setLocFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              title="Tel alleen voorraad op deze locatie mee (jobs blijven globaal). Het getal is het aantal verschillende soorten dat er ligt."
-              style={{ ...input, width: '100%', marginTop: 6 }}>
-              <option value="all">📍 Alle locaties</option>
-              {locOptions.map(o => <option key={o.id} value={o.id}>{o.label} ({o.count} soorten)</option>)}
-            </select>
+            <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 4, maxHeight: 168, overflowY: 'auto' }}
+              title="Vink aan welke locaties als voorraad meetellen — meerdere mag, bijvoorbeeld je bouwlocatie én Jita. Niets aanvinken = alles. Jobs blijven globaal. Het getal is het aantal verschillende soorten dat er ligt; 🔨 is een plek waar je nu jobs draait.">
+              <label style={locRow}>
+                <input type="checkbox" checked={locSel.size === 0} onChange={() => setLocSel(new Set())} />
+                <span style={{ color: locSel.size === 0 ? '#fff' : 'var(--text-dim)' }}>📍 Alle locaties</span>
+              </label>
+              {locOptions.map(o => (
+                <label key={o.id} style={locRow} title={o.label}>
+                  <input type="checkbox" checked={locSel.has(o.id)} onChange={() => toggleLoc(o.id)} />
+                  <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: locSel.has(o.id) ? '#fff' : undefined }}>
+                    {o.build ? '🔨 ' : ''}{o.label}
+                  </span>
+                  <span style={{ color: 'var(--text-dim)', flexShrink: 0 }}>{o.count}</span>
+                </label>
+              ))}
+            </div>
           )}
           <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {projects.length === 0 && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Nog geen projecten.</div>}
@@ -695,7 +734,7 @@ export default function BuildProject() {
                 <EveImage category="types" id={active.targetTypeId} variation="icon" size={64} px={48} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{active.targetName}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita 4-4{pricesAt ? `, ${new Date(pricesAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}` : ''}){mineralValue > 0 && ` · ⛏️ ${fmtISK(mineralValue)} aan mineralen lever je zelf`}{useSupply && ' · voorraad/jobs meegerekend'}{!useReactions && ' · reacties gekocht'}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita 4-4{pricesAt ? `, ${new Date(pricesAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}` : ''}){mineralValue > 0 && ` · ⛏️ ${fmtISK(mineralValue)} aan mineralen lever je zelf`}{useSupply && (locSel.size > 0 ? ` · voorraad van ${locSel.size} locatie${locSel.size === 1 ? '' : 's'} + jobs` : ' · voorraad/jobs meegerekend')}{!useReactions && ' · reacties gekocht'}</div>
                   {targetVerdict && (
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>
                       Eindproduct: zelf bouwen ~{fmtISK(targetVerdict.build)} vs kopen ~{fmtISK(targetVerdict.buy)} /st →{' '}
@@ -957,5 +996,6 @@ const btnPrimary: React.CSSProperties = { width: '100%', padding: '0.55rem', bac
 const btnGhost: React.CSSProperties = { background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }
 const pill: React.CSSProperties = { padding: '3px 9px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 12, fontSize: '0.64rem', cursor: 'pointer', whiteSpace: 'nowrap' }
 const badge: React.CSSProperties = { color: 'var(--text-dim)', whiteSpace: 'nowrap' }
+const locRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', fontSize: '0.64rem', color: 'var(--text)', cursor: 'pointer' }
 const input: React.CSSProperties = { background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', padding: '0.32rem 0.5rem', fontSize: '0.74rem' }
 const lbl: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3, fontSize: '0.66rem', color: 'var(--text-dim)' }

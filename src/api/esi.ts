@@ -448,6 +448,8 @@ export interface IndustryJob {
   duration: number
   output_location_id: number
   successful_runs?: number
+  facility_id?: number      // station of structuur waar de job draait
+  station_id?: number       // alleen bij NPC-stations
 }
 
 export const getIndustryJobs = (id: number, token: string) =>
