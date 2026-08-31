@@ -18,6 +18,7 @@ interface Project {
   targetName: string
   targetQty: number
   me: number
+  bonus?: number                       // structuur- + rigbonus in %, bovenop de blueprint-ME
   buyOverrides: Record<number, true>   // typeIds die je liever koopt dan bouwt (snoeit de subboom)
   progress: Record<number, Progress>
   createdAt: number
@@ -74,9 +75,20 @@ function loadPiOutputs(): Promise<Set<number>> {
   return _piInflight
 }
 
-// ME verlaagt de materiaalhoeveelheid per run (0–10%). TE laten we buiten beschouwing.
-function applyME(qty: number, me: number): number {
-  return Math.max(1, Math.ceil(qty * (1 - me / 100)))
+// Materiaalhoeveelheid voor een hele job, zoals EVE het rekent:
+//   max(runs, ceil(round(runs × basis × (1-ME/100) × (1-bonus/100), 2)))
+// Let op: EVE rondt één keer af over de héle job. Per run afronden en dán met runs
+// vermenigvuldigen telt elke afronding N keer mee — dat kost tot ~10% te veel op
+// materialen met kleine aantallen. De round(…, 2) vangt drijvende-komma-ruis af.
+//
+// bonus = structuur- en rigbonus samen. Die zit níet in de blueprint-ME: een
+// Engineering Complex geeft 1%, een ME-rig 2,0% (T1) of 2,4% (T2), en dat rig-deel
+// wordt vermenigvuldigd met de beveiligingsfactor — highsec 1,0, lowsec 1,9,
+// nullsec en wormhole 2,1. Vandaar dat je in 0.0 duidelijk goedkoper bouwt.
+function jobQty(base: number, runs: number, mePct: number, bonusPct: number): number {
+  if (runs <= 0) return 0
+  const raw = runs * base * (1 - mePct / 100) * (1 - bonusPct / 100)
+  return Math.max(runs, Math.ceil(Number(raw.toFixed(2))))
 }
 function fmtNum(n: number): string { return n.toLocaleString('nl-NL') }
 function fmtISK(v: number): string {
@@ -90,9 +102,12 @@ function fmtISK(v: number): string {
 interface BuildRow { typeId: number; needed: number; net: number; runs: number; output: number }
 interface BuyRow { typeId: number; needed: number; net: number }
 function computeBom(
-  target: number, targetQty: number, me: number,
+  target: number, targetQty: number, me: number, bonus: number,
   recipes: Map<number, Recipe>, buyOverrides: Record<number, true>, supply: Map<number, number>,
+  reactionSet: Set<number>,
 ) {
+  // Reactie-formula's kun je niet ME-onderzoeken; daar geldt alleen de structuurbonus.
+  const meFor = (t: number) => reactionSet.has(t) ? 0 : me
   const isBuilt = (t: number) => recipes.has(t) && !buyOverrides[t]
   if (!recipes.has(target)) return { builds: [] as BuildRow[], buys: [] as BuyRow[], buildable: false }
 
@@ -120,8 +135,9 @@ function computeBom(
     const net = Math.max(0, need - (supply.get(t) ?? 0))
     const runs = Math.ceil(net / r.perRun)
     builds.push({ typeId: t, needed: need, net, runs, output: runs * r.perRun })
+    if (runs === 0) continue   // niets te bouwen → ook geen materialen (anders komen ze met 0 op de lijst)
     for (const [m, q] of r.materials) {
-      demand.set(m, (demand.get(m) ?? 0) + applyME(q, me) * runs)
+      demand.set(m, (demand.get(m) ?? 0) + jobQty(q, runs, meFor(t), bonus))
     }
   }
   const buys: BuyRow[] = []
@@ -132,9 +148,10 @@ function computeBom(
 
 // ── Hiërarchische boom (per tak de benodigde hoeveelheid, met ME) ───────────
 interface TreeNode { typeId: number; qty: number; runs: number; build: boolean; children: TreeNode[]; depth: number }
-function buildTree(target: number, targetQty: number, me: number, recipes: Map<number, Recipe>, buyOverrides: Record<number, true>): TreeNode | null {
+function buildTree(target: number, targetQty: number, me: number, bonus: number, recipes: Map<number, Recipe>, buyOverrides: Record<number, true>, reactionSet: Set<number>): TreeNode | null {
   if (!recipes.has(target)) return null
   const isBuilt = (t: number) => recipes.has(t) && !buyOverrides[t]
+  const meFor = (t: number) => reactionSet.has(t) ? 0 : me
   const make = (typeId: number, qty: number, depth: number, seen: Set<number>): TreeNode => {
     const built = depth === 0 ? recipes.has(typeId) : isBuilt(typeId)
     const children: TreeNode[] = []
@@ -143,7 +160,7 @@ function buildTree(target: number, targetQty: number, me: number, recipes: Map<n
       const r = recipes.get(typeId)!
       runs = Math.ceil(qty / r.perRun)
       const seen2 = new Set(seen).add(typeId)
-      for (const [m, mq] of r.materials) children.push(make(m, applyME(mq, me) * runs, depth + 1, seen2))
+      for (const [m, mq] of r.materials) children.push(make(m, jobQty(mq, runs, meFor(typeId), bonus), depth + 1, seen2))
     }
     return { typeId, qty, runs, build: built && children.length > 0, children, depth }
   }
@@ -311,7 +328,9 @@ export default function BuildProject() {
           // wijst je bouwlocatie aan.
           const site = j.facility_id || j.station_id || j.output_location_id
           if (site) jobLocs.add(site)
-          if (j.activity_id !== 1 || !j.product_type_id) continue            // alleen manufacturing
+          // 1 = fabricage, 9 = reacties. Reactie-producten staan gewoon in de boom, dus
+          // een draaiende reactie-job hoort net zo goed van je behoefte af te gaan.
+          if ((j.activity_id !== 1 && j.activity_id !== 9) || !j.product_type_id) continue
           const perRun = recipes.get(j.product_type_id)?.perRun ?? 1
           jobOut.set(j.product_type_id, (jobOut.get(j.product_type_id) ?? 0) + j.runs * perRun)
           jobAct.add(j.product_type_id)
@@ -472,14 +491,14 @@ export default function BuildProject() {
   // De bill-of-materials van het actieve project (platte aggregatie voor kosten/voortgang)
   const bom = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, effOverrides, supply)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, effOverrides, recipes, supply])
+    return computeBom(active.targetTypeId, active.targetQty, active.me, active.bonus ?? 0, recipes, effOverrides, supply, reactionSet)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.bonus, effOverrides, recipes, supply, reactionSet])
 
   // Hiërarchische boom voor het overzicht
   const tree = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return buildTree(active.targetTypeId, active.targetQty, active.me, recipes, effOverrides)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, effOverrides, recipes])
+    return buildTree(active.targetTypeId, active.targetQty, active.me, active.bonus ?? 0, recipes, effOverrides, reactionSet)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.bonus, effOverrides, recipes, reactionSet])
   const buildByType = useMemo(() => new Map((bom?.builds ?? []).map(b => [b.typeId, b])), [bom])
   const buyByType = useMemo(() => new Map((bom?.buys ?? []).map(b => [b.typeId, b])), [bom])
   const [viewMode, setViewMode] = useState<'tree' | 'list'>('tree')
@@ -636,6 +655,7 @@ export default function BuildProject() {
   // Bouwen-vs-kopen per eenheid: kosten om zelf te bouwen (directe materialen tegen
   // Jita-sell, met ME) versus de marktprijs van het kant-en-klare item.
   const me = active?.me ?? 0
+  const bonus = active?.bonus ?? 0
   const verdict = (typeId: number): { build: number; buy: number; cheaper: 'build' | 'buy'; savePct: number } | null => {
     const r = recipes.get(typeId)
     if (!r) return null
@@ -644,7 +664,7 @@ export default function BuildProject() {
       if (MINERAL_IDS.has(m)) continue     // kost geen ISK, dus ook geen reden om af te haken
       const p = prices.get(m) ?? 0
       if (!p) return null                 // onbekende materiaalprijs → geen betrouwbaar advies
-      build += applyME(q, me) * p
+      build += jobQty(q, 1, reactionSet.has(typeId) ? 0 : me, bonus) * p
     }
     build = build / r.perRun
     const buy = prices.get(typeId) ?? 0
@@ -831,20 +851,44 @@ export default function BuildProject() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{active.targetName}</div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita 4-4{pricesAt ? `, ${new Date(pricesAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}` : ''}){mineralValue > 0 && ` · ⛏️ ${fmtISK(mineralValue)} aan mineralen lever je zelf`}{useSupply && (locSel.size > 0 ? ` · voorraad van ${locSel.size} locatie${locSel.size === 1 ? '' : 's'} + jobs` : ' · voorraad/jobs meegerekend')}{!useReactions && ' · reacties gekocht'}</div>
-                  {targetVerdict && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>
-                      Eindproduct: zelf bouwen ~{fmtISK(targetVerdict.build)} vs kopen ~{fmtISK(targetVerdict.buy)} /st →{' '}
-                      <strong style={{ color: targetVerdict.cheaper === 'build' ? '#3ecf6e' : 'var(--gold)' }}>
-                        {targetVerdict.build === 0 ? 'zelf bouwen — alleen eigen mineralen'
-                          : targetVerdict.cheaper === 'build' ? `zelf bouwen ${targetVerdict.savePct}% goedkoper`
-                          : `kopen ${targetVerdict.savePct}% goedkoper`}
-                      </strong>
-                    </div>
-                  )}
+                  {targetVerdict && (() => {
+                    // Drie verschillende bedragen, want "zelf bouwen" is dubbelzinnig.
+                    // 'diep' = alles zelf maken tot op de grondstoffen (dat is wat dit
+                    // project dóet, en het getal dat bovenaan het bouwschema staat).
+                    // targetVerdict.build telt alleen de directe materialen tegen
+                    // marktprijs — bij een capital dus: componenten kant-en-klaar kopen
+                    // en alleen het laatste stapje zelf doen. Dat laatste vergelijken
+                    // met de winkelprijs gaf het misleidende "kopen is goedkoper".
+                    const diep = tree && active.targetQty > 0 ? (nodeCost.get(tree) ?? 0) / active.targetQty : 0
+                    const ref = Math.max(diep, targetVerdict.buy)
+                    const pct = ref > 0 ? Math.round(Math.abs(targetVerdict.buy - diep) / ref * 100) : 0
+                    return (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                        Per stuk: <span title="Alles zelf maken tot op de grondstoffen, met je ME en structuurbonus; eigen mineralen op 0 ISK">🔧 alles zelf ~{fmtISK(diep)}</span>
+                        {' · '}<span title="Alleen het laatste stapje zelf: de directe materialen kant-en-klaar op de markt kopen">componenten kopen ~{fmtISK(targetVerdict.build)}</span>
+                        {' · '}<span title="Het afgewerkte product gewoon kopen">🛒 kant-en-klaar ~{fmtISK(targetVerdict.buy)}</span>
+                        {' → '}
+                        <strong style={{ color: diep <= targetVerdict.buy ? '#3ecf6e' : 'var(--gold)' }}>
+                          {diep === 0 ? 'zelf bouwen — alleen eigen mineralen'
+                            : diep < targetVerdict.buy ? `zelf bouwen ${pct}% goedkoper`
+                            : `kopen ${pct}% goedkoper`}
+                        </strong>
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <label style={{ ...lbl, fontSize: '0.62rem' }}>Aantal<input type="number" min={1} value={active.targetQty} onChange={e => updateActive(p => ({ ...p, targetQty: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ ...input, width: 76 }} /></label>
                   <label style={{ ...lbl, fontSize: '0.62rem' }}>ME%<input type="number" min={0} max={10} value={active.me} onChange={e => updateActive(p => ({ ...p, me: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) }))} style={{ ...input, width: 56 }} /></label>
+                  <label style={{ ...lbl, fontSize: '0.62rem' }}
+                    title={'Structuur- en rigbonus samen, bovenop de blueprint-ME.\n'
+                      + 'Engineering Complex (Raitaru/Azbel/Sotiyo): 1%\n'
+                      + 'ME-rig T1 2,0% / T2 2,4%, maal de beveiligingsfactor:\n'
+                      + '  highsec ×1,0 · lowsec ×1,9 · nullsec en wormhole ×2,1\n'
+                      + 'Nullsec + T2-rig komt dus op 1 + 2,4×2,1 ≈ 6,0%.'}>
+                    Struct%<input type="number" min={0} max={15} step={0.1} value={active.bonus ?? 0}
+                      onChange={e => updateActive(p => ({ ...p, bonus: Math.max(0, Math.min(15, parseFloat(e.target.value) || 0)) }))}
+                      style={{ ...input, width: 62 }} /></label>
                   <button onClick={() => deleteProject(active.id)} style={{ ...btnGhost, color: 'var(--red)' }} title="Project verwijderen">🗑</button>
                 </div>
               </div>
