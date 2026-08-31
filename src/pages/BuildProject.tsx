@@ -627,6 +627,14 @@ export default function BuildProject() {
           <button onClick={refreshInventory} disabled={invLoading} style={{ ...btnGhost, fontSize: '0.66rem', padding: '2px 2px' }}>
             {invLoading ? '⏳ voorraad laden…' : '↻ Voorraad verversen'}
           </button>
+          {/* Welke characters er zijn uitgelezen: een locatie die je mist, ligt vaak
+              gewoon bij een character dat de kiezer bovenin buitensluit. */}
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', margin: '2px 2px 0' }}
+            title={activeTokens.map(t => t.characterName).join(', ') || 'geen'}>
+            voorraad van {activeTokens.length} character{activeTokens.length === 1 ? '' : 's'}
+            {activeTokens.length < tokens.length &&
+              <span style={{ color: 'var(--gold)' }}> · {tokens.length - activeTokens.length} buiten beeld</span>}
+          </div>
           {useSupply && locOptions.length > 0 && (
             <select value={locFilter === 'all' ? 'all' : String(locFilter)}
               onChange={e => setLocFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}

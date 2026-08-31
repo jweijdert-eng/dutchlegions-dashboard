@@ -246,11 +246,17 @@ export interface AssetLocation {
 export async function getAssets(id: number, token: string): Promise<AssetItem[]> {
   const results: AssetItem[] = []
   for (let page = 1; page <= 20; page++) {
-    try {
-      const entries = await esiGet<AssetItem[]>(`/characters/${id}/assets/?page=${page}`, token)
-      results.push(...entries)
-      if (entries.length < 1000) break
-    } catch { break }
+    // Eén hapering kapte hier vroeger de hele lijst af (catch { break }): alles ná die
+    // pagina verdween stilletjes, inclusief complete locaties. Daarom één herkansing
+    // voor we opgeven — één extra call, dus geen gevaar voor het ESI-foutbudget.
+    let entries: AssetItem[] | null = null
+    for (let poging = 0; poging < 2 && !entries; poging++) {
+      try { entries = await esiGet<AssetItem[]>(`/characters/${id}/assets/?page=${page}`, token) }
+      catch { if (poging === 0) await new Promise(r => setTimeout(r, 400)) }
+    }
+    if (!entries) break
+    results.push(...entries)
+    if (entries.length < 1000) break
   }
   return results
 }
