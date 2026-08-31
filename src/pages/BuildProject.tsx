@@ -4,7 +4,9 @@ import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
-import { getAssets, getBlueprints, getIndustryJobs, getStructureInfo, resolveNames } from '../api/esi'
+import { getAssets, getBlueprints, getIndustryJobs, getStructureInfo, getStructureStatus, resolveNames, tokenScopes } from '../api/esi'
+
+const STRUCTURE_SCOPE = 'esi-universe.read_structures.v1'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type JobState = 'todo' | 'running' | 'done'
@@ -238,6 +240,7 @@ export default function BuildProject() {
   const [jobOutputMap, setJobOutputMap] = useState<Map<number, number>>(new Map())
   const [jobActive, setJobActive] = useState<Set<number>>(new Set())
   const [jobLocIds, setJobLocIds] = useState<Set<number>>(new Set())
+  const [locTrouble, setLocTrouble] = useState<string | null>(null)
   const [bpOwned, setBpOwned] = useState<Map<number, { bpo: boolean; me: number }>>(new Map())  // key = blueprint-type-id
   const [invLoading, setInvLoading] = useState(false)
   const [useSupply, setUseSupply] = useState(true)
@@ -353,6 +356,27 @@ export default function BuildProject() {
       await Promise.all(ids.filter(id => !nameMap.get(id) && rootType.get(id) === 'structure')
         .map(async id => { const info = await getStructureInfo(id, tokens).catch(() => null); if (info?.name) nameMap.set(id, info.name) }))
 
+      // Lukte een structuurnaam niet, zeg dan wát eraan schort. 403 zonder de scope is
+      // een oud token (verversen voegt geen scopes toe, alleen opnieuw inloggen doet
+      // dat); 403 mét de scope betekent geen docking-rechten; 404 betekent dat het id
+      // helemaal geen structuur is — dan hangt er een asset onder een container die
+      // zelf niet in de lijst zat.
+      const failed = ids.filter(id => rootType.get(id) === 'structure' && !nameMap.get(id))
+      if (failed.length === 0) setLocTrouble(null)
+      else {
+        const heeftScope = tokens.some(t => tokenScopes(t.accessToken).includes(STRUCTURE_SCOPE))
+        const zonderScope = tokens.filter(t => !tokenScopes(t.accessToken).includes(STRUCTURE_SCOPE)).map(t => t.characterName)
+        const statussen = failed.map(id => getStructureStatus(id))
+        setLocTrouble(
+          !heeftScope
+            ? `${failed.length} structuurnaam onbekend: geen van je tokens heeft de structuur-scope. Log opnieuw in — verversen voegt scopes niet toe.`
+            : statussen.every(s => s === 404)
+              ? `${failed.length} locatie is geen structuur — waarschijnlijk een container waarvan de bovenliggende asset ontbreekt.`
+              : zonderScope.length > 0
+                ? `${failed.length} structuurnaam onbekend. ESI geeft geen toegang; ${zonderScope.join(', ')} mist de structuur-scope, dus opnieuw inloggen kan helpen.`
+                : `${failed.length} structuurnaam onbekend: ESI geeft geen toegang. Meestal docking-rechten op die citadel.`,
+        )
+      }
       setOwnedByLoc(byLoc)
       setLocLabels(new Map(ids.map(id => [id, nameMap.get(id) ?? `Structuur ${id} (naam onbekend)`])))
       setJobOutputMap(jobOut); setJobActive(jobAct); setBpOwned(bpById); setJobLocIds(jobLocs)
@@ -682,6 +706,9 @@ export default function BuildProject() {
                 </label>
               ))}
             </div>
+          )}
+          {useSupply && locTrouble && (
+            <div style={{ fontSize: '0.6rem', color: 'var(--gold)', margin: '4px 2px 0', lineHeight: 1.35 }}>⚠ {locTrouble}</div>
           )}
           <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {projects.length === 0 && <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>Nog geen projecten.</div>}

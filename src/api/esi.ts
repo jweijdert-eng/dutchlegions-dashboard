@@ -333,6 +333,26 @@ function _triedAllRecently(id: number, charIds: number[]): boolean {
   } catch { return false }
 }
 
+// Laatste HTTP-status van een structuur-opzoeking. 403 = geen toegang (scope of
+// docking-rechten), 404 = dit id is helemaal geen structuur. Dat verschil bepaalt
+// wat de gebruiker eraan kan doen, dus bewaren we het.
+const _structureStatus = new Map<number, number>()
+export const getStructureStatus = (id: number): number | undefined => _structureStatus.get(id)
+
+// De access token is een JWT; de scopes staan in de 'scp'-claim. Een token dat is
+// uitgegeven vóór een scope werd toegevoegd krijgt die er bij verversen niet bij —
+// daar helpt alleen opnieuw inloggen. Puur lokaal uitlezen, geen ESI-call.
+export function tokenScopes(accessToken: string): string[] {
+  try {
+    const part = accessToken.split('.')[1]
+    if (!part) return []
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - b64.length % 4) % 4)
+    const scp = (JSON.parse(atob(padded)) as { scp?: string[] | string })?.scp
+    return Array.isArray(scp) ? scp : typeof scp === 'string' ? [scp] : []
+  } catch { return [] }
+}
+
 function _normalizeTokens(tokens?: string | string[] | TokenData[] | TokenData) {
   if (!tokens) return { tokens: [] as string[], charIds: [] as number[] }
   if (typeof tokens === 'string') return { tokens: [tokens], charIds: [] }
@@ -389,6 +409,7 @@ export async function getStructureInfo(id: number, tokens?: string | string[] | 
       const res = await esiFetch(`${BASE}/universe/structures/${id}/?datasource=tranquility`, {
         headers: { Authorization: `Bearer ${token}` },
       })
+      _structureStatus.set(id, res.status)
       if (res.ok) {
         const data = await res.json() as StructureInfo
         _structureCache.set(id, data)
