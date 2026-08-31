@@ -18,7 +18,9 @@ interface Project {
   targetName: string
   targetQty: number
   me: number
-  bonus?: number                       // structuur- + rigbonus in %, bovenop de blueprint-ME
+  struct?: boolean                     // Engineering Complex (1% materiaalbonus)
+  rig?: 0 | 1 | 2                      // ME-rig: geen / T1 2,0% / T2 2,4%
+  sec?: SecClass                       // beveiliging van het systeem — bepaalt de rig-factor
   buyOverrides: Record<number, true>   // typeIds die je liever koopt dan bouwt (snoeit de subboom)
   progress: Record<number, Progress>
   createdAt: number
@@ -85,10 +87,25 @@ function loadPiOutputs(): Promise<Set<number>> {
 // Engineering Complex geeft 1%, een ME-rig 2,0% (T1) of 2,4% (T2), en dat rig-deel
 // wordt vermenigvuldigd met de beveiligingsfactor — highsec 1,0, lowsec 1,9,
 // nullsec en wormhole 2,1. Vandaar dat je in 0.0 duidelijk goedkoper bouwt.
-function jobQty(base: number, runs: number, mePct: number, bonusPct: number): number {
+function jobQty(base: number, runs: number, mePct: number, bonusMult: number): number {
   if (runs <= 0) return 0
-  const raw = runs * base * (1 - mePct / 100) * (1 - bonusPct / 100)
+  const raw = runs * base * (1 - mePct / 100) * bonusMult
   return Math.max(runs, Math.ceil(Number(raw.toFixed(2))))
+}
+
+type SecClass = 'high' | 'low' | 'null'
+const RIG_PCT = [0, 2.0, 2.4]
+const SEC_MULT: Record<SecClass, number> = { high: 1, low: 1.9, null: 2.1 }
+
+// EVE past elke modifier als een eigen factor toe, ná elkaar — niet als één opgetelde
+// korting. Dat is geen muggenzifterij: geverifieerd tegen een Nomad-job in 7G-QIG
+// (ME 5, Engineering Complex + T1-rig in nullsec) klopten alle twaalf materialen op de
+// eenheid, terwijl hetzelfde totaal afgerond op 0,1% er bij Morphite eentje naast zat.
+function bonusMult(p?: Project | null): number {
+  if (!p) return 1
+  const ec = p.struct ? 0.99 : 1
+  const rig = 1 - (RIG_PCT[p.rig ?? 0] * SEC_MULT[p.sec ?? 'high']) / 100
+  return ec * rig
 }
 function fmtNum(n: number): string { return n.toLocaleString('nl-NL') }
 function fmtISK(v: number): string {
@@ -253,6 +270,8 @@ export default function BuildProject() {
 
   // Voorraad (assets) per locatie + lopende productie (industry jobs, globaal)
   const [ownedByLoc, setOwnedByLoc] = useState<Map<number, Map<number, number>>>(new Map())
+  const [elsewhereByLoc, setElsewhereByLoc] = useState<Map<number, Map<number, number>>>(new Map())
+  const [stockAt, setStockAt] = useState<number | null>(null)
   const [locLabels, setLocLabels] = useState<Map<number, string>>(new Map())
   // Leeg = alle locaties. Zo is er geen dode toestand waarin je niets hebt aangevinkt
   // en er stilletjes nul voorraad wordt geteld.
@@ -346,25 +365,38 @@ export default function BuildProject() {
       // Wortel-locatie per asset bepalen door de container-/schip-boom omhoog te lopen
       const byItem = new Map(allRaw.map(a => [`${a.owner}:${a.item_id}`, a]))
       const rootType = new Map<number, 'station' | 'structure' | 'solar_system' | 'other'>()
-      const rootLoc = (a: Raw, guard = 0): number => {
+      // Geeft naast de wortel-locatie ook terug hoe diep het item genest zat: 0 = het
+      // ligt rechtstreeks op die locatie, hoger = het zit in een schip of container.
+      const rootLoc = (a: Raw, guard = 0): { id: number; diepte: number } => {
         if (a.location_type !== 'item' || guard > 12) {
           const id = a.location_id
           rootType.set(id, a.location_type === 'station' ? 'station'
             : a.location_type === 'solar_system' ? 'solar_system'
             : id >= 1_000_000_000 ? 'structure' : 'station')
-          return id
+          return { id, diepte: guard }
         }
         const parent = byItem.get(`${a.owner}:${a.location_id}`)
-        if (!parent) { const id = a.location_id; rootType.set(id, id >= 1_000_000_000 ? 'structure' : 'other'); return id }
+        // Geen ouder in de lijst? Dan is location_id de structuur zelf (die staat niet
+        // in je assets), dus ligt dit item er rechtstreeks in.
+        if (!parent) { const id = a.location_id; rootType.set(id, id >= 1_000_000_000 ? 'structure' : 'other'); return { id, diepte: guard } }
         return rootLoc(parent, guard + 1)
       }
 
-      const byLoc = new Map<number, Map<number, number>>()
+      // Een industry-job pakt materiaal uit de Item hangar. Wat in een schip of
+      // container op diezelfde locatie ligt ziet de job niet — dat moet je eerst
+      // uitladen. Daarom apart bijhouden in plaats van alles op één hoop.
+      const byLoc = new Map<number, Map<number, number>>()          // item hangar
+      const byLocElders = new Map<number, Map<number, number>>()    // in schepen/containers
       for (const a of allRaw) {
         if (!usableStock(a.location_flag)) continue
-        const locId = rootLoc(a)
-        let m = byLoc.get(locId); if (!m) { m = new Map(); byLoc.set(locId, m) }
+        const { id: locId, diepte } = rootLoc(a)
+        const inHangar = diepte === 0 && a.location_flag === 'Hangar'
+        const doel = inHangar ? byLoc : byLocElders
+        let m = doel.get(locId); if (!m) { m = new Map(); doel.set(locId, m) }
         m.set(a.type_id, (m.get(a.type_id) ?? 0) + a.quantity)
+        // De locatie moet ook in de keuzelijst blijven staan als er alleen iets in een
+        // schip ligt, anders verdwijnt hij zodra je je hangar leegmaakt.
+        if (!byLoc.has(locId)) byLoc.set(locId, new Map())
       }
 
       // De plek waar je bouwt hoort ook in de lijst, ook als daar (nog) niets van jou
@@ -406,12 +438,46 @@ export default function BuildProject() {
         )
       }
       setOwnedByLoc(byLoc)
+      setElsewhereByLoc(byLocElders)
+      setStockAt(Date.now())
       setLocLabels(new Map(ids.map(id => [id, nameMap.get(id) ?? `Structuur ${id} (naam onbekend)`])))
       setJobOutputMap(jobOut); setJobActive(jobAct); setBpOwned(bpById); setJobLocIds(jobLocs)
     } finally { setInvLoading(false) }
   }, [activeTokens.map(t => t.characterId).join(','), recipes])
 
-  useEffect(() => { refreshInventory() }, [refreshInventory])
+  // Voorraad en jobs elke 10 minuten opnieuw ophalen zolang de pagina open staat.
+  // ESI cachet character-assets zelf lang, dus veel vaker heeft geen zin; jobs
+  // veranderen wél sneller en die zitten in dezelfde ronde.
+  const stockTick = useAutoRefresh(10 * 60_000)
+  useEffect(() => { refreshInventory() }, [refreshInventory, stockTick])
+
+  // Wat er van dit type waar ligt — voor de tooltip op het 📦-label.
+  const stockWhere = (typeId: number) => {
+    const rijen: Array<{ label: string; hangar: number; elders: number }> = []
+    for (const loc of new Set([...ownedByLoc.keys(), ...elsewhereByLoc.keys()])) {
+      if (locSel.size > 0 && !locSel.has(loc)) continue
+      const hangar = ownedByLoc.get(loc)?.get(typeId) ?? 0
+      const elders = elsewhereByLoc.get(loc)?.get(typeId) ?? 0
+      if (hangar || elders) rijen.push({ label: locLabels.get(loc) ?? `Locatie ${loc}`, hangar, elders })
+    }
+    return rijen.sort((a, b) => (b.hangar + b.elders) - (a.hangar + a.elders))
+  }
+  const stockTitle = (typeId: number) => {
+    const rijen = stockWhere(typeId)
+    if (rijen.length === 0) return 'Niets op voorraad'
+    return rijen.map(r => `${r.label}: ${fmtNum(r.hangar)} in de hangar`
+      + (r.elders ? ` (+${fmtNum(r.elders)} in schepen/containers — telt niet mee)` : '')).join('\n')
+  }
+  // Wat er op de gekozen locaties in schepen/containers ligt: wél van jou, maar een
+  // industry-job pakt het niet. Apart tonen zodat je weet dat je het kunt uitladen.
+  const elsewhereMap = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const [loc, types] of elsewhereByLoc) {
+      if (locSel.size > 0 && !locSel.has(loc)) continue
+      for (const [id, q] of types) m.set(id, (m.get(id) ?? 0) + q)
+    }
+    return m
+  }, [elsewhereByLoc, locSel])
 
   // Skills van de bouwer. active_skill_level is wat in-game telt (een getrainde skill
   // die niet actief is, mag je niet gebruiken).
@@ -491,14 +557,14 @@ export default function BuildProject() {
   // De bill-of-materials van het actieve project (platte aggregatie voor kosten/voortgang)
   const bom = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return computeBom(active.targetTypeId, active.targetQty, active.me, active.bonus ?? 0, recipes, effOverrides, supply, reactionSet)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.bonus, effOverrides, recipes, supply, reactionSet])
+    return computeBom(active.targetTypeId, active.targetQty, active.me, bonusMult(active), recipes, effOverrides, supply, reactionSet)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.struct, active?.rig, active?.sec, effOverrides, recipes, supply, reactionSet])
 
   // Hiërarchische boom voor het overzicht
   const tree = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return buildTree(active.targetTypeId, active.targetQty, active.me, active.bonus ?? 0, recipes, effOverrides, reactionSet)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.bonus, effOverrides, recipes, reactionSet])
+    return buildTree(active.targetTypeId, active.targetQty, active.me, bonusMult(active), recipes, effOverrides, reactionSet)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.struct, active?.rig, active?.sec, effOverrides, recipes, reactionSet])
   const buildByType = useMemo(() => new Map((bom?.builds ?? []).map(b => [b.typeId, b])), [bom])
   const buyByType = useMemo(() => new Map((bom?.buys ?? []).map(b => [b.typeId, b])), [bom])
   const [viewMode, setViewMode] = useState<'tree' | 'list'>('tree')
@@ -655,7 +721,7 @@ export default function BuildProject() {
   // Bouwen-vs-kopen per eenheid: kosten om zelf te bouwen (directe materialen tegen
   // Jita-sell, met ME) versus de marktprijs van het kant-en-klare item.
   const me = active?.me ?? 0
-  const bonus = active?.bonus ?? 0
+  const bonus = bonusMult(active)
   const verdict = (typeId: number): { build: number; buy: number; cheaper: 'build' | 'buy'; savePct: number } | null => {
     const r = recipes.get(typeId)
     if (!r) return null
@@ -755,6 +821,12 @@ export default function BuildProject() {
           <button onClick={refreshInventory} disabled={invLoading} style={{ ...btnGhost, fontSize: '0.66rem', padding: '2px 2px' }}>
             {invLoading ? '⏳ voorraad laden…' : '↻ Voorraad verversen'}
           </button>
+          {stockAt && (
+            <div style={{ fontSize: '0.6rem', color: Date.now() - stockAt > 30 * 60_000 ? 'var(--gold)' : 'var(--text-dim)', margin: '2px 2px 0' }}
+              title='Voorraad en jobs worden elke 10 minuten opnieuw opgehaald zolang deze pagina open staat. ESI cachet character-assets zelf een stuk langer, dus vaker vragen levert vaak dezelfde cijfers.'>
+              voorraad van {new Date(stockAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
           {/* Welke characters er zijn uitgelezen: een locatie die je mist, ligt vaak
               gewoon bij een character dat de kiezer bovenin buitensluit. */}
           <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', margin: '2px 2px 0' }}
@@ -880,17 +952,36 @@ export default function BuildProject() {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <label style={{ ...lbl, fontSize: '0.62rem' }}>Aantal<input type="number" min={1} value={active.targetQty} onChange={e => updateActive(p => ({ ...p, targetQty: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ ...input, width: 76 }} /></label>
                   <label style={{ ...lbl, fontSize: '0.62rem' }}>ME%<input type="number" min={0} max={10} value={active.me} onChange={e => updateActive(p => ({ ...p, me: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) }))} style={{ ...input, width: 56 }} /></label>
-                  <label style={{ ...lbl, fontSize: '0.62rem' }}
-                    title={'Structuur- en rigbonus samen, bovenop de blueprint-ME.\n'
-                      + 'Engineering Complex (Raitaru/Azbel/Sotiyo): 1%\n'
-                      + 'ME-rig T1 2,0% / T2 2,4%, maal de beveiligingsfactor:\n'
-                      + '  highsec ×1,0 · lowsec ×1,9 · nullsec en wormhole ×2,1\n'
-                      + 'Nullsec + T2-rig komt dus op 1 + 2,4×2,1 ≈ 6,0%.'}>
-                    Struct%<input type="number" min={0} max={15} step={0.1} value={active.bonus ?? 0}
-                      onChange={e => updateActive(p => ({ ...p, bonus: Math.max(0, Math.min(15, parseFloat(e.target.value) || 0)) }))}
-                      style={{ ...input, width: 62 }} /></label>
+
                   <button onClick={() => deleteProject(active.id)} style={{ ...btnGhost, color: 'var(--red)' }} title="Project verwijderen">🗑</button>
                 </div>
+              </div>
+              {/* Bouwlocatie: bepaalt de materiaalbonus bovenop de blueprint-ME. */}
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: '0.62rem', color: 'var(--text-dim)' }}>
+                <span>Bouwlocatie:</span>
+                <select value={active.struct ? 'ec' : 'station'} title="Engineering Complexen (Raitaru, Azbel, Sotiyo) geven 1% materiaalbonus; een NPC-station geeft niets."
+                  onChange={e => updateActive(p => ({ ...p, struct: e.target.value === 'ec' }))}
+                  style={{ ...input, fontSize: '0.62rem', padding: '2px 4px' }}>
+                  <option value="station">NPC-station</option>
+                  <option value="ec">Engineering Complex −1%</option>
+                </select>
+                <select value={String(active.rig ?? 0)} title="Standup M-Set Manufacturing Material Efficiency rig"
+                  onChange={e => updateActive(p => ({ ...p, rig: Number(e.target.value) as 0 | 1 | 2 }))}
+                  style={{ ...input, fontSize: '0.62rem', padding: '2px 4px' }}>
+                  <option value="0">geen ME-rig</option>
+                  <option value="1">T1-rig −2,0%</option>
+                  <option value="2">T2-rig −2,4%</option>
+                </select>
+                <select value={active.sec ?? 'high'} title="De rigbonus wordt vermenigvuldigd met de beveiliging van het systeem — in nullsec ruim twee keer zo sterk."
+                  onChange={e => updateActive(p => ({ ...p, sec: e.target.value as SecClass }))}
+                  style={{ ...input, fontSize: '0.62rem', padding: '2px 4px' }}>
+                  <option value="high">highsec ×1,0</option>
+                  <option value="low">lowsec ×1,9</option>
+                  <option value="null">nullsec / WH ×2,1</option>
+                </select>
+                <span style={{ color: bonus < 1 ? '#3ecf6e' : 'var(--text-dim)' }}>
+                  → materiaal ×{bonus.toFixed(4)}{bonus < 1 && ` (−${((1 - bonus) * 100).toFixed(2)}%)`}
+                </span>
               </div>
               <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, height: 6, background: 'var(--border)', borderRadius: 3 }}>
@@ -953,7 +1044,9 @@ export default function BuildProject() {
                             return <span style={{ color: isB ? '#7fd1ff' : 'var(--text-dim)' }} title={isB ? 'Materiaalkosten om deze sub-assemblage zelf te bouwen' : 'Aankoopkosten (Jita sell)'}>
                               {isB ? '🔧 ' : '🛒 '}~{fmtISK(c)} ISK{buy > 0 ? <span style={{ color: c < buy ? '#3ecf6e' : 'var(--gold)' }}> (kopen ~{fmtISK(buy)})</span> : null}
                             </span> })()}
-                          {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                          {owned > 0 && <span style={badge} title={stockTitle(n.typeId)}>📦 {fmtNum(owned)}</span>}
+                          {useSupply && (elsewhereMap.get(n.typeId) ?? 0) > 0 &&
+                            <span style={{ ...badge, color: '#8a7fd6' }} title={'Ligt in een schip of container op die locatie. Een industry-job pakt alleen de Item hangar, dus dit telt niet mee tot je het uitlaadt.'}>🚚 {fmtNum(elsewhereMap.get(n.typeId) ?? 0)}</span>}
                           {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                           {bpBadge(n.typeId)}
                           {skillBadge(n.typeId)}
@@ -994,7 +1087,9 @@ export default function BuildProject() {
                       <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {b.net > 0 ? <span>{fmtNum(b.output)} te bouwen · {b.runs} run{b.runs !== 1 ? 's' : ''}</span> : <span style={{ color: '#3ecf6e' }}>✓ gedekt</span>}
                         <span style={{ color: 'var(--text-dim)' }}>({fmtNum(b.needed)} nodig)</span>
-                        {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                        {owned > 0 && <span style={badge} title={stockTitle(b.typeId)}>📦 {fmtNum(owned)}</span>}
+                        {useSupply && (elsewhereMap.get(b.typeId) ?? 0) > 0 &&
+                          <span style={{ ...badge, color: '#8a7fd6' }} title={'Ligt in een schip of container op die locatie. Een industry-job pakt alleen de Item hangar, dus dit telt niet mee tot je het uitlaadt.'}>🚚 {fmtNum(elsewhereMap.get(b.typeId) ?? 0)}</span>}
                         {inJob > 0 && <span style={{ ...badge, color: 'var(--gold)' }}>🏭 {fmtNum(inJob)}</span>}
                         {bpBadge(b.typeId)}
                         {skillBadge(b.typeId)}
@@ -1042,7 +1137,9 @@ export default function BuildProject() {
                           return <span style={{ color: '#fff', fontWeight: 600 }}>nog {fmtNum(rem)} kopen{price > 0 && <> · ~{fmtISK(price * rem)} ISK</>}</span>
                         })()}
                         <span>({fmtNum(b.needed)} nodig)</span>
-                        {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                        {owned > 0 && <span style={badge} title={stockTitle(b.typeId)}>📦 {fmtNum(owned)}</span>}
+                        {useSupply && (elsewhereMap.get(b.typeId) ?? 0) > 0 &&
+                          <span style={{ ...badge, color: '#8a7fd6' }} title={'Ligt in een schip of container op die locatie. Een industry-job pakt alleen de Item hangar, dus dit telt niet mee tot je het uitlaadt.'}>🚚 {fmtNum(elsewhereMap.get(b.typeId) ?? 0)}</span>}
                         {(() => { const v = buildable ? verdict(b.typeId) : null; return v && v.cheaper === 'build' && v.savePct >= 2
                           ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen {v.build === 0 ? '· eigen mineralen' : `−${v.savePct}%`}</span>
                           : null })()}
@@ -1088,7 +1185,9 @@ export default function BuildProject() {
                             ? <span style={{ color: '#f0c674', fontWeight: 600 }}>⛏️ nog {fmtNum(rem)} aanleveren</span>
                             : <span style={{ color: '#3ecf6e' }}>✓ {covered ? 'compleet' : 'in voorraad'}</span>}
                           <span>({fmtNum(b.needed)} nodig)</span>
-                          {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                          {owned > 0 && <span style={badge} title={stockTitle(b.typeId)}>📦 {fmtNum(owned)}</span>}
+                          {useSupply && (elsewhereMap.get(b.typeId) ?? 0) > 0 &&
+                            <span style={{ ...badge, color: '#8a7fd6' }} title={'Ligt in een schip of container op die locatie. Een industry-job pakt alleen de Item hangar, dus dit telt niet mee tot je het uitlaadt.'}>🚚 {fmtNum(elsewhereMap.get(b.typeId) ?? 0)}</span>}
                           {rem > 0 && price > 0 && <span title="Marktwaarde — zoveel scheelt het je aan inkoop">≈ {fmtISK(price * rem)} ISK bespaard</span>}
                         </div>
                       </div>
