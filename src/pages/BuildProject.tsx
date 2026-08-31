@@ -63,6 +63,22 @@ function loadReactions(): Promise<Record<string, CompactBp>> {
   return _rxInflight
 }
 
+// Alle scheeps-types (categorie 6). Wat in een schip ligt pakt een industry-job niet —
+// dat moet je eerst uitladen. Wat in een cóntainer ligt (categorie 2) telt wél mee: een
+// container kun je in het Industry-venster als invoerlocatie kiezen.
+let _shipInflight: Promise<Set<number>> | null = null
+function loadShipTypes(): Promise<Set<number>> {
+  if (!_shipInflight) _shipInflight = Promise.all([
+    fetch('/type-info.json').then(r => r.json() as Promise<Record<string, [number, number, number]>>),
+    fetch('/groups.json').then(r => r.json() as Promise<Record<string, [string, number]>>),
+  ]).then(([ti, gr]) => {
+    const s = new Set<number>()
+    for (const [tid, info] of Object.entries(ti)) if (gr[String(info[0])]?.[1] === 6) s.add(Number(tid))
+    return s
+  }).catch(() => new Set<number>())
+  return _shipInflight
+}
+
 // PI-produceerbare commodities = alle schematic-outputs (is_input=false) uit schematics.json
 let _piInflight: Promise<Set<number>> | null = null
 function loadPiOutputs(): Promise<Set<number>> {
@@ -329,6 +345,7 @@ export default function BuildProject() {
     setInvLoading(true)
     try {
       type Raw = { item_id: number; type_id: number; location_id: number; location_type: string; location_flag: string; quantity: number; owner: number }
+      const shipTypes = await loadShipTypes()
       const allRaw: Raw[] = []
       const jobOut = new Map<number, number>()
       const jobAct = new Set<number>()
@@ -367,19 +384,22 @@ export default function BuildProject() {
       const rootType = new Map<number, 'station' | 'structure' | 'solar_system' | 'other'>()
       // Geeft naast de wortel-locatie ook terug hoe diep het item genest zat: 0 = het
       // ligt rechtstreeks op die locatie, hoger = het zit in een schip of container.
-      const rootLoc = (a: Raw, guard = 0): { id: number; diepte: number } => {
+      // Loopt de container-/schipboom omhoog en geeft terug: de wortel-locatie, de vlag
+      // van het buitenste item (dat is wat er in de hangar staat) en of er onderweg een
+      // schip tussen zat.
+      const rootLoc = (a: Raw, guard = 0, viaSchip = false): { id: number; vlag: string; viaSchip: boolean } => {
         if (a.location_type !== 'item' || guard > 12) {
           const id = a.location_id
           rootType.set(id, a.location_type === 'station' ? 'station'
             : a.location_type === 'solar_system' ? 'solar_system'
             : id >= 1_000_000_000 ? 'structure' : 'station')
-          return { id, diepte: guard }
+          return { id, vlag: a.location_flag, viaSchip }
         }
         const parent = byItem.get(`${a.owner}:${a.location_id}`)
         // Geen ouder in de lijst? Dan is location_id de structuur zelf (die staat niet
         // in je assets), dus ligt dit item er rechtstreeks in.
-        if (!parent) { const id = a.location_id; rootType.set(id, id >= 1_000_000_000 ? 'structure' : 'other'); return { id, diepte: guard } }
-        return rootLoc(parent, guard + 1)
+        if (!parent) { const id = a.location_id; rootType.set(id, id >= 1_000_000_000 ? 'structure' : 'other'); return { id, vlag: a.location_flag, viaSchip } }
+        return rootLoc(parent, guard + 1, viaSchip || shipTypes.has(parent.type_id))
       }
 
       // Een industry-job pakt materiaal uit de Item hangar. Wat in een schip of
@@ -389,8 +409,11 @@ export default function BuildProject() {
       const byLocElders = new Map<number, Map<number, number>>()    // in schepen/containers
       for (const a of allRaw) {
         if (!usableStock(a.location_flag)) continue
-        const { id: locId, diepte } = rootLoc(a)
-        const inHangar = diepte === 0 && a.location_flag === 'Hangar'
+        const { id: locId, vlag, viaSchip } = rootLoc(a)
+        // Telt mee als het buitenste item in de hangar staat en er geen schip tussen
+        // zit. Een kist in je hangar telt dus gewoon mee — die kun je als invoerlocatie
+        // kiezen — maar de cargo van een schip niet.
+        const inHangar = vlag === 'Hangar' && !viaSchip
         const doel = inHangar ? byLoc : byLocElders
         let m = doel.get(locId); if (!m) { m = new Map(); doel.set(locId, m) }
         m.set(a.type_id, (m.get(a.type_id) ?? 0) + a.quantity)
