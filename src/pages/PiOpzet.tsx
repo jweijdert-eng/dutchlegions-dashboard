@@ -112,7 +112,7 @@ async function jitaPrijzen(ids: number[]): Promise<Map<number, number>> {
   if (!ids.length) return uit
   try {
     const r = await fetch(
-      `https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${ids.join(',')}`,
+      `https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${ids.join(',')}`,
       { signal: AbortSignal.timeout(8000) })
     const d = await r.json()
     for (const [id, v] of Object.entries<any>(d)) uit.set(Number(id), Number(v?.sell?.min) || 0)

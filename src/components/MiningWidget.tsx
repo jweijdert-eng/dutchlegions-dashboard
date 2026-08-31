@@ -14,7 +14,7 @@ function fmt(v: number) {
 async function fetchOrePrices(typeIds: number[]): Promise<Map<number, number>> {
   if (typeIds.length === 0) return new Map()
   try {
-    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${typeIds.join(',')}`, { signal: AbortSignal.timeout(6000) })
+    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${typeIds.join(',')}`, { signal: AbortSignal.timeout(6000) })
     if (!r.ok) return new Map()
     const data = await r.json() as Record<string, { buy: { max: number } }>
     const m = new Map<number, number>()

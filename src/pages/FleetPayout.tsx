@@ -197,7 +197,7 @@ export default function FleetPayout() {
       const qty: Record<number, number> = { 81143: 0, 81144: 0 }
       for (const a of assets) if (a.type_id in REAGENTS) qty[a.type_id] += a.quantity || 0
       if (!qty[81143] && !qty[81144]) { setMsg(`Geen Magmatic Gas / Superionic Ice gevonden op ${tok.characterName}.`); return }
-      const r = await fetch('https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=81143,81144')
+      const r = await fetch('https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=81143,81144')
       const d = await r.json() as Record<string, { sell: { min: number } }>
       const total = qty[81143] * Number(d['81143']?.sell?.min || 0) + qty[81144] * Number(d['81144']?.sell?.min || 0)
       if (!total) { setMsg('Kon geen Jita-prijs voor de reagents ophalen.'); return }
@@ -224,7 +224,7 @@ export default function FleetPayout() {
       for (const t of (idJson.inventory_types || [])) nameToId.set(t.name.toLowerCase(), t.id)
       const ids = [...new Set(items.map(i => nameToId.get(i.name.toLowerCase())).filter((x): x is number => !!x))]
       if (!ids.length) { setMsg('Geen bekende items herkend in de geplakte tekst.'); return }
-      const pr = await fetch(`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${ids.join(',')}`)
+      const pr = await fetch(`https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${ids.join(',')}`)
       const pd = await pr.json() as Record<string, { sell: { min: number } }>
       let total = 0, unknown = 0
       for (const it of items) {

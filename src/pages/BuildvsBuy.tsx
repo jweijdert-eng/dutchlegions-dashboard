@@ -77,18 +77,33 @@ async function fetchBlueprintData(bpTypeId: number): Promise<{ materials: SdeMat
   }
 }
 
+// Waarderen op Jita 4-4 zelf (regio-breed pakt de goedkoopste order in een uithoek).
+// Capitals docken niet in een station en staan alleen op de citadels eromheen, dus
+// voor types zonder station-order vallen we terug op de regio-prijs.
 async function fetchJitaPrices(typeIds: number[]): Promise<Map<number, { sell: number; buy: number }>> {
-  if (typeIds.length === 0) return new Map()
-  try {
-    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${typeIds.join(',')}`)
-    if (!r.ok) return new Map()
-    const data = await r.json() as Record<string, FuzzAgg>
-    const map = new Map<number, { sell: number; buy: number }>()
-    for (const [idStr, agg] of Object.entries(data)) {
-      map.set(parseInt(idStr), { sell: agg.sell.min, buy: agg.buy.max })
-    }
-    return map
-  } catch { return new Map() }
+  const map = new Map<number, { sell: number; buy: number }>()
+  if (typeIds.length === 0) return map
+  const load = async (scope: string, ids: number[], into: Map<number, { sell: number; buy: number }>) => {
+    try {
+      const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?${scope}&types=${ids.join(',')}`,
+        { signal: AbortSignal.timeout(8000) })
+      if (!r.ok) return
+      const data = await r.json() as Record<string, FuzzAgg>
+      // Fuzzwork geeft de bedragen als string terug — expliciet omzetten, anders
+      // plakt elke optelling verderop de getallen aan elkaar.
+      for (const [idStr, agg] of Object.entries(data)) {
+        into.set(parseInt(idStr), { sell: Number(agg.sell.min) || 0, buy: Number(agg.buy.max) || 0 })
+      }
+    } catch { /* prijzen optioneel */ }
+  }
+  await load('station=60003760', typeIds, map)
+  const missing = typeIds.filter(id => (map.get(id)?.sell ?? 0) <= 0)
+  if (missing.length > 0) {
+    const fallback = new Map<number, { sell: number; buy: number }>()
+    await load('region=10000002', missing, fallback)
+    for (const [id, v] of fallback) map.set(id, { sell: v.sell, buy: Math.max(map.get(id)?.buy ?? 0, v.buy) })
+  }
+  return map
 }
 
 // CCP's "adjusted price" per type — de basis voor de job-installatiekosten (EIV).

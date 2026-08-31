@@ -159,7 +159,7 @@ export default function BuildProfit() {
               {rows.map(r => (
                 <tr key={r.product_id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '.4rem .7rem' }}>
-                    <a href={`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${r.product_id}`}
+                    <a href={`https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${r.product_id}`}
                        onClick={e => e.preventDefault()} style={{ display: 'inline-flex', alignItems: 'center', gap: '.45rem',
                          color: 'inherit', textDecoration: 'none' }}>
                       <EveImage category="types" id={r.product_id} variation="icon" size={32} px={22} />

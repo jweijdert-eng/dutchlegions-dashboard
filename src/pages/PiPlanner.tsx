@@ -21,7 +21,7 @@ async function fetchJita(typeIds: number[]): Promise<Map<number, { buy: number; 
   const out = new Map<number, { buy: number; sell: number }>()
   if (typeIds.length === 0) return out
   try {
-    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${typeIds.join(',')}`)
+    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${typeIds.join(',')}`)
     const j = await r.json()
     for (const id of typeIds) out.set(id, { buy: Number(j?.[id]?.buy?.max ?? 0), sell: Number(j?.[id]?.sell?.min ?? 0) })
   } catch { /* prijzen optioneel */ }

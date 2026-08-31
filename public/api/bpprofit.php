@@ -14,7 +14,9 @@ require_once 'config.php';
 cors();
 
 const BP_TTL       = 3600;          // scan 1 uur cachen
-const BP_REGION    = 10000002;      // Jita / The Forge
+const BP_STATION   = 60003760;      // Jita IV - Moon 4: waarderen doen we op de hub zelf,
+                                    // niet regio-breed (dat pakt de goedkoopste order in een uithoek)
+const BP_REGION    = 10000002;      // The Forge, alleen als terugval (zie bpPrices)
 const BP_SELL_FEE  = 0.036;         // broker + sales tax bij verkoop (benadering)
 const BP_JOB_INDEX = 0.04;          // benaderde system cost index
 const BP_SCC       = 0.04;          // SCC-surcharge (4% van EIV)
@@ -78,12 +80,11 @@ function bpMulti(array $urls): array {
     return $out;
 }
 
-/** Jita-prijzen (Fuzzwork region-aggregates), parallel in brokken. */
-function bpPrices(array $typeIds): array {
-    $typeIds = array_values(array_unique(array_map('intval', $typeIds)));
+/** Fuzzwork-aggregates voor één scope ('station=…' of 'region=…'), parallel in brokken. */
+function bpFetchPrices(string $scope, array $typeIds): array {
     $urls = [];
     foreach (array_chunk($typeIds, 200) as $i => $chunk) {
-        $urls[$i] = 'https://market.fuzzwork.co.uk/aggregates/?region=' . BP_REGION
+        $urls[$i] = 'https://market.fuzzwork.co.uk/aggregates/?' . $scope
                     . '&types=' . implode(',', $chunk);
     }
     $prices = [];
@@ -95,6 +96,26 @@ function bpPrices(array $typeIds): array {
                 'buy'  => (float)($agg['buy']['max'] ?? 0),
                 'vol'  => (float)($agg['sell']['volume'] ?? 0),
             ];
+        }
+    }
+    return $prices;
+}
+
+/**
+ * Jita-prijzen. Eerst Jita 4-4 zelf, want regio-breed pakt de goedkoopste order
+ * ergens in The Forge en dat ligt 10-35% onder de hubprijs. Capitals kunnen alleen
+ * niet in een station docken — die staan op de citadels eromheen en hebben dus geen
+ * station-order. Voor types zonder Jita-4-4-prijs vallen we terug op de regio,
+ * anders zouden dreads/carriers/Rorquals helemaal uit de winstlijst vallen.
+ */
+function bpPrices(array $typeIds): array {
+    $typeIds = array_values(array_unique(array_map('intval', $typeIds)));
+    $prices  = bpFetchPrices('station=' . BP_STATION, $typeIds);
+    $missing = [];
+    foreach ($typeIds as $tid) if (($prices[$tid]['sell'] ?? 0) <= 0) $missing[] = $tid;
+    if ($missing) {
+        foreach (bpFetchPrices('region=' . BP_REGION, $missing) as $tid => $p) {
+            if (($p['sell'] ?? 0) > 0) $prices[$tid] = $p;
         }
     }
     return $prices;
@@ -142,7 +163,7 @@ function bpNamen(PDO $pdo, array $ids): array {
 
 // ---------------------------------------------------------------- scan
 function bpScan(PDO $pdo, int $me, bool $force): array {
-    $key = "bp_scan_me{$me}";
+    $key = "bp_scan_j44_me{$me}";
     if (!$force) { $c = bpCacheGet($pdo, $key, BP_TTL); if ($c) return $c; }
 
     $raw = @file_get_contents(__DIR__ . '/../blueprints.json');

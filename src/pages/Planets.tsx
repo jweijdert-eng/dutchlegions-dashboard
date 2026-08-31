@@ -11,13 +11,13 @@ import EveImage from '../components/EveImage'
 import StatCard from '../components/StatCard'
 import { usePageLoading } from '../hooks/usePageLoading'
 
-// ─── market prices (fuzzwork, Jita / The Forge sell-min) ───────────────────────
+// ─── market prices (fuzzwork, Jita 4-4 sell-min) ──────────────────────────────
 
 async function fetchPrices(typeIds: number[]): Promise<Map<number, number>> {
   if (typeIds.length === 0) return new Map()
   try {
     const r = await fetch(
-      `https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${typeIds.join(',')}`,
+      `https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${typeIds.join(',')}`,
       { signal: AbortSignal.timeout(6000) },
     )
     if (!r.ok) return new Map()
