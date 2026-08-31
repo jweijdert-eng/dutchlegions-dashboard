@@ -3,6 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import { useAuth } from '../auth/AuthContext'
 import { usePageLoading } from '../hooks/usePageLoading'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import { getAssets, getBlueprints, getIndustryJobs, getStructureInfo, resolveNames } from '../api/esi'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -153,18 +154,30 @@ function flattenTree(root: TreeNode, collapsed: Set<number>): TreeNode[] {
   return rows
 }
 
-// ── Jita-prijzen (fuzzwork aggregates, The Forge) ───────────────────────────
-async function fetchJitaSell(typeIds: number[]): Promise<Map<number, number>> {
+// ── Jita-prijzen (fuzzwork aggregates, Jita 4-4) ────────────────────────────
+async function fuzzSellMin(scope: string, typeIds: number[]): Promise<Map<number, number>> {
   const out = new Map<number, number>()
-  if (typeIds.length === 0) return out
   try {
-    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=${typeIds.join(',')}`)
+    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?${scope}&types=${typeIds.join(',')}`,
+      { signal: AbortSignal.timeout(8000) })
     const j = await r.json()
     for (const id of typeIds) {
       const sell = Number(j?.[id]?.sell?.min ?? 0)
       if (sell > 0) out.set(id, sell)
     }
   } catch { /* prijzen optioneel */ }
+  return out
+}
+
+// Waarderen doen we op Jita 4-4 zelf; regio-breed pakt de goedkoopste order in een
+// uithoek van The Forge en dat is 10-35% te laag. Capitals kunnen echter niet in een
+// station docken en staan dus alleen op de citadels eromheen — voor die types (en
+// andere dunne markten zonder station-order) vallen we terug op de regio-prijs.
+async function fetchJitaSell(typeIds: number[]): Promise<Map<number, number>> {
+  if (typeIds.length === 0) return new Map<number, number>()
+  const out = await fuzzSellMin('station=60003760', typeIds)
+  const missing = typeIds.filter(id => !out.has(id))
+  if (missing.length > 0) for (const [id, p] of await fuzzSellMin('region=10000002', missing)) out.set(id, p)
   return out
 }
 
@@ -207,6 +220,7 @@ export default function BuildProject() {
   const [loading, setLoading] = useState(true)
   usePageLoading(loading)
   const [prices, setPrices] = useState<Map<number, number>>(new Map())
+  const [pricesAt, setPricesAt] = useState<number | null>(null)
 
   // Voorraad (assets) per locatie + lopende productie (industry jobs, globaal)
   const [ownedByLoc, setOwnedByLoc] = useState<Map<number, Map<number, number>>>(new Map())
@@ -217,6 +231,7 @@ export default function BuildProject() {
   const [bpOwned, setBpOwned] = useState<Map<number, { bpo: boolean; me: number }>>(new Map())  // key = blueprint-type-id
   const [invLoading, setInvLoading] = useState(false)
   const [useSupply, setUseSupply] = useState(true)
+  const [useReactions, setUseReactions] = useState(true)
 
   // create-dialoog
   const [creating, setCreating] = useState(false)
@@ -234,8 +249,11 @@ export default function BuildProject() {
       const rset = new Set<number>()
       for (const [bid, bp] of Object.entries(rx)) {
         const [prodId, perRun] = bp.p
+        // alleen onthouden als het recept ook écht uit reactions.json komt; bij
+        // overlap wint manufacturing en is het dus geen reactie-stap
+        if (merged.has(prodId)) continue
+        merged.set(prodId, { perRun, materials: bp.m, bpId: Number(bid) })
         rset.add(prodId)
-        if (!merged.has(prodId)) merged.set(prodId, { perRun, materials: bp.m, bpId: Number(bid) })
       }
       setRecipes(merged); setReactionSet(rset)
     })
@@ -344,17 +362,30 @@ export default function BuildProject() {
     return m
   }, [useSupply, ownedMap, jobOutputMap])
 
+  // Staat 'reacties zelf maken' uit, dan snoeien we elke reactie-tak weg door die
+  // producten als koop te markeren. Het eindproduct blijft altijd bouwen — anders
+  // zou een reactie-project zichzelf op de inkooplijst zetten.
+  const effOverrides = useMemo(() => {
+    const own = active?.buyOverrides ?? {}
+    if (useReactions || reactionSet.size === 0) return own
+    const bo: Record<number, true> = { ...own }
+    for (const t of reactionSet) if (t !== active?.targetTypeId) bo[t] = true
+    return bo
+  }, [useReactions, reactionSet, active?.buyOverrides, active?.targetTypeId])
+  // rijen die niet los te wisselen zijn omdat de schakelaar ze al dwingt
+  const forcedBuy = (typeId: number) => !useReactions && reactionSet.has(typeId) && typeId !== active?.targetTypeId
+
   // De bill-of-materials van het actieve project (platte aggregatie voor kosten/voortgang)
   const bom = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides, supply)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes, supply])
+    return computeBom(active.targetTypeId, active.targetQty, active.me, recipes, effOverrides, supply)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, effOverrides, recipes, supply])
 
   // Hiërarchische boom voor het overzicht
   const tree = useMemo(() => {
     if (!active || recipes.size === 0) return null
-    return buildTree(active.targetTypeId, active.targetQty, active.me, recipes, active.buyOverrides)
-  }, [active?.targetTypeId, active?.targetQty, active?.me, active?.buyOverrides, recipes])
+    return buildTree(active.targetTypeId, active.targetQty, active.me, recipes, effOverrides)
+  }, [active?.targetTypeId, active?.targetQty, active?.me, effOverrides, recipes])
   const buildByType = useMemo(() => new Map((bom?.builds ?? []).map(b => [b.typeId, b])), [bom])
   const buyByType = useMemo(() => new Map((bom?.buys ?? []).map(b => [b.typeId, b])), [bom])
   const [viewMode, setViewMode] = useState<'tree' | 'list'>('tree')
@@ -391,10 +422,21 @@ export default function BuildProject() {
     if (!bom) return [] as number[]
     return [...new Set([...bom.builds.map(b => b.typeId), ...bom.buys.map(b => b.typeId)])]
   }, [bom])
+  // Fuzzwork zet zelf max-age=300 op de aggregates (dezelfde vijf minuten als ESI's
+  // marktcache), dus vaker verversen levert precies dezelfde cijfers op.
+  const priceTick = useAutoRefresh(5 * 60_000)
   useEffect(() => {
     if (priceTypeIds.length === 0) return
-    fetchJitaSell(priceTypeIds).then(setPrices)
-  }, [priceTypeIds.join(',')])
+    let stale = false
+    fetchJitaSell(priceTypeIds).then(p => {
+      // fetchJitaSell slikt fouten en geeft dan een lege map terug; die mag de vorige
+      // (goede) prijzen niet wegvagen en al helemaal geen vers tijdstip krijgen —
+      // anders staat er elke 5 minuten opnieuw "~0 ISK te kopen" alsof dat klopt.
+      if (stale || p.size === 0) return   // stale: een traag antwoord mag een nieuwere ronde niet overschrijven
+      setPrices(p); setPricesAt(Date.now())
+    })
+    return () => { stale = true }
+  }, [priceTypeIds.join(','), priceTick])
 
   // Debounced opslaan bij elke wijziging aan het actieve project
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -467,24 +509,29 @@ export default function BuildProject() {
     return Math.round((done / total) * 100)
   }, [active, bom])
 
-  const totalCost = useMemo(() => {
-    if (!bom) return 0
-    return bom.buys.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.net, 0)
-  }, [bom, prices])
+  // Mineralen koop je niet: die mijn je zelf, of ze komen uit het reprocessen van
+  // rat-loot. Ze krijgen daarom een eigen blok en blijven buiten de inkoop-ISK.
+  const buyRows     = useMemo(() => (bom?.buys ?? []).filter(b => !MINERAL_IDS.has(b.typeId)), [bom])
+  const mineralRows = useMemo(() => (bom?.buys ?? []).filter(b =>  MINERAL_IDS.has(b.typeId)), [bom])
+
+  const totalCost = useMemo(() =>
+    buyRows.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.net, 0), [buyRows, prices])
+  // Marktwaarde van wat je zelf aanlevert — dat scheelt je dit bedrag aan inkoop.
+  const mineralValue = useMemo(() =>
+    mineralRows.reduce((s, b) => s + (prices.get(b.typeId) ?? 0) * b.net, 0), [mineralRows, prices])
 
   // Boodschappenlijst: per koop-onderdeel het exacte aantal dat je nóg moet kopen
   // (na voorraad én al-gekocht). Te kopiëren als EVE-multibuy (naam<TAB>aantal).
   const [copied, setCopied] = useState(false)
   const remaining = (b: BuyRow) => buyCovered(b) ? 0 : Math.max(0, b.net - (active?.progress[b.typeId]?.bought ?? 0))
-  // Te kopen = alles behalve mineralen (die mijn je); mineralen apart als 'te mijnen'
   const shoppingList = useMemo(() => {
-    if (!bom || !active) return [] as { typeId: number; name: string; qty: number }[]
-    return bom.buys.filter(b => !MINERAL_IDS.has(b.typeId)).map(b => ({ typeId: b.typeId, name: nameOf(b.typeId), qty: remaining(b) })).filter(x => x.qty > 0)
-  }, [bom, active, names])
+    if (!active) return [] as { typeId: number; name: string; qty: number }[]
+    return buyRows.map(b => ({ typeId: b.typeId, name: nameOf(b.typeId), qty: remaining(b) })).filter(x => x.qty > 0)
+  }, [buyRows, active, names])
   const mineList = useMemo(() => {
-    if (!bom || !active) return [] as { typeId: number; name: string; qty: number }[]
-    return bom.buys.filter(b => MINERAL_IDS.has(b.typeId)).map(b => ({ typeId: b.typeId, name: nameOf(b.typeId), qty: remaining(b) })).filter(x => x.qty > 0)
-  }, [bom, active, names])
+    if (!active) return [] as { typeId: number; name: string; qty: number }[]
+    return mineralRows.map(b => ({ typeId: b.typeId, name: nameOf(b.typeId), qty: remaining(b) })).filter(x => x.qty > 0)
+  }, [mineralRows, active, names])
   const remainingCost = useMemo(() => shoppingList.reduce((s, x) => s + (prices.get(x.typeId) ?? 0) * x.qty, 0), [shoppingList, prices])
   const copyShoppingList = () => {
     const txt = shoppingList.map(x => `${x.name}\t${x.qty}`).join('\n')
@@ -552,6 +599,11 @@ export default function BuildProject() {
             <input type="checkbox" checked={useSupply} onChange={e => setUseSupply(e.target.checked)} />
             Voorraad &amp; jobs meerekenen
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0.6rem 2px', fontSize: '0.66rem', color: 'var(--text-dim)', cursor: 'pointer' }}
+            title="Uit: reactie-tussenproducten (gas, composites, hybrid polymers…) koop je kant-en-klaar in plaats van ze zelf te reageren">
+            <input type="checkbox" checked={useReactions} onChange={e => setUseReactions(e.target.checked)} />
+            Reacties zelf maken
+          </label>
           <button onClick={refreshInventory} disabled={invLoading} style={{ ...btnGhost, fontSize: '0.66rem', padding: '2px 2px' }}>
             {invLoading ? '⏳ voorraad laden…' : '↻ Voorraad verversen'}
           </button>
@@ -615,7 +667,7 @@ export default function BuildProject() {
                 <EveImage category="types" id={active.targetTypeId} variation="icon" size={64} px={48} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{active.targetName}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita sell){useSupply && ' · voorraad/jobs meegerekend'}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{fmtNum(active.targetQty)}× · ME {active.me}% · nog ~{fmtISK(totalCost)} ISK te kopen (Jita 4-4{pricesAt ? `, ${new Date(pricesAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}` : ''}){mineralValue > 0 && ` · ⛏️ ${fmtISK(mineralValue)} aan mineralen lever je zelf`}{useSupply && ' · voorraad/jobs meegerekend'}{!useReactions && ' · reacties gekocht'}</div>
                   {targetVerdict && (
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>
                       Eindproduct: zelf bouwen ~{fmtISK(targetVerdict.build)} vs kopen ~{fmtISK(targetVerdict.buy)} /st →{' '}
@@ -701,7 +753,7 @@ export default function BuildProject() {
                         ? <button onClick={() => toggleBuild(n.typeId)} title="Klik om door te schakelen: te doen → job draait → klaar" style={{ ...pill, color: JOB_COLOR[job], borderColor: JOB_COLOR[job] }}>{JOB_LABEL[job]}</button>
                         : <input type="number" min={0} placeholder="0" value={active.progress[n.typeId]?.bought || ''} onChange={e => setBuy(n.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })} style={{ ...input, width: 70 }} title="Aantal gekocht" />}
                       {/* kleine wissel-knop om het advies eventueel te negeren */}
-                      {buildable && n.typeId !== active.targetTypeId &&
+                      {buildable && n.typeId !== active.targetTypeId && !forcedBuy(n.typeId) &&
                         <button onClick={() => toggleBuyOverride(n.typeId)} style={{ ...pill, borderColor: active.buyOverrides[n.typeId] ? '#7fb0ff' : 'var(--border)', color: active.buyOverrides[n.typeId] ? '#7fb0ff' : 'var(--text-dim)' }} title="Wissel tussen zelf bouwen en kopen">{active.buyOverrides[n.typeId] ? '→ bouwen' : '→ kopen'}</button>}
                     </div>
                   )
@@ -749,14 +801,14 @@ export default function BuildProject() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '0 2px 6px' }}>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
                 Inkoop: <strong style={{ color: '#fff' }}>{shoppingList.length}</strong> regels · ~{fmtISK(remainingCost)} ISK
-                {mineList.length > 0 && <> · <span style={{ color: '#f0c674' }}>⛏️ {mineList.length} mineralen zelf mijnen</span></>}
+                {mineList.length > 0 && <> · <span style={{ color: '#f0c674' }}>⛏️ {mineList.length} mineralen lever je zelf aan</span></>}
               </span>
               <button onClick={copyShoppingList} disabled={shoppingList.length === 0}
                 style={{ ...pill, marginLeft: 'auto', background: 'rgba(255,255,255,0.08)', borderColor: 'var(--text-dim)', color: shoppingList.length ? 'var(--text)' : 'var(--text-dim)' }}
                 title="Kopieer als EVE multibuy (zonder mineralen) — plak in het markt-multibuy venster">{copied ? '✓ gekopieerd' : '📋 Kopieer inkooplijst'}</button>
             </div>
-            <Section title={`Te kopen (${bom.buys.filter(b => !buyCovered(b)).length}/${bom.buys.length})`}>
-              {bom.buys.map(b => {
+            <Section title={`Te kopen (${buyRows.filter(b => !buyCovered(b)).length}/${buyRows.length})`}>
+              {buyRows.map(b => {
                 const pr = active.progress[b.typeId]
                 const bought = pr?.bought ?? 0
                 const covered = buyCovered(b)
@@ -771,11 +823,9 @@ export default function BuildProject() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(b.typeId)}</div>
                       <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(() => { const rem = covered ? 0 : Math.max(0, b.net - bought); const mineral = MINERAL_IDS.has(b.typeId)
+                        {(() => { const rem = covered ? 0 : Math.max(0, b.net - bought)
                           if (rem <= 0) return <span style={{ color: '#3ecf6e' }}>✓ {covered ? 'compleet' : 'in voorraad'}</span>
-                          return mineral
-                            ? <span style={{ color: '#f0c674', fontWeight: 600 }}>⛏️ nog {fmtNum(rem)} mijnen</span>
-                            : <span style={{ color: '#fff', fontWeight: 600 }}>nog {fmtNum(rem)} kopen{price > 0 && <> · ~{fmtISK(price * rem)} ISK</>}</span>
+                          return <span style={{ color: '#fff', fontWeight: 600 }}>nog {fmtNum(rem)} kopen{price > 0 && <> · ~{fmtISK(price * rem)} ISK</>}</span>
                         })()}
                         <span>({fmtNum(b.needed)} nodig)</span>
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
@@ -788,7 +838,7 @@ export default function BuildProject() {
                     </div>
                     <input type="number" min={0} placeholder="0" value={bought || ''} onChange={e => setBuy(b.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })}
                       style={{ ...input, width: 90 }} title="Aantal handmatig gekocht (bovenop voorraad)" />
-                    {buildable && (
+                    {buildable && !forcedBuy(b.typeId) && (
                       <button onClick={() => toggleBuyOverride(b.typeId)} style={{ ...pill, borderColor: active.buyOverrides[b.typeId] ? 'var(--gold)' : 'var(--border)', color: active.buyOverrides[b.typeId] ? 'var(--gold)' : 'var(--text-dim)' }}
                         title="Dit onderdeel zelf bouwen i.p.v. kopen">{active.buyOverrides[b.typeId] ? 'kopen ✓' : 'bouwen?'}</button>
                     )}
@@ -796,6 +846,44 @@ export default function BuildProject() {
                 )
               })}
             </Section>
+
+            {/* Zelf aanleveren — mineralen mijn je of haal je uit reprocessing van rat-loot */}
+            {mineralRows.length > 0 && (
+              <Section title={`Zelf aanleveren (${mineralRows.filter(b => !buyCovered(b)).length}/${mineralRows.length})`}>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', padding: '0 2px 8px' }}>
+                  Mineralen — zelf mijnen of uit het reprocessen van rat-loot. Staan bewust niet op de
+                  inkooplijst en tellen niet mee in de inkoop-ISK.
+                </div>
+                {mineralRows.map(b => {
+                  const pr = active.progress[b.typeId]
+                  const got = pr?.bought ?? 0
+                  const covered = buyCovered(b)
+                  const owned = useSupply ? (ownedMap.get(b.typeId) ?? 0) : 0
+                  const price = prices.get(b.typeId) ?? 0
+                  const rem = covered ? 0 : Math.max(0, b.net - got)
+                  return (
+                    <div key={b.typeId} style={{ ...rowWrap, opacity: covered ? 0.5 : 1 }}>
+                      <input type="checkbox" checked={!!covered} onChange={e => setBuy(b.typeId, { done: e.target.checked })} style={{ width: 16, height: 16 }} />
+                      <StatusGlyph kind={covered ? 'have' : null} />
+                      <EveImage category="types" id={b.typeId} variation="icon" size={32} px={26} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.76rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(b.typeId)}</div>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {rem > 0
+                            ? <span style={{ color: '#f0c674', fontWeight: 600 }}>⛏️ nog {fmtNum(rem)} aanleveren</span>
+                            : <span style={{ color: '#3ecf6e' }}>✓ {covered ? 'compleet' : 'in voorraad'}</span>}
+                          <span>({fmtNum(b.needed)} nodig)</span>
+                          {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
+                          {rem > 0 && price > 0 && <span title="Marktwaarde — zoveel scheelt het je aan inkoop">≈ {fmtISK(price * rem)} ISK bespaard</span>}
+                        </div>
+                      </div>
+                      <input type="number" min={0} placeholder="0" value={got || ''} onChange={e => setBuy(b.typeId, { bought: Math.max(0, parseInt(e.target.value) || 0) })}
+                        style={{ ...input, width: 90 }} title="Aantal dat je zelf hebt aangeleverd (gemijnd of gereprocessed)" />
+                    </div>
+                  )
+                })}
+              </Section>
+            )}
             </>)}
           </div>
         )}
