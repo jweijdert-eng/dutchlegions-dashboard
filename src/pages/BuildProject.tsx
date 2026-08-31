@@ -206,6 +206,13 @@ const JOB_COLOR: Record<JobState, string> = { todo: 'var(--text-dim)', running: 
 // Standaard mineralen (komen uit ore) — die mijn je zelf i.p.v. kopen
 const MINERAL_IDS = new Set([34, 35, 36, 37, 38, 39, 40, 11399])
 
+// Wat telt als bruikbare voorraad. Gefitte modules niet (het schip zelf wél), en Asset
+// Safety ook niet: dat moet je eerst laten bezorgen en betalen voor je erbij kunt.
+// Zelfde slot-regex als Assets.tsx, ankerd — /Slot/i zou ook een toekomstige vlag als
+// 'SlotHold' meepakken.
+const FITTED_SLOT_RE = /^(Hi|Med|Lo|Rig|SubSystem)Slot\d+$/
+const usableStock = (flag: string) => !FITTED_SLOT_RE.test(flag) && flag !== 'AssetSafety'
+
 export default function BuildProject() {
   const { tokens, activeTokens, mainCharId } = useAuth()
   const charId = mainCharId ?? tokens[0]?.characterId ?? 0
@@ -315,7 +322,7 @@ export default function BuildProject() {
 
       const byLoc = new Map<number, Map<number, number>>()
       for (const a of allRaw) {
-        if (/Slot/i.test(a.location_flag)) continue   // gefitte modules tellen niet als voorraad
+        if (!usableStock(a.location_flag)) continue
         const locId = rootLoc(a)
         let m = byLoc.get(locId); if (!m) { m = new Map(); byLoc.set(locId, m) }
         m.set(a.type_id, (m.get(a.type_id) ?? 0) + a.quantity)
@@ -352,6 +359,14 @@ export default function BuildProject() {
       .map(id => ({ id, label: locLabels.get(id) ?? `Locatie ${id}`, count: ownedByLoc.get(id)!.size }))
       .sort((a, b) => b.count - a.count),
   [ownedByLoc, locLabels])
+
+  // Verdwijnt de gekozen locatie na een verversing (alles verplaatst, of een character
+  // niet meer ingelogd), dan vindt de <select> geen bijpassende optie meer en toont hij
+  // 'Alle locaties' — terwijl de filter nog op het oude id staat en dus stilletjes nul
+  // voorraad meetelt. Daarom meeschakelen naar 'all'.
+  useEffect(() => {
+    if (locFilter !== 'all' && ownedByLoc.size > 0 && !ownedByLoc.has(locFilter)) setLocFilter('all')
+  }, [ownedByLoc, locFilter])
 
   // Voorraad + in-productie als beschikbare 'supply' voor de netto-berekening
   const supply = useMemo(() => {
@@ -615,10 +630,10 @@ export default function BuildProject() {
           {useSupply && locOptions.length > 0 && (
             <select value={locFilter === 'all' ? 'all' : String(locFilter)}
               onChange={e => setLocFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              title="Tel alleen voorraad op deze locatie mee (jobs blijven globaal)"
+              title="Tel alleen voorraad op deze locatie mee (jobs blijven globaal). Het getal is het aantal verschillende soorten dat er ligt."
               style={{ ...input, width: '100%', marginTop: 6 }}>
               <option value="all">📍 Alle locaties</option>
-              {locOptions.map(o => <option key={o.id} value={o.id}>{o.label} ({o.count})</option>)}
+              {locOptions.map(o => <option key={o.id} value={o.id}>{o.label} ({o.count} soorten)</option>)}
             </select>
           )}
           <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -840,7 +855,7 @@ export default function BuildProject() {
                         <span>({fmtNum(b.needed)} nodig)</span>
                         {owned > 0 && <span style={badge}>📦 {fmtNum(owned)}</span>}
                         {(() => { const v = buildable ? verdict(b.typeId) : null; return v && v.cheaper === 'build' && v.savePct >= 2
-                          ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen −{v.savePct}%</span>
+                          ? <span style={{ color: '#3ecf6e' }} title={`zelf bouwen ~${fmtISK(v.build)} vs kopen ~${fmtISK(v.buy)} per stuk`}>💡 bouwen {v.build === 0 ? '· eigen mineralen' : `−${v.savePct}%`}</span>
                           : null })()}
                         {buildable && bpBadge(b.typeId)}
                         {piBadge(b.typeId)}
