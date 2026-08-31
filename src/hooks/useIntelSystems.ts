@@ -212,7 +212,11 @@ async function scanDir(dir: FileSystemDirectoryHandle, prefixes: string[]):
 }
 
 function parseLine(line: string): Omit<SystemIntel, never> | null {
-  const m = line.match(/^\[ (\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}) \] ([^>]+) > (.+)$/)
+  // EVE zet vóór ÉLKE regel een BOM-teken (U+FEFF), niet alleen aan het begin van
+  // het bestand; TextDecoder haalt alleen die eerste weg. Zonder dit te strippen
+  // matcht de regex hieronder geen enkele regel meer.
+  const m = line.replace(/^[﻿\s]+/, '')
+    .match(/^\[ (\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}) \] ([^>]+) > (.+)$/)
   if (!m) return null
   const [, rawTime, rawReporter, rawMsg] = m
   const reporter = rawReporter.trim()

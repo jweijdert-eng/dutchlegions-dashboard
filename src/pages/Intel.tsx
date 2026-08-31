@@ -144,7 +144,10 @@ async function findAllFiles(
 }
 
 function parseLine(line: string, channel: string): IntelEntry | null {
-  const m = line.match(/^\[ (\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}) \] ([^>]+) > (.+)$/)
+  // EVE zet vóór ÉLKE regel een BOM-teken (U+FEFF); zonder dat te strippen matcht
+  // de regex hieronder niets meer. Zie ook useIntelSystems.ts.
+  const m = line.replace(/^[﻿\s]+/, '')
+    .match(/^\[ (\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}) \] ([^>]+) > (.+)$/)
   if (!m) return null
   const [, rawTime, rawReporter, rawMsg] = m
   const reporter = rawReporter.trim()
