@@ -25,6 +25,9 @@ interface Schem { schematic_name: string; cycle_time: number; pins: Pin[] }
 interface Voorstel {
   systeem: string; sprongen: number; straal?: number
   planeet: string; type: string; rol: string
+  /* Tweede (of derde) kolonie op dezelfde planeet, van een ander karakter. Mag,
+   * maar de extractors delen dan dezelfde hotspots en halen dus minder. */
+  gedeeld?: boolean
 }
 
 /* Een kolonie die er nú staat, uit ESI. `voorraad` is wat er op de planeet
@@ -125,7 +128,7 @@ interface Stap { naam: string; typeId: number; fabrieken: number; perUur: number
                  tier: number; opExtractie: boolean }
 interface Keten { doelId: number; stappen: Stap[]; p0: { naam: string; perUur: number }[] }
 
-function bouwKeten(sch: Record<string, Schem>, namen: Record<string, string>,
+export function bouwKeten(sch: Record<string, Schem>, namen: Record<string, string>,
                    doel: string, lijnen: number): Keten | null {
   /* Koppelen op type-id en niet op naam. Drie schematics heten net anders dan
    * hun product — 'Ukomi Superconductor' maakt 'Ukomi Superconductors',
@@ -194,8 +197,8 @@ interface Pasvorm { lijnen: number; extractie: number; fabriek: number; rem: str
                      * planeet naast zit of tien. */
                     voorEenLijn: number }
 
-function pasIn(keten: Keten, vrijePlaneten: string[], oogst: number,
-               slots: number, perFabriekPlaneet: number): Pasvorm {
+export function pasIn(keten: Keten, vrijePlaneten: string[], oogst: number,
+               slots: number, perFabriekPlaneet: number, accounts = 1): Pasvorm {
   const nodig = keten.p0
   const tekort = nodig.filter(r =>
     !vrijePlaneten.some(t => (PLANEET_P0[t] ?? []).includes(r.naam)))
@@ -210,8 +213,12 @@ function pasIn(keten: Keten, vrijePlaneten: string[], oogst: number,
     .filter(s => !s.opExtractie)
     .reduce((a, s) => a + Math.ceil(s.fabrieken), 0)
 
+  /* Elk karakter mag een eigen kolonie op dezelfde planeet zetten, dus wat er
+   * ligt telt maal het aantal karakters. Zonder dit rekende de planner vier
+   * Lava-planeten als vier kolonies terwijl het er met vier accounts zestien
+   * kunnen zijn. */
   const telling: Record<string, number> = {}
-  for (const t of vrijePlaneten) telling[t] = (telling[t] ?? 0) + 1
+  for (const t of vrijePlaneten) telling[t] = (telling[t] ?? 0) + Math.max(1, accounts)
   /* Fabrieken mogen op elk type — behalve Shattered, daar kun je geen PI op
    * neerzetten. PLANEET_P0 kent Shattered niet, dus die sleutels zijn precies
    * de bruikbare types. */
@@ -280,6 +287,11 @@ function maxflow(n: number, edges: [number, number, number][], s: number, t: num
 }
 
 export interface SysKeuze { naam: string; sprongen: number; slots: number
+                            /* Hoeveel karakters er in dit systeem zitten. Elk karakter mag
+                             * zijn eigen kolonie op dezelfde planeet zetten (één command
+                             * center per planeet PER karakter), dus dit is de vermenig-
+                             * vuldiger op alles wat er ligt. */
+                            kar: number
                             perType: Record<string, number> }
 export interface Toewijzing { sys: number; type: string; vraag: number; aantal: number }
 
@@ -307,13 +319,14 @@ function verdeelOverSystemen(
       for (const ty of q.types) {
         const k = ptNode.get(`${j}|${ty}`)
         if (k === undefined) continue
-        edges.push([1 + i, k, keuze[j].perType[ty]])
+        edges.push([1 + i, k, keuze[j].perType[ty] * Math.max(1, keuze[j].kar)])
         herkomst.push({ vraag: i, sys: j, type: ty })
       }
     }
   })
   for (let j = 0; j < S; j++) for (const [ty, aantal] of Object.entries(keuze[j].perType)) {
-    edges.push([ptNode.get(`${j}|${ty}`)!, sysNode + j, aantal]); herkomst.push({ vraag: -1, sys: -1, type: '' })
+    edges.push([ptNode.get(`${j}|${ty}`)!, sysNode + j, aantal * Math.max(1, keuze[j].kar)])
+    herkomst.push({ vraag: -1, sys: -1, type: '' })
   }
   for (let j = 0; j < S; j++) { edges.push([sysNode + j, put, keuze[j].slots]); herkomst.push({ vraag: -1, sys: -1, type: '' }) }
 
@@ -333,23 +346,40 @@ const combinaties = <T,>(a: T[], k: number): T[][] =>
   k === 0 ? [[]] : a.length < k ? []
     : [...combinaties(a.slice(1), k - 1).map(c => [a[0], ...c]), ...combinaties(a.slice(1), k)]
 
-/* Alle manieren om k karakters aan k systemen te hangen. Boven de zes
- * karakters wordt dat te veel; dan pakken we alleen de voor de hand liggende
- * koppeling (grootste karakter op het grootste systeem). */
-function slotIndelingen(slots: number[], k: number): number[][] {
-  if (slots.length > 6) return [slots.slice().sort((a, b) => b - a).slice(0, k)]
-  const uit = new Set<string>()
-  const loop = (rest: number[], gekozen: number[]) => {
-    if (gekozen.length === k) { uit.add(gekozen.join(',')); return }
-    rest.forEach((s, i) => loop([...rest.slice(0, i), ...rest.slice(i + 1)], [...gekozen, s]))
+/* Alle manieren om de karakters over m gekozen systemen te verdelen, met
+ * minstens één karakter per systeem.
+ *
+ * Eerder kreeg elk karakter zijn eigen systeem, en dat was te streng: je mag
+ * met meerdere karakters in hetzelfde systeem zitten en dan allemaal een eigen
+ * kolonie op dezelfde planeet neerzetten. Rond Q-02UL liggen maar vier
+ * Lava-planeten in twee systemen; onder de oude aanname stopte de planner
+ * daarom bij twee karakters, terwijl vier karakters samen in één systeem er
+ * gewoon vier kolonies per planeet naast kunnen zetten.
+ *
+ * Ontdubbeld op de vorm (aantal karakters + slots per systeem): met vier
+ * karakters van 6/5/5/5 slots zijn er maar een handvol echt verschillende
+ * verdelingen. */
+function slotGroepen(slots: number[], m: number): { kar: number; slots: number }[][] {
+  if (m > slots.length) return []
+  const uit = new Map<string, { kar: number; slots: number }[]>()
+  const groepen: number[][] = Array.from({ length: m }, () => [])
+  const loop = (i: number) => {
+    if (uit.size > 300) return                    // rem, anders loopt het uit de hand
+    if (i === slots.length) {
+      if (groepen.some(g => g.length === 0)) return
+      const vorm = groepen.map(g => ({ kar: g.length, slots: g.reduce((a, b) => a + b, 0) }))
+      uit.set(vorm.map(v => `${v.kar}:${v.slots}`).join('|'), vorm)
+      return
+    }
+    for (let j = 0; j < m; j++) { groepen[j].push(slots[i]); loop(i + 1); groepen[j].pop() }
   }
-  loop(slots, [])
-  return [...uit].map(s => s.split(',').map(Number))
+  loop(0)
+  return [...uit.values()]
 }
 
 export interface PasvormSys extends Pasvorm { keuze: SysKeuze[]; toewijzing: Toewijzing[] }
 
-function pasInSystemen(keten: Keten, kandidaten: SysKeuze[], slots: number[],
+export function pasInSystemen(keten: Keten, kandidaten: SysKeuze[], slots: number[],
                        oogst: number, perFabriekPlaneet: number): PasvormSys {
   const alleTypes = Object.keys(PLANEET_P0)
   const alle = kandidaten.flatMap(s => Object.entries(s.perType).flatMap(([t, n]) => Array(n).fill(t) as string[]))
@@ -380,10 +410,12 @@ function pasInSystemen(keten: Keten, kandidaten: SysKeuze[], slots: number[],
     if (ex + fab > totaalSlots) { beste.rem = 'slots op'; break }
 
     let gelukt: { keuze: SysKeuze[]; toewijzing: Toewijzing[] } | null = null
-    for (let k = 1; k <= Math.min(slots.length, lijst.length) && !gelukt; k++) {
-      for (const combo of combinaties(lijst, k)) {
-        for (const indeling of slotIndelingen(slots, k)) {
-          const keuze = combo.map((s, i) => ({ ...s, slots: indeling[i] }))
+    /* Weinig systemen eerst: samen in één systeem zitten is bijna altijd
+     * handiger dan uitwaaieren, en het scheelt ophaalrondes. */
+    for (let m = 1; m <= Math.min(slots.length, lijst.length) && !gelukt; m++) {
+      for (const combo of combinaties(lijst, m)) {
+        for (const indeling of slotGroepen(slots, m)) {
+          const keuze = combo.map((s, i) => ({ ...s, slots: indeling[i].slots, kar: indeling[i].kar }))
           /* Eerst proberen de fabrieken bij elkaar te houden in het systeem
            * dat het dichtst bij huis ligt: daar komt alle P1 samen. */
           const thuisIdx = keuze.reduce((b, s, i) => s.sprongen < keuze[b].sprongen ? i : b, 0)
@@ -395,7 +427,7 @@ function pasInSystemen(keten: Keten, kandidaten: SysKeuze[], slots: number[],
         if (gelukt) break
       }
     }
-    if (!gelukt) { beste.rem = 'geen indeling met één systeem per karakter'; break }
+    if (!gelukt) { beste.rem = 'geen verdeling die past'; break }
     beste = { ...beste, lijnen: L, extractie: ex, fabriek: fab, ...gelukt }
   }
   return beste
@@ -660,16 +692,16 @@ export default function PiOpzet() {
     buurt.filter(s => !uitgesloten.includes(s.naam)).map(s => {
       const perType: Record<string, number> = {}
       for (const p of s.planeten) if (PLANEET_P0[p.type]) perType[p.type] = (perType[p.type] ?? 0) + 1
-      return { naam: s.naam, sprongen: s.sprongen, slots: 0, perType }
+      return { naam: s.naam, sprongen: s.sprongen, slots: 0, kar: 0, perType }
     }).filter(s => Object.keys(s.perType).length > 0), [buurt, uitgesloten])
 
   const plan = useMemo(() => {
     if (!eenLijn) return null
     return perSysteem
       ? pasInSystemen(eenLijn, systeemKandidaten, accountSlots, oogst, perFabriekPlaneet)
-      : pasIn(eenLijn, vrijePlaneten, oogst, slots, perFabriekPlaneet)
+      : pasIn(eenLijn, vrijePlaneten, oogst, slots, perFabriekPlaneet, accounts)
   }, [eenLijn, perSysteem, systeemKandidaten, accountSlots, vrijePlaneten,
-      oogst, slots, perFabriekPlaneet])
+      oogst, slots, accounts, perFabriekPlaneet])
 
   /* Jita-waarde van de opbrengst */
   useEffect(() => {
@@ -708,7 +740,7 @@ export default function PiOpzet() {
       if (!k) continue
       const p = perSysteem
         ? pasInSystemen(k, systeemKandidaten, accountSlots, oogst, perFabriekPlaneet)
-        : pasIn(k, vrijePlaneten, oogst, slots, perFabriekPlaneet)
+        : pasIn(k, vrijePlaneten, oogst, slots, perFabriekPlaneet, accounts)
       if (!p.lijnen || p.tekort.length) continue
       const stap = k.stappen.find(s => s.typeId === k.doelId)
       if (!stap) continue
@@ -747,15 +779,26 @@ export default function PiOpzet() {
             (bezet.has(`${sys.naam} ${ROMEINS[a.idx]}`) ? 0 : 1)
             - (bezet.has(`${sys.naam} ${ROMEINS[b.idx]}`) ? 0 : 1)
             || (a.straal ?? 0) - (b.straal ?? 0))
-        const gebruikt = new Set<number>()
+        /* Hoe vaak een planeet al gebruikt is. Zitten er meerdere karakters in
+         * dit systeem, dan mag dezelfde planeet net zo vaak terugkomen: elk
+         * karakter zet er zijn eigen kolonie op. */
+        const gebruikt = new Map<number, number>()
+        const ruimte = Math.max(1, sys.kar)
         const pak = (type: string, aantal: number, rol: string): Voorstel[] => {
           const uit: Voorstel[] = []
-          for (const pl of vrij) {
-            if (uit.length >= aantal) break
-            if (pl.type !== type || gebruikt.has(pl.idx)) continue
-            gebruikt.add(pl.idx)
-            uit.push({ systeem: sys.naam, sprongen: sys.sprongen, straal: pl.straal,
-              planeet: `${sys.naam} ${ROMEINS[pl.idx]}`, type: pl.type, rol })
+          /* Eerst iedereen op een eigen planeet; pas als die op zijn een tweede
+           * kolonie ernaast. Zo stapel je alleen waar het echt moet - en dat is
+           * ook waar de opbrengst per extractor gaat zakken. */
+          for (let ronde = 0; ronde < ruimte && uit.length < aantal; ronde++) {
+            for (const pl of vrij) {
+              if (uit.length >= aantal) break
+              if (pl.type !== type || (gebruikt.get(pl.idx) ?? 0) > ronde) continue
+              gebruikt.set(pl.idx, (gebruikt.get(pl.idx) ?? 0) + 1)
+              uit.push({ systeem: sys.naam, sprongen: sys.sprongen, straal: pl.straal,
+                planeet: `${sys.naam} ${ROMEINS[pl.idx]}`, type: pl.type, rol,
+                /* tweede kolonie op dezelfde planeet: die deelt de hotspots */
+                gedeeld: ronde > 0 })
+            }
           }
           return uit
         }
@@ -765,7 +808,9 @@ export default function PiOpzet() {
           .sort((a, b) => (b.vraag === eenLijn.p0.length ? 1 : 0) - (a.vraag === eenLijn.p0.length ? 1 : 0))
           .flatMap(t => pak(t.type, t.aantal,
             t.vraag === eenLijn.p0.length ? 'fabriek P2/P3' : `${eenLijn.p0[t.vraag].naam} → P1`))
-        return { kop: `${sys.naam} — ${mijn.length} van ${sys.slots} planeten`, planeten: mijn }
+        const kop = `${sys.naam} — ${mijn.length} van ${sys.slots} slots`
+          + (sys.kar > 1 ? ` · ${sys.kar} karakters` : '')
+        return { kop, planeten: mijn }
       }).filter(v => v.planeten.length > 0)
     }
 
@@ -1102,10 +1147,16 @@ export default function PiOpzet() {
                 <div style={{ fontSize: '0.7rem', color: 'var(--gold,#f0c040)', fontWeight: 700 }}>
                   {perSysteem ? `KARAKTER ${a + 1} parkeert in ` : ''}{kop}
                 </div>
-                {mijn.map(p => (
-                  <div key={p.planeet} style={{ display: 'flex', gap: 8, fontSize: '0.78rem',
+                {/* De sleutel moet de index mee: bij meerdere karakters in hetzelfde
+                    systeem staat dezelfde planeet er vaker in, elk met een eigen kolonie. */}
+                {mijn.map((p, i) => (
+                  <div key={`${p.planeet}:${i}`} style={{ display: 'flex', gap: 8, fontSize: '0.78rem',
                     padding: '0.16rem 0' }}>
-                    <span style={{ width: 106 }}>{p.planeet}</span>
+                    <span style={{ width: 106 }}>
+                      {p.planeet}
+                      {p.gedeeld && <span title="Tweede kolonie op deze planeet, van een ander karakter. Mag, maar de extractors delen de hotspots en halen dus minder per stuk."
+                        style={{ color: 'var(--accent-amber, #f0c040)', marginLeft: 4 }}>+</span>}
+                    </span>
                     <span style={{ width: 74, color: PLANEETKLEUR[p.type] ?? '#8a93a8' }}>{p.type}</span>
                     <span style={{ width: 58, color: 'var(--text-dim)' }}>
                       {p.sprongen === 0 ? 'thuis' : `${p.sprongen} spr`}</span>
