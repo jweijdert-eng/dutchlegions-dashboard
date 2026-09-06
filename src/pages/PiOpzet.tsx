@@ -762,7 +762,8 @@ export default function PiOpzet() {
   const iskDag = perDag * (prijs.get(doelStap?.typeId ?? 0) ?? 0)
 
   /* welke planeten stel ik voor, verdeeld over de accounts */
-  const vakjes = useMemo<{ kop: string; planeten: Voorstel[] }[]>(() => {
+  const vakjes = useMemo<{ kop: string; planeten: Voorstel[];
+                           kar: number; slots: number; nr?: number }[]>(() => {
     if (!plan || !eenLijn || !plan.lijnen) return []
 
     /* Één systeem per karakter: de max-flow heeft al bepaald hoeveel planeten
@@ -810,7 +811,7 @@ export default function PiOpzet() {
             t.vraag === eenLijn.p0.length ? 'fabriek P2/P3' : `${eenLijn.p0[t.vraag].naam} → P1`))
         const kop = `${sys.naam} — ${mijn.length} van ${sys.slots} slots`
           + (sys.kar > 1 ? ` · ${sys.kar} karakters` : '')
-        return { kop, planeten: mijn }
+        return { kop, planeten: mijn, kar: sys.kar, slots: sys.slots }
       }).filter(v => v.planeten.length > 0)
     }
 
@@ -900,10 +901,58 @@ export default function PiOpzet() {
     }
     return uit.map((planeten, i) => ({
       kop: `ACCOUNT ${i + 1} — ${planeten.length} van ${accountSlots[i]} planeten`, planeten,
+      kar: 1, slots: accountSlots[i] ?? planeten.length, nr: i + 1,
     })).filter(v => v.planeten.length > 0)
   }, [plan, eenLijn, buurt, uitgesloten, oogst, bezet, perSysteem, accountSlots])
 
   const verdeling = useMemo(() => vakjes.flatMap(v => v.planeten), [vakjes])
+
+  /* ── het plan per account ────────────────────────────────────────────────
+   *
+   * De planner denkt in systemen; jij logt in per account. Zitten er twee
+   * karakters in hetzelfde systeem, dan moeten we weten wélke twee - het plan
+   * weet alleen "twee karakters, samen elf slots". Met een handvol accounts is
+   * alle combinaties aflopen goedkoop genoeg om dat exact te maken.
+   */
+  const perAccountPlan = useMemo(() => {
+    const over = accountSlots.map((slots, i) => ({ nr: i + 1, slots, vrij: true }))
+
+    const kies = (kar: number, slots: number) => {
+      const pool = over.filter(a => a.vrij)
+      const zoek = (i: number, gekozen: typeof pool): typeof pool | null => {
+        const som = gekozen.reduce((n, a) => n + a.slots, 0)
+        if (gekozen.length === kar) return som === slots ? gekozen : null
+        if (i >= pool.length || som > slots) return null
+        return zoek(i + 1, [...gekozen, pool[i]]) ?? zoek(i + 1, gekozen)
+      }
+      /* Komt het niet precies uit (bijvoorbeeld na het bijstellen van de
+       * slots), dan de grootste accounts eerst - liever een benadering dan
+       * geen indeling. */
+      const uit = zoek(0, []) ?? pool.slice().sort((a, b) => b.slots - a.slots).slice(0, kar)
+      for (const a of uit) a.vrij = false
+      return uit
+    }
+
+    const uit: { nr: number; slots: number; systeem: string; rijen: Voorstel[] }[] = []
+    for (const vak of vakjes) {
+      const systeem = vak.planeten[0]?.systeem ?? vak.kop
+      const groep = vak.nr
+        ? [{ nr: vak.nr, slots: vak.slots, vrij: false }]
+        : kies(Math.max(1, vak.kar), vak.slots)
+      const emmers = groep.map(a => ({ ...a, rijen: [] as Voorstel[] }))
+      /* Ronde voor ronde uitdelen: dan krijgt iedereen eerst een eigen planeet
+       * en pas daarna een tweede kolonie ernaast. */
+      for (const rij of vak.planeten) {
+        const doel = emmers.filter(e => e.rijen.length < e.slots)
+          .sort((a, b) => a.rijen.length - b.rijen.length)[0] ?? emmers[0]
+        if (doel) doel.rijen.push(rij)
+      }
+      for (const e of emmers) {
+        if (e.rijen.length) uit.push({ nr: e.nr, slots: e.slots, systeem, rijen: e.rijen })
+      }
+    }
+    return uit.sort((a, b) => a.nr - b.nr)
+  }, [vakjes, accountSlots])
 
   /* ── van wat er staat naar wat er moet komen ─────────────────────────────
    * Matchen op planeetnaam ("Q-02UL IV"), niet op karakter: staat de kolonie
@@ -1138,8 +1187,10 @@ export default function PiOpzet() {
         <div style={kaart}>
           <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.72rem', letterSpacing: '0.1em',
             color: 'var(--text-dim)' }}>
-            VOORSTEL — {verdeling.length} planeten over {vakjes.length}
-            {perSysteem ? ' karakters, elk in één systeem' : ` van je ${accounts} accounts`}
+            VOORSTEL PER SYSTEEM — {verdeling.length} kolonies over {vakjes.length}
+            {perSysteem
+              ? (vakjes.length === 1 ? ' systeem' : ' systemen')
+              : ` van je ${accounts} accounts`}
           </h3>
           {vakjes.map(({ kop, planeten: mijn }, a) => {
             return (
@@ -1169,6 +1220,65 @@ export default function PiOpzet() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── per account: de boodschappenlijst waar je mee inlogt ── */}
+      {perAccountPlan.length > 0 && (
+        <div style={kaart}>
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', letterSpacing: '0.1em',
+            color: 'var(--text-dim)' }}>
+            PER ACCOUNT — wat zet je waar neer voor {doel}
+          </h3>
+          <div style={{ display: 'grid', gap: '0.6rem',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(19rem, 1fr))' }}>
+            {perAccountPlan.map((a, i) => {
+              /* Op rol groeperen: "4× Base Metals" leest sneller dan vier
+               * losse regels met dezelfde tekst erachter. */
+              const groepen = new Map<string, Voorstel[]>()
+              for (const r of a.rijen) {
+                const lijst = groepen.get(r.rol) ?? []
+                lijst.push(r)
+                groepen.set(r.rol, lijst)
+              }
+              return (
+                <div key={`${a.nr}:${i}`} style={{ background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid var(--border)', borderRadius: 8, padding: '0.6rem 0.7rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8,
+                    marginBottom: '0.35rem' }}>
+                    <b style={{ color: 'var(--gold,#f0c040)', fontSize: '0.82rem' }}>
+                      ACCOUNT {a.nr}</b>
+                    <span style={{ fontSize: '0.78rem' }}>{a.systeem}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '0.72rem',
+                      color: 'var(--text-dim)' }}>{a.rijen.length}/{a.slots} slots</span>
+                  </div>
+                  {[...groepen.entries()].map(([rol, rijen]) => (
+                    <div key={rol} style={{ fontSize: '0.78rem', padding: '0.14rem 0',
+                      display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                      <span style={{ minWidth: 22, color: 'var(--text-dim)' }}>
+                        {rijen.length}×</span>
+                      <span style={{ minWidth: 116,
+                        color: rol.startsWith('fabriek') ? 'var(--accent, #6cf)' : '#fff' }}>
+                        {rol.replace(' → P1', '')}</span>
+                      <span style={{ minWidth: 66, fontSize: '0.72rem',
+                        color: PLANEETKLEUR[rijen[0].type] ?? '#8a93a8' }}>{rijen[0].type}</span>
+                      <span style={{ color: 'var(--text-dim)' }}>
+                        {rijen.map((r, j) => (
+                          <span key={j}>
+                            {j > 0 && ', '}
+                            <span title={`${r.planeet} · ${r.type}`}>
+                              {r.planeet.replace(a.systeem + ' ', '')}</span>
+                            {r.gedeeld && <span title="Tweede kolonie op deze planeet; de extractors delen de hotspots en halen dus minder."
+                              style={{ color: 'var(--accent-amber, #f0c040)' }}>+</span>}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
