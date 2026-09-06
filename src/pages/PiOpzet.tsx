@@ -121,6 +121,76 @@ export default function PiOpzet() {
     return (top?.perUur ?? 0) * plan.lijnen * 24
   }, [keten, plan])
 
+  /* Welke P1 er van een grondstof gemaakt wordt. Op de extractieplaneet staat
+   * naast de extractor een Basic Industry Facility, en die maakt dít. */
+  const p1Van = useMemo(() => {
+    const uit = new Map<string, string>()
+    if (!keten) return uit
+    const maakt = new Set(Object.values(sch)
+      .map(x => x.pins.find(pin => !pin.is_input)?.type_id).filter(Boolean) as number[])
+    for (const x of Object.values(sch)) {
+      const eruit = x.pins.find(pin => !pin.is_input)
+      const erin = x.pins.filter(pin => pin.is_input)
+      if (!eruit || erin.some(pin => maakt.has(pin.type_id))) continue   // geen P1
+      for (const pin of erin) {
+        const grondstof = namen[String(pin.type_id)]
+        if (grondstof) uit.set(grondstof, namen[String(eruit.type_id)] ?? x.schematic_name)
+      }
+    }
+    return uit
+  }, [sch, namen, keten])
+
+  /* De fabrieken op een rijtje, in groepjes zo groot als een planeet aankan.
+   * De planner telt alleen hoevéél fabrieksplaneten je nodig hebt; welke
+   * fabriek op welke planeet komt is hier pas een vraag. */
+  const fabriekGroepen = useMemo(() => {
+    if (!keten || !plan?.lijnen) return []
+    const los: string[] = []
+    for (const st of [...keten.stappen].filter(x => !x.opExtractie)
+      .sort((x, y) => x.niveau - y.niveau)) {
+      for (let i = 0; i < Math.ceil(st.fabrieken * plan.lijnen); i++) los.push(st.naam)
+    }
+    const groepen: string[][] = []
+    for (let i = 0; i < los.length; i += Math.max(1, perFabriekPlaneet)) {
+      groepen.push(los.slice(i, i + Math.max(1, perFabriekPlaneet)))
+    }
+    return groepen
+  }, [keten, plan, perFabriekPlaneet])
+
+  /* Elke fabrieksregel in het plan krijgt één zo'n groepje, op volgorde. */
+  const fabriekVan = useMemo(() => {
+    const kaart = new Map<string, string[]>()
+    let n = 0
+    for (const acc of rijen) {
+      for (const r of acc.rijen) {
+        if (!(r.rol.includes('Facility') || r.rol.includes('Plant'))) continue
+        kaart.set(`${acc.nr}:${r.planeet}:${r.rol}`, fabriekGroepen[n] ?? [])
+        n++
+      }
+    }
+    return kaart
+  }, [rijen, fabriekGroepen])
+
+  /* Hoeveel Basic Industry Facilities er op zo'n extractieplaneet komen: de
+   * P1-fabrieken van die grondstof, verdeeld over de planeten die hem oogsten. */
+  const p1PerPlaneet = useMemo(() => {
+    const uit = new Map<string, number>()
+    if (!keten || !plan?.lijnen) return uit
+    const planeten = new Map<string, number>()
+    for (const acc of rijen) for (const r of acc.rijen) {
+      if (r.rol.includes('Facility') || r.rol.includes('Plant')) continue
+      const g = r.rol.replace(' → P1', '')
+      planeten.set(g, (planeten.get(g) ?? 0) + 1)
+    }
+    for (const [grondstof, n] of planeten) {
+      const p1 = p1Van.get(grondstof)
+      const stap = keten.stappen.find(st => st.naam === p1)
+      if (!stap) continue
+      uit.set(grondstof, Math.max(1, Math.ceil(Math.ceil(stap.fabrieken * plan.lijnen) / n)))
+    }
+    return uit
+  }, [keten, plan, rijen, p1Van])
+
   const heeftP4 = rijen.some(a => a.rijen.some(r => r.rol.startsWith('High-Tech')))
 
   const kaart: React.CSSProperties = {
@@ -212,66 +282,79 @@ export default function PiOpzet() {
               <span style={{ marginLeft: 6 }}>{doel}/dag</span>
             </div>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
-              {plan?.lijnen} lijn{plan?.lijnen === 1 ? '' : 'en'} ·{' '}
+              {rijen.length} account{rijen.length === 1 ? '' : 's'} ·{' '}
               {rijen.reduce((n, a) => n + a.rijen.length, 0)} kolonies ·{' '}
-              {rijen.length} account{rijen.length === 1 ? '' : 's'}
+              {rijen.reduce((n, a) => n + a.rijen.filter(r =>
+                r.rol.includes('Facility') || r.rol.includes('Plant')).length, 0)} daarvan fabriek
             </div>
           </div>
 
           <div style={{ display: 'grid', gap: '0.7rem',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(21rem, 1fr))' }}>
-            {rijen.map((a, i) => {
-              /* Op rol groeperen: "4× Base Metals" leest sneller dan vier losse
-               * regels met dezelfde tekst erachter. */
-              const groepen = new Map<string, typeof a.rijen>()
-              for (const r of a.rijen) {
-                const lijst = groepen.get(r.rol) ?? []
-                lijst.push(r)
-                groepen.set(r.rol, lijst)
-              }
-              return (
-                <div key={`${a.nr}:${i}`} style={{ ...kaart, marginBottom: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8,
-                    marginBottom: '0.45rem' }}>
-                    <b style={{ color: 'var(--gold,#f0c040)' }}>ACCOUNT {a.nr}</b>
-                    <span>{a.systeem}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '0.74rem',
-                      color: 'var(--text-dim)' }}>{a.rijen.length}/{a.slots} slots</span>
-                  </div>
-                  {[...groepen.entries()].map(([rol, rs]) => (
-                    <div key={rol} style={{ display: 'flex', gap: 8, alignItems: 'baseline',
-                      fontSize: '0.8rem', padding: '0.16rem 0' }}>
-                      <span style={{ minWidth: 20, color: 'var(--text-dim)' }}>{rs.length}×</span>
-                      <span style={{ flex: 1,
-                        color: rol.includes('Facility') || rol.includes('Plant')
-                          ? 'var(--accent, #6cf)' : '#fff' }}>
-                        {rol.replace(' → P1', '')}</span>
-                      <span style={{ minWidth: 62, fontSize: '0.74rem',
-                        color: PLANEETKLEUR[rs[0].type] ?? '#8a93a8' }}>{rs[0].type}</span>
-                      <span style={{ minWidth: 92, textAlign: 'right', color: 'var(--text-dim)' }}>
-                        {rs.map((r, j) => (
-                          <span key={j} title={`${r.planeet} · ${r.type}`}>
-                            {j > 0 && ', '}{r.planeet.replace(a.systeem + ' ', '')}
-                            {r.gedeeld && <span style={{ color: 'var(--gold,#f0c040)' }}
-                              title="Tweede kolonie op deze planeet; de extractors delen de hotspots en halen dus minder.">+</span>}
-                          </span>
-                        ))}
+            gridTemplateColumns: 'repeat(auto-fill, minmax(23rem, 1fr))' }}>
+            {rijen.map((a, i) => (
+              <div key={`${a.nr}:${i}`} style={{ ...kaart, marginBottom: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8,
+                  marginBottom: '0.5rem' }}>
+                  <b style={{ color: 'var(--gold,#f0c040)' }}>ACCOUNT {a.nr}</b>
+                  <span style={{ color: 'var(--text-dim)' }}>vliegt naar</span>
+                  <b>{a.systeem}</b>
+                  <span style={{ marginLeft: 'auto', fontSize: '0.74rem',
+                    color: 'var(--text-dim)' }}>{a.rijen.length} van {a.slots} slots</span>
+                </div>
+                {/* Eén regel is één kolonie: nummer, planeet, en wat je er neerzet.
+                    Gegroepeerd op rol las korter maar verborg juist dat. */}
+                {a.rijen.map((r, j) => {
+                  const fabriek = r.rol.includes('Facility') || r.rol.includes('Plant')
+                  return (
+                    <div key={j} style={{ display: 'flex', gap: 8, alignItems: 'baseline',
+                      fontSize: '0.8rem', padding: '0.2rem 0',
+                      borderTop: j ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                      <span style={{ width: 16, color: 'var(--text-dim)',
+                        fontSize: '0.72rem' }}>{j + 1}</span>
+                      <span style={{ width: 92, fontWeight: 600 }}>
+                        {r.planeet}
+                        {r.gedeeld && <span style={{ color: 'var(--gold,#f0c040)' }}
+                          title="Een ander account zet ook een kolonie op deze planeet. Dat mag, maar de extractors delen de hotspots.">+</span>}
+                      </span>
+                      <span style={{ width: 64, fontSize: '0.74rem',
+                        color: PLANEETKLEUR[r.type] ?? '#8a93a8' }}>{r.type}</span>
+                      <span style={{ flex: 1 }}>
+                        {fabriek ? (() => {
+                          const wat = fabriekVan.get(`${a.nr}:${r.planeet}:${r.rol}`) ?? []
+                          const geteld = [...new Set(wat)]
+                            .map(n2 => `${wat.filter(x => x === n2).length}× ${n2}`)
+                          return (
+                            <>
+                              <span style={{ color: 'var(--accent, #6cf)' }}>fabriek</span>
+                              {geteld.length > 0 && <> — {geteld.join(', ')}</>}
+                            </>
+                          )
+                        })() : (() => {
+                          const grondstof = r.rol.replace(' → P1', '')
+                          const p1 = p1Van.get(grondstof)
+                          return (
+                            <>
+                              <span style={{ color: 'var(--gold,#f0c040)' }}>extractor</span>
+                              {' '}— {grondstof}{p1 && <span style={{ color: 'var(--text-dim)' }}>
+                                {' '}→ {p1PerPlaneet.get(grondstof) ?? 1}× {p1}</span>}
+                            </>
+                          )
+                        })()}
                       </span>
                     </div>
-                  ))}
-                </div>
-              )
-            })}
+                  )
+                })}
+              </div>
+            ))}
           </div>
 
           <div style={{ marginTop: '0.8rem', fontSize: '0.76rem', color: 'var(--text-dim)' }}>
-            Op een <b>extractieplaneet</b>: Extractor Control Unit plus de Basic Industry
-            Facilities die je P1 maken. Op een <b>fabrieksplaneet</b>: {perFabriekPlaneet}×
-            {' '}Advanced Industry Facility
-            {heeftP4 && '; de High-Tech Production Plant kan alleen op Barren of Temperate'}.
-            {' '}Elke planeet heeft daarnaast een Command Center en een Launchpad. Een{' '}
-            <b>+</b> betekent een tweede kolonie op dezelfde planeet — dat mag, maar de
-            extractors delen dan de hotspots.
+            Elke kolonie krijgt een Command Center en een Launchpad. Bij een{' '}
+            <b>extractor</b> hoort ook een Extractor Control Unit en de Basic Industry
+            Facilities die je P1 maken
+            {heeftP4 && '; een High-Tech Production Plant kan alleen op Barren of Temperate'}.
+            {' '}Een <b>+</b> achter de planeet betekent dat een ander account daar ook
+            een kolonie zet — dat mag, maar de extractors delen dan de hotspots.
           </div>
         </>
       )}
