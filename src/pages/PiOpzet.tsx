@@ -12,6 +12,8 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { usePageLoading } from '../hooks/usePageLoading'
+import { useAuth } from '../auth/AuthContext'
+import { getSkillsInfo } from '../api/esi'
 import {
   PLANEETKLEUR, PLANEETTYPE, PLANEET_P0,
   bouwKeten, kiesPlaneten, laadNamen, laadPlaneten, laadSchematics, laadSprongen,
@@ -21,6 +23,12 @@ import {
 
 const fmt = (n: number, d = 0) =>
   n.toLocaleString('nl-NL', { minimumFractionDigits: d, maximumFractionDigits: d })
+
+/* De twee skills die hierover gaan. Interplanetary Consolidation geeft je
+ * planeten (één plus het niveau); Command Center Upgrades bepaalt hoeveel er op
+ * zo'n planeet past. */
+const SKILL_PLANETEN = 2495
+const SKILL_CC = 2505
 
 const fmtISK = (n: number) =>
   n >= 1e9 ? `${fmt(n / 1e9, 2)} mld` : n >= 1e6 ? `${fmt(n / 1e6, 1)} mln` : fmt(n)
@@ -206,6 +214,37 @@ export default function PiOpzet() {
     return m
   }, [sch])
 
+  /* Je skills uitlezen: dan hoef je de slots niet te tellen. */
+  const { tokens } = useAuth()
+  const [skills, setSkills] = useState<{ naam: string; planeten: number; cc: number }[]>([])
+  const [skillBezig, setSkillBezig] = useState(false)
+  const [skillFout, setSkillFout] = useState('')
+
+  const haalSkills = async () => {
+    if (!tokens.length) { setSkillFout('Log in om je skills te kunnen lezen.'); return }
+    setSkillBezig(true); setSkillFout('')
+    try {
+      const uit = await Promise.all(tokens.map(async t => {
+        const info = await getSkillsInfo(t.characterId, t.accessToken)
+        const niveau = (id: number) =>
+          info?.skills?.find(sk => sk.skill_id === id)?.active_skill_level ?? 0
+        return { naam: t.characterName, planeten: 1 + niveau(SKILL_PLANETEN),
+                 cc: niveau(SKILL_CC) }
+      }))
+      /* Zonder Interplanetary Consolidation heb je één planeet - dat is geen
+       * fout, maar zo'n karakter hoort niet in de verdeling. */
+      const bruikbaar = uit.filter(x => x.planeten > 1)
+      setSkills(uit.sort((a, b) => b.planeten - a.planeten))
+      if (bruikbaar.length) {
+        setPerAcc(bruikbaar.map(x => x.planeten).sort((a, b) => b - a).join(','))
+      } else {
+        setSkillFout('Geen van je karakters heeft Interplanetary Consolidation.')
+      }
+    } catch {
+      setSkillFout('Skills ophalen mislukte — token verlopen of scope ontbreekt.')
+    } finally { setSkillBezig(false) }
+  }
+
   const [prijzen, setPrijzen] = useState<Map<number, number>>(new Map())
   useEffect(() => {
     const ids = [...typeIdVan.values()]
@@ -282,8 +321,15 @@ export default function PiOpzet() {
         </div>
         <div>
           <label style={label} htmlFor="slots">Slots per account</label>
-          <input id="slots" value={perAcc} onChange={e => setPerAcc(e.target.value)}
-            style={{ ...invoer, width: 110 }} title="Eén getal per karakter, bv. 6,5,5,5" />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input id="slots" value={perAcc} onChange={e => setPerAcc(e.target.value)}
+              style={{ ...invoer, width: 110 }} title="Eén getal per karakter, bv. 6,5,5,5" />
+            <button onClick={haalSkills} disabled={skillBezig}
+              style={{ ...invoer, width: 'auto', cursor: 'pointer',
+                color: 'var(--accent, #6cf)' }}
+              title="Interplanetary Consolidation van al je karakters uitlezen">
+              {skillBezig ? '…' : 'uit skills'}</button>
+          </div>
         </div>
         <details style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
           <summary style={{ cursor: 'pointer', padding: '0.35rem 0' }}>meer</summary>
@@ -307,6 +353,24 @@ export default function PiOpzet() {
           </div>
         </details>
       </div>
+
+      {(skills.length > 0 || skillFout) && (
+        <div style={{ ...kaart, marginTop: '-0.5rem', fontSize: '0.78rem' }}>
+          {skillFout
+            ? <span style={{ color: 'var(--red,#e05555)' }}>{skillFout}</span>
+            : (
+              <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap' }}>
+                {skills.map(sk => (
+                  <span key={sk.naam}>
+                    <b>{sk.naam}</b>{' '}
+                    <span style={{ color: 'var(--text-dim)' }}>
+                      {sk.planeten} planeten · CC-upgrades {sk.cc}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+        </div>
+      )}
 
       {!bezig && plan && !plan.lijnen && (
         <div style={{ ...kaart, borderColor: 'var(--red, #e05555)' }}>
