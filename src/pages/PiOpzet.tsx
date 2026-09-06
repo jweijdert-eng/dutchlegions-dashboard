@@ -233,6 +233,17 @@ export default function PiOpzet() {
     return uit.sort((a, b) => b.isk - a.isk)
   }, [sch, namen, producten, kandidaten, accountSlots, oogst, perFabriekPlaneet, prijzen])
 
+  /* De planeetsoorten per systeem. `PLANEET_P0` bepaalt de volgorde van de
+   * kolommen, zodat er nooit een soort tussenuit valt die wél bestaat. */
+  const soorten = useMemo(() => Object.keys(PLANEET_P0), [])
+  const telling = useMemo(() => buurt.map(sys => ({
+    naam: sys.naam,
+    sprongen: sys.sprongen,
+    totaal: sys.planeten.length,
+    per: Object.fromEntries(soorten.map(t =>
+      [t, sys.planeten.filter(pl => pl.type === t).length])) as Record<string, number>,
+  })), [buurt, soorten])
+
   const heeftP4 = rijen.some(a => a.rijen.some(r => r.rol.startsWith('High-Tech')))
 
   const kaart: React.CSSProperties = {
@@ -433,6 +444,62 @@ export default function PiOpzet() {
             een kolonie zet — dat mag, maar de extractors delen dan de hotspots.
           </div>
         </>
+      )}
+
+      {telling.length > 0 && (
+        <div style={{ ...kaart, marginTop: '1rem' }}>
+          <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em', color: 'var(--text-dim)',
+            textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+            Planeten binnen {maxSprong} sprong{maxSprong === 1 ? '' : 'en'} van {thuis}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem',
+              fontVariantNumeric: 'tabular-nums' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0',
+                    color: 'var(--text-dim)', fontWeight: 600 }}>Systeem</th>
+                  <th style={{ textAlign: 'right', padding: '0.2rem 0.8rem 0.35rem 0',
+                    color: 'var(--text-dim)', fontWeight: 600 }}>spr</th>
+                  {soorten.map(t => (
+                    <th key={t} style={{ textAlign: 'right', padding: '0.2rem 0.7rem 0.35rem 0',
+                      color: PLANEETKLEUR[t] ?? 'var(--text-dim)', fontWeight: 600 }}>{t}</th>
+                  ))}
+                  <th style={{ textAlign: 'right', padding: '0.2rem 0 0.35rem 0',
+                    color: 'var(--text-dim)', fontWeight: 600 }}>totaal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {telling.map(r => (
+                  <tr key={r.naam} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td style={{ padding: '0.22rem 0.6rem 0.22rem 0',
+                      fontWeight: r.naam === thuis ? 700 : 400 }}>{r.naam}</td>
+                    <td style={{ textAlign: 'right', padding: '0.22rem 0.8rem 0.22rem 0',
+                      color: 'var(--text-dim)' }}>{r.sprongen === 0 ? 'thuis' : r.sprongen}</td>
+                    {soorten.map(t => (
+                      <td key={t} style={{ textAlign: 'right', padding: '0.22rem 0.7rem 0.22rem 0',
+                        color: r.per[t] ? (PLANEETKLEUR[t] ?? '#fff') : 'rgba(255,255,255,0.12)' }}>
+                        {r.per[t] || '·'}</td>
+                    ))}
+                    <td style={{ textAlign: 'right', padding: '0.22rem 0',
+                      color: 'var(--text-dim)' }}>{r.totaal}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: '1px solid rgba(255,255,255,0.15)', fontWeight: 700 }}>
+                  <td style={{ padding: '0.3rem 0.6rem 0 0' }}>samen</td>
+                  <td />
+                  {soorten.map(t => (
+                    <td key={t} style={{ textAlign: 'right', padding: '0.3rem 0.7rem 0 0',
+                      color: PLANEETKLEUR[t] ?? '#fff' }}>
+                      {telling.reduce((n, r) => n + r.per[t], 0) || '·'}</td>
+                  ))}
+                  <td style={{ textAlign: 'right', padding: '0.3rem 0 0 0' }}>
+                    {telling.reduce((n, r) => n + r.totaal, 0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   )
