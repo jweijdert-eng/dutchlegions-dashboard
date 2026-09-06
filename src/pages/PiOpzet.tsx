@@ -15,12 +15,15 @@ import { usePageLoading } from '../hooks/usePageLoading'
 import {
   PLANEETKLEUR, PLANEETTYPE, PLANEET_P0,
   bouwKeten, kiesPlaneten, laadNamen, laadPlaneten, laadSchematics, laadSprongen,
-  laadSystemen, pasInSystemen, perAccount,
+  jitaPrijzen, laadSystemen, pasInSystemen, perAccount,
   type Keten, type PasvormSys, type Schem,
 } from '../lib/pi'
 
 const fmt = (n: number, d = 0) =>
   n.toLocaleString('nl-NL', { minimumFractionDigits: d, maximumFractionDigits: d })
+
+const fmtISK = (n: number) =>
+  n >= 1e9 ? `${fmt(n / 1e9, 2)} mld` : n >= 1e6 ? `${fmt(n / 1e6, 1)} mln` : fmt(n)
 
 export default function PiOpzet() {
   const [sch, setSch] = useState<Record<string, Schem>>({})
@@ -191,6 +194,45 @@ export default function PiOpzet() {
     return uit
   }, [keten, plan, rijen, p1Van])
 
+  /* Wat elk eindproduct in Jita doet. Eén keer ophalen voor alle recepten:
+   * daarmee kan de pagina zowel de opbrengst van je keuze tonen als zeggen wat
+   * er hier méér oplevert. */
+  const typeIdVan = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const x of Object.values(sch)) {
+      const uit = x.pins.find(pin => !pin.is_input)
+      if (uit) m.set(x.schematic_name, uit.type_id)
+    }
+    return m
+  }, [sch])
+
+  const [prijzen, setPrijzen] = useState<Map<number, number>>(new Map())
+  useEffect(() => {
+    const ids = [...typeIdVan.values()]
+    if (ids.length) jitaPrijzen(ids).then(setPrijzen)
+  }, [typeIdVan])
+
+  const iskDag = perDag * (prijzen.get(keten?.doelId ?? 0) ?? 0)
+
+  /* Wat levert hier nog meer op? Dezelfde som voor elk recept. Dat kost een
+   * seconde rekenen, dus het gebeurt pas als de prijzen binnen zijn. */
+  const beter = useMemo(() => {
+    if (!Object.keys(sch).length || !prijzen.size || !kandidaten.length) return []
+    const uit: { naam: string; perDag: number; isk: number; lijnen: number }[] = []
+    for (const naam of producten) {
+      const k = bouwKeten(sch, namen, naam, 1)
+      if (!k) continue
+      const pl = pasInSystemen(k, kandidaten, accountSlots, oogst, perFabriekPlaneet)
+      if (!pl.lijnen || pl.tekort.length) continue
+      const stap = k.stappen.find(x => x.typeId === k.doelId)
+      if (!stap) continue
+      const d = stap.perUur * 24 * pl.lijnen
+      const isk = d * (prijzen.get(k.doelId) ?? 0)
+      if (isk > 0) uit.push({ naam, perDag: d, isk, lijnen: pl.lijnen })
+    }
+    return uit.sort((a, b) => b.isk - a.isk)
+  }, [sch, namen, producten, kandidaten, accountSlots, oogst, perFabriekPlaneet, prijzen])
+
   const heeftP4 = rijen.some(a => a.rijen.some(r => r.rol.startsWith('High-Tech')))
 
   const kaart: React.CSSProperties = {
@@ -281,6 +323,15 @@ export default function PiOpzet() {
                 {fmt(perDag)}</span>
               <span style={{ marginLeft: 6 }}>{doel}/dag</span>
             </div>
+            {iskDag > 0 && (
+              <div>
+                <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--green,#3ecf6e)' }}>
+                  {fmtISK(iskDag)}</span>
+                <span style={{ marginLeft: 6 }}>per dag</span>
+                <span style={{ marginLeft: 8, fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                  {fmtISK(iskDag * 30)} per maand</span>
+              </div>
+            )}
             <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
               {rijen.length} account{rijen.length === 1 ? '' : 's'} ·{' '}
               {rijen.reduce((n, a) => n + a.rijen.length, 0)} kolonies ·{' '}
@@ -347,6 +398,31 @@ export default function PiOpzet() {
               </div>
             ))}
           </div>
+
+          {beter.length > 1 && (
+            <div style={{ ...kaart, marginTop: '1rem' }}>
+              <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
+                color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
+                Wat levert hier het meeste op — klik om te kiezen
+              </div>
+              {beter.slice(0, 6).map(b => (
+                <button key={b.naam} onClick={() => setDoel(b.naam)}
+                  style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'baseline',
+                    background: b.naam === doel ? 'rgba(255,255,255,0.05)' : 'none',
+                    border: 0, borderRadius: 6, color: 'inherit', cursor: 'pointer',
+                    padding: '0.25rem 0.4rem', textAlign: 'left', font: 'inherit',
+                    fontSize: '0.82rem' }}>
+                  <span style={{ flex: 1, fontWeight: b.naam === doel ? 700 : 400 }}>{b.naam}</span>
+                  <span style={{ width: 104, textAlign: 'right', color: 'var(--text-dim)',
+                    whiteSpace: 'nowrap' }}>{fmt(b.perDag)}/dag</span>
+                  <span style={{ width: 96, textAlign: 'right', whiteSpace: 'nowrap',
+                    color: 'var(--green,#3ecf6e)' }}>{fmtISK(b.isk)}</span>
+                  <span style={{ width: 104, textAlign: 'right', color: 'var(--text-dim)',
+                    fontSize: '0.74rem', whiteSpace: 'nowrap' }}>{fmtISK(b.isk * 30)}/mnd</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div style={{ marginTop: '0.8rem', fontSize: '0.76rem', color: 'var(--text-dim)' }}>
             Elke kolonie krijgt een Command Center en een Launchpad. Bij een{' '}
