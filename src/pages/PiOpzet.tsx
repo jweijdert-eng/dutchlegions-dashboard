@@ -11,6 +11,7 @@
  * gebleven, inclusief de correcties die in de praktijk gevonden zijn.
  */
 import { useEffect, useMemo, useState } from 'react'
+import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAuth } from '../auth/AuthContext'
 import { getSkillsInfo } from '../api/esi'
@@ -345,11 +346,9 @@ export default function PiOpzet() {
   }
 
   return (
-    <div style={{ padding: '1rem 1.2rem 3rem', maxWidth: '82rem' }}>
-      <h2 style={{ margin: '0 0 0.15rem', fontSize: '1.05rem' }}>PI-opzet</h2>
-      <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginBottom: '0.9rem' }}>
-        Wat zet je per account neer, en welk gebouw komt erin.
-      </div>
+    <Layout header={<PageHeader title="PI-opzet"
+      sub={bezig ? 'Laden…' : `${doel} vanuit ${thuis} · ${accountSlots.length} accounts`} />}>
+    <div style={{ maxWidth: '82rem' }}>
 
       <div style={{ ...kaart, display: 'flex', gap: '0.9rem', flexWrap: 'wrap',
         alignItems: 'flex-end' }}>
@@ -669,5 +668,6 @@ export default function PiOpzet() {
         </div>
       )}
     </div>
+    </Layout>
   )
 }
