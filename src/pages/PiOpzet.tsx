@@ -27,6 +27,14 @@ const fmt = (n: number, d = 0) =>
 /* De twee skills die hierover gaan. Interplanetary Consolidation geeft je
  * planeten (één plus het niveau); Command Center Upgrades bepaalt hoeveel er op
  * zo'n planeet past. */
+/* Type-id van het command center per planeetsoort. Ze zijn niet te bouwen, dus
+ * dit is puur een inkooplijst. */
+const CC_TYPE: Record<string, number> = {
+  Barren: 2524, Gas: 2534, Ice: 2533, Lava: 2549,
+  Oceanic: 2525, Plasma: 2551, Storm: 2550, Temperate: 2254,
+}
+const CC_M3 = 1000        // elk command center, ingepakt (ESI: volume 1000)
+
 const SKILL_PLANETEN = 2495
 const SKILL_CC = 2505
 
@@ -272,7 +280,7 @@ export default function PiOpzet() {
 
   const [prijzen, setPrijzen] = useState<Map<number, number>>(new Map())
   useEffect(() => {
-    const ids = [...typeIdVan.values()]
+    const ids = [...typeIdVan.values(), ...Object.values(CC_TYPE)]
     if (ids.length) jitaPrijzen(ids).then(setPrijzen)
   }, [typeIdVan])
 
@@ -307,6 +315,19 @@ export default function PiOpzet() {
     per: Object.fromEntries(soorten.map(t =>
       [t, sys.planeten.filter(pl => pl.type === t).length])) as Record<string, number>,
   })), [buurt, soorten])
+
+  /* Wat je moet inkopen: één command center per kolonie, in de soort van de
+   * planeet waar hij op komt. */
+  const commandCenters = useMemo(() => {
+    const per = new Map<string, number>()
+    for (const acc of rijen) for (const r of acc.rijen) {
+      per.set(r.type, (per.get(r.type) ?? 0) + 1)
+    }
+    return [...per.entries()]
+      .map(([type, n]) => ({ type, n, typeId: CC_TYPE[type] ?? 0,
+                             isk: n * (prijzen.get(CC_TYPE[type] ?? 0) ?? 0) }))
+      .sort((a, b) => b.n - a.n)
+  }, [rijen, prijzen])
 
   const heeftP4 = rijen.some(a => a.rijen.some(r => r.rol.startsWith('High-Tech')))
 
@@ -522,6 +543,32 @@ export default function PiOpzet() {
               </div>
             ))}
           </div>
+
+          {commandCenters.length > 0 && (
+            <div style={{ ...kaart, marginTop: '1rem' }}>
+              <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
+                color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
+                Command centers kopen — één per kolonie
+              </div>
+              <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap',
+                fontSize: '0.86rem' }}>
+                {commandCenters.map(c => (
+                  <span key={c.type}>
+                    <b>{c.n}×</b>{' '}
+                    <span style={{ color: PLANEETKLEUR[c.type] ?? '#fff' }}>{c.type}</span>
+                    {c.isk > 0 && <span style={{ color: 'var(--text-dim)' }}>
+                      {' '}({fmtISK(c.isk)})</span>}
+                  </span>
+                ))}
+              </div>
+              <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                Samen {commandCenters.reduce((n, c) => n + c.n, 0)} stuks ·{' '}
+                {fmt(commandCenters.reduce((n, c) => n + c.n, 0) * CC_M3)} m³ ·{' '}
+                {fmtISK(commandCenters.reduce((n, c) => n + c.isk, 0))} in Jita.
+                Ze zijn niet te bouwen, dus dit moet mee in de vracht.
+              </div>
+            </div>
+          )}
 
           {beter.length > 1 && (
             <div style={{ ...kaart, marginTop: '1rem' }}>
