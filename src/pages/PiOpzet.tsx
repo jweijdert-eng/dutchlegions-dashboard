@@ -30,6 +30,31 @@ const fmt = (n: number, d = 0) =>
 const SKILL_PLANETEN = 2495
 const SKILL_CC = 2505
 
+/* Wat een command center levert per upgradeniveau: [powergrid, cpu]. Niveau 0
+ * komt uit ESI zelf (attribuut 11 en 48 op het Command Center: 6000 en 1675);
+ * de niveaus daarboven zijn de bekende tabel van CCP. */
+const CC_BUDGET: Record<number, [number, number]> = {
+  0: [6000, 1675], 1: [9000, 7057], 2: [12000, 12136],
+  3: [15000, 17215], 4: [17000, 21315], 5: [19000, 25415],
+}
+/* Wat een gebouw kost, ook uit ESI (attribuut 15 = powergrid, 49 = cpu). */
+const KOST = { launchpad: [700, 3600], geavanceerd: [700, 500] }
+
+/**
+ * Hoeveel Advanced Industry Facilities er naast een launchpad passen.
+ *
+ * Alleen op CPU en powergrid gerekend. Links en routes kosten óók, en hoeveel
+ * hangt af van hoe de gebouwen op de planeet liggen - dat weet deze pagina niet.
+ * Het is dus een bovengrens, geen belofte.
+ */
+function maxFabrieken(ccNiveau: number): number {
+  const [pg, cpu] = CC_BUDGET[Math.max(0, Math.min(5, ccNiveau))] ?? CC_BUDGET[0]
+  return Math.max(0, Math.min(
+    Math.floor((pg - KOST.launchpad[0]) / KOST.geavanceerd[0]),
+    Math.floor((cpu - KOST.launchpad[1]) / KOST.geavanceerd[1]),
+  ))
+}
+
 const fmtISK = (n: number) =>
   n >= 1e9 ? `${fmt(n / 1e9, 2)} mld` : n >= 1e6 ? `${fmt(n / 1e6, 1)} mln` : fmt(n)
 
@@ -364,11 +389,28 @@ export default function PiOpzet() {
                   <span key={sk.naam}>
                     <b>{sk.naam}</b>{' '}
                     <span style={{ color: 'var(--text-dim)' }}>
-                      {sk.planeten} planeten · CC-upgrades {sk.cc}</span>
+                      {sk.planeten} planeten · CC {sk.cc} → hoogstens{' '}
+                      {maxFabrieken(sk.cc)} fabrieken/planeet</span>
                   </span>
                 ))}
+                {skills.length > 0 && (() => {
+                  const laagste = Math.min(...skills.map(sk => maxFabrieken(sk.cc)))
+                  return laagste > 0 && laagste !== perFabriekPlaneet ? (
+                    <button onClick={() => setPerFabriekPlaneet(laagste)}
+                      style={{ ...invoer, width: 'auto', cursor: 'pointer',
+                        color: 'var(--accent, #6cf)', fontSize: '0.74rem' }}>
+                      neem {laagste} over
+                    </button>
+                  ) : null
+                })()}
               </div>
             )}
+          {skills.length > 0 && (
+            <div style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+              Dat maximum telt alleen CPU en powergrid van een launchpad plus fabrieken.
+              Links en routes kosten ook, dus in de praktijk passen er minder.
+            </div>
+          )}
         </div>
       )}
 
