@@ -46,7 +46,6 @@ const BuildvsBuy   = lz(() => import('./pages/BuildvsBuy'))
 const BuildProfit  = lz(() => import('./pages/BuildProfit'))
 const BuildProject = lz(() => import('./pages/BuildProject'))
 const Wars         = lz(() => import('./pages/Wars'))
-const PiPlanner    = lz(() => import('./pages/PiPlanner'))
 const PiOpzet      = lz(() => import('./pages/PiOpzet'))
 const IndustryCost = lz(() => import('./pages/IndustryCost'))
 const RecruitFunnel = lz(() => import('./pages/RecruitFunnel'))
@@ -271,7 +270,6 @@ function AppRoutes() {
       <Route path="/build-profit" element={<ProtectedRoute><BuildProfit /></ProtectedRoute>} />
       <Route path="/build"      element={<ProtectedRoute><BuildProject /></ProtectedRoute>} />
       <Route path="/wars"       element={<ProtectedRoute><Wars /></ProtectedRoute>} />
-      <Route path="/pi-planner" element={<ProtectedRoute><PiPlanner /></ProtectedRoute>} />
       <Route path="/pi-opzet"   element={<ProtectedRoute><PiOpzet /></ProtectedRoute>} />
       <Route path="/industry-cost" element={<ProtectedRoute><IndustryCost /></ProtectedRoute>} />
       <Route path="/recruit-funnel" element={<ProtectedRoute><RecruitFunnel /></ProtectedRoute>} />
