@@ -360,6 +360,13 @@ export default function PiOpzet() {
                   <b style={{ color: 'var(--gold,#f0c040)' }}>ACCOUNT {a.nr}</b>
                   <span style={{ color: 'var(--text-dim)' }}>vliegt naar</span>
                   <b>{a.systeem}</b>
+                  {(() => {
+                    const spr = buurt.find(b2 => b2.naam === a.systeem)?.sprongen
+                    return spr === undefined ? null : (
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                        {spr === 0 ? '(thuis)' : `(${spr} sprong${spr === 1 ? '' : 'en'})`}</span>
+                    )
+                  })()}
                   <span style={{ marginLeft: 'auto', fontSize: '0.74rem',
                     color: 'var(--text-dim)' }}>{a.rijen.length} van {a.slots} slots</span>
                 </div>
@@ -435,6 +442,13 @@ export default function PiOpzet() {
             </div>
           )}
 
+          {rijen.some(a => a.systeem !== thuis) && (
+            <div style={{ marginTop: '0.8rem', fontSize: '0.78rem',
+              color: 'var(--gold,#f0c040)' }}>
+              Niet alles staat in {thuis}: daar liggen niet de planeetsoorten die dit
+              recept vraagt. In de tabel onderaan zie je welke soorten waar liggen.
+            </div>
+          )}
           <div style={{ marginTop: '0.8rem', fontSize: '0.76rem', color: 'var(--text-dim)' }}>
             Elke kolonie krijgt een Command Center en een Launchpad. Bij een{' '}
             <b>extractor</b> hoort ook een Extractor Control Unit en de Basic Industry
