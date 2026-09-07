@@ -190,6 +190,9 @@ interface SchematicInfo {
   schematic_name: string; cycle_time: number
   outputTypeId: number | null; outputQty: number; outputName: string | null
   inputTypeIds: number[]
+  /* Ook hoevéél er per cyclus in gaat: zonder die aantallen kun je niet zeggen
+   * hoeveel je per uur moet aanvoeren. */
+  inputs: { typeId: number; quantity: number }[]
 }
 interface ProductFlow {
   typeId: number; name: string | null
@@ -204,6 +207,9 @@ interface PinDisplay {
   throughputPerHour: number | null
   contents: { typeId: number; amount: number; name: string | null }[]
 }
+/* Wat een kolonie per uur nodig heeft en zelf niet maakt. Dat is precies wat
+ * jij ernaartoe moet vliegen. */
+interface Behoefte { typeId: number; name: string | null; perHour: number; voor: string[] }
 interface ColonyInfo {
   planet: Planet
   planetTypeId: number | null
@@ -217,6 +223,7 @@ interface ColonyInfo {
   routes: PlanetRoute[]
   storedValue: number          // ISK-waarde van alle pin-contents
   production: ProductFlow[]     // eindproducten van deze kolonie (per uur)
+  behoefte: Behoefte[]          // wat er per uur aangevoerd moet worden
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -853,8 +860,9 @@ export default function Planets() {
         const s = await getSchematic(id)
         if (s) {
           const output = (s.pins ?? []).find(p => !p.is_input)
-          const inputs = (s.pins ?? []).filter(p => p.is_input).map(p => p.type_id)
-          schematics.set(id, { schematic_name: s.schematic_name, cycle_time: s.cycle_time, outputTypeId: output?.type_id ?? null, outputQty: output?.quantity ?? 0, outputName: null, inputTypeIds: inputs })
+          const invoer = (s.pins ?? []).filter(p => p.is_input)
+            .map(p => ({ typeId: p.type_id, quantity: p.quantity }))
+          schematics.set(id, { schematic_name: s.schematic_name, cycle_time: s.cycle_time, outputTypeId: output?.type_id ?? null, outputQty: output?.quantity ?? 0, outputName: null, inputTypeIds: invoer.map(x => x.typeId), inputs: invoer })
           if (output?.type_id) outputTypeIds.push(output.type_id)
         }
       }))
@@ -872,6 +880,13 @@ export default function Planets() {
           pin.contents?.forEach(c => allItemIds.add(c.type_id))
         }
         detail.routes.forEach(r => allItemIds.add(r.content_type_id))
+      }
+      /* Ook de grondstoffen die de fabrieken vragen: die staan niet altijd in
+       * een pin of route, en zonder naam wordt de transportlijst een rij
+       * type-nummers. */
+      for (const info of schematics.values()) {
+        for (const inp of info.inputs) allItemIds.add(inp.typeId)
+        if (info.outputTypeId) allItemIds.add(info.outputTypeId)
       }
       const itemNames = await resolveNames([...allItemIds]).catch(() => new Map<number, string>())
       if (myId !== fetchId.current) return
@@ -923,6 +938,43 @@ export default function Planets() {
           if (pid && !consumed.has(pid) && qpc && ct && ct > 0)
             perHourByType.set(pid, (perHourByType.get(pid) ?? 0) + (qpc * 3600) / ct)
         }
+        /* Wat de fabrieken opeten, minus wat er op deze planeet zelf gemaakt
+         * wordt. Wat overblijft komt van een andere planeet - en dat is de
+         * enige reden dat je met een schip op pad moet. */
+        const maaktZelf = new Map<number, number>()
+        for (const f of factories) {
+          const sc = f.schematic
+          if (sc?.outputTypeId && sc.cycle_time > 0) {
+            maaktZelf.set(sc.outputTypeId,
+              (maaktZelf.get(sc.outputTypeId) ?? 0) + (sc.outputQty * 3600) / sc.cycle_time)
+          }
+        }
+        for (const e of extractors) {
+          const pid = e.extractor_details?.product_type_id
+          const qpc = e.extractor_details?.qty_per_cycle
+          const ct2 = e.extractor_details?.cycle_time
+          if (pid && qpc && ct2 && ct2 > 0) {
+            maaktZelf.set(pid, (maaktZelf.get(pid) ?? 0) + (qpc * 3600) / ct2)
+          }
+        }
+        const vraag = new Map<number, { perHour: number; voor: Set<string> }>()
+        for (const f of factories) {
+          const sc = f.schematic
+          if (!sc || sc.cycle_time <= 0) continue
+          for (const inp of sc.inputs) {
+            const r = vraag.get(inp.typeId) ?? { perHour: 0, voor: new Set<string>() }
+            r.perHour += (inp.quantity * 3600) / sc.cycle_time
+            r.voor.add(sc.schematic_name)
+            vraag.set(inp.typeId, r)
+          }
+        }
+        const behoefte: Behoefte[] = [...vraag.entries()]
+          .map(([typeId, r]) => ({ typeId, name: itemNames.get(typeId) ?? null,
+                                   perHour: r.perHour - (maaktZelf.get(typeId) ?? 0),
+                                   voor: [...r.voor].sort() }))
+          .filter(x => x.perHour > 0.01)
+          .sort((a, b) => b.perHour - a.perHour)
+
         const production: ProductFlow[] = [...perHourByType.entries()]
           .map(([typeId, perHour]) => ({
             typeId, name: itemNames.get(typeId) ?? null,
@@ -963,7 +1015,7 @@ export default function Planets() {
           extractedResources,
           links:  detail.links  ?? [],
           routes: detail.routes ?? [],
-          storedValue, production,
+          storedValue, production, behoefte,
         }
       })
 
@@ -1007,6 +1059,53 @@ export default function Planets() {
   }, [colonies, sort, filter, Math.floor(now / 1000)])
 
   const multiChar = new Set(colonies.map(c => c.charId)).size > 1
+
+  /**
+   * De transportlijst: één regel per rit.
+   *
+   * PI routeert alleen bínnen een planeet. Alles wat een fabriek vraagt en niet
+   * op diezelfde planeet gemaakt wordt, haal jij op bij de customs office van de
+   * kolonie die het wél maakt. Beide kanten komen uit ESI, dus dit is wat er nu
+   * echt staat - geen voorstel.
+   */
+  const transport = useMemo(() => {
+    /* Wie levert wat? Alleen de netto-productie telt: wat een kolonie zelf weer
+     * opeet staat er niet in. */
+    const leveranciers = new Map<number, { kolonie: ColonyInfo; perHour: number }[]>()
+    for (const c of colonies) {
+      for (const pr of c.production) {
+        const lijst = leveranciers.get(pr.typeId) ?? []
+        lijst.push({ kolonie: c, perHour: pr.perHour })
+        leveranciers.set(pr.typeId, lijst)
+      }
+    }
+    const uit: {
+      van: ColonyInfo | null; naar: ColonyInfo
+      naam: string; typeId: number; perHour: number; voor: string[]
+    }[] = []
+    for (const c of colonies) {
+      for (const b of c.behoefte) {
+        /* Zelfde planeet uitsluiten kan niet gebeuren (die staat niet in de
+         * behoefte), maar een andere kolonie van jezelf op dezelfde planeet
+         * wel - die telt gewoon mee als bron. */
+        const bronnen = (leveranciers.get(b.typeId) ?? [])
+          .filter(x => x.kolonie !== c)
+          .sort((x, y) => y.perHour - x.perHour)
+        if (bronnen.length === 0) {
+          uit.push({ van: null, naar: c, naam: b.name ?? `Type ${b.typeId}`,
+                     typeId: b.typeId, perHour: b.perHour, voor: b.voor })
+        } else {
+          for (const bron of bronnen.slice(0, 2)) {
+            uit.push({ van: bron.kolonie, naar: c, naam: b.name ?? `Type ${b.typeId}`,
+                       typeId: b.typeId, perHour: b.perHour, voor: b.voor })
+          }
+        }
+      }
+    }
+    /* Op bestemming sorteren: de vraag is "wat moet er bij deze fabriek in". */
+    return uit.sort((a, b) =>
+      a.naar.planet.planet_id - b.naar.planet.planet_id || a.naam.localeCompare(b.naam))
+  }, [colonies])
 
   return (
     <Layout header={
@@ -1068,6 +1167,73 @@ export default function Planets() {
               accentColor={soon.length > 0 ? '#f5912e' : 'var(--border)'}
               valueColor={soon.length > 0 ? '#f5912e' : undefined} />
           </div>
+
+          {/* PI Transport: wat je zelf van kolonie naar kolonie moet slepen. */}
+          {transport.length > 0 && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8,
+              padding: '0.75rem 0.9rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
+                color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                PI Transport — {transport.length} regels
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ color: 'var(--text-dim)', fontSize: '0.68rem',
+                      letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0' }}>
+                        ophalen bij</th>
+                      <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0' }}>
+                        wat</th>
+                      <th style={{ textAlign: 'right', padding: '0.2rem 0.6rem 0.35rem 0' }}>
+                        per uur</th>
+                      <th style={{ textAlign: 'left', padding: '0.2rem 0 0.35rem 0' }}>
+                        afleveren bij</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transport.map((t, i) => (
+                      <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={{ padding: '0.3rem 0.6rem 0.3rem 0', whiteSpace: 'nowrap' }}>
+                          {t.van ? (
+                            <>
+                              <span style={{ fontWeight: 600 }}>{t.van.planet.planet_type}</span>{' '}
+                              <span>{t.van.system}</span>
+                              {multiChar && (
+                                <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>
+                                  {' '}{t.van.charName}</span>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ color: '#f5912e' }}>koop je of mis je</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.3rem 0.6rem 0.3rem 0', color: '#1fd4c4' }}>
+                          {t.naam}</td>
+                        <td style={{ padding: '0.3rem 0.6rem 0.3rem 0', textAlign: 'right',
+                          whiteSpace: 'nowrap' }}>{Math.round(t.perHour).toLocaleString('nl-NL')}</td>
+                        <td style={{ padding: '0.3rem 0', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 600 }}>{t.naar.planet.planet_type}</span>{' '}
+                          <span>{t.naar.system}</span>
+                          {multiChar && (
+                            <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>
+                              {' '}{t.naar.charName}</span>
+                          )}
+                          <span style={{ color: 'var(--text-dim)' }}>
+                            {' '}&rarr; {t.voor.join(' + ')}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: '0.45rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                Gerekend uit je kolonies zoals ze nu draaien. Staat er
+                &quot;koop je of mis je&quot;, dan maakt geen enkele kolonie van jou dat spul —
+                dan komt het uit de markt of staat die fabriek stil.
+              </div>
+            </div>
+          )}
 
           {/* Verloop-waarschuwingen */}
           {soon.length > 0 && (
