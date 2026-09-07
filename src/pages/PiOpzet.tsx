@@ -401,14 +401,15 @@ export default function PiOpzet() {
   /**
    * Welk character hoort bij welk accountnummer?
    *
-   * De nummers komen uit het slots-veld en zijn op zichzelf naamloos. Twee
-   * manieren om er een naam bij te vinden, in deze volgorde:
+   * De nummers komen uit het slots-veld en zijn op zichzelf naamloos. Een naam
+   * komt er alleen bij als we hem uit het spel kunnen aflezen: staat een account
+   * op planeten waar een bepaald character al een kolonie heeft, dan is hij het.
    *
-   *  1. **Aan de planeten.** Staat een account grotendeels op planeten waar een
-   *     bepaald character al een kolonie heeft, dan is hij het. Dat is de
-   *     betrouwbaarste, want die data komt uit het spel.
-   *  2. **Aan de skills.** Is het slots-veld met de knop "uit skills" gevuld,
-   *     dan staat het rijtje in dezelfde volgorde als de accounts.
+   * Eerder stond er een terugval op de volgorde van het skills-rijtje. Dat las
+   * lekker - overal een naam - maar het was raden: een account zonder kolonies
+   * kreeg de naam van een willekeurig character, en dan staat er "Viral Agent
+   * naar MammoetNL" terwijl MammoetNL daar niets mee te maken heeft. Liever
+   * eerlijk "account 3".
    */
   const naamVanAcc = useMemo(() => {
     const uit = new Map<number, string>()
@@ -422,17 +423,8 @@ export default function PiOpzet() {
       }
       if (beste) { uit.set(acc.nr, beste); vergeven.add(beste) }
     }
-    /* Wat er dan nog leeg is: op volgorde uit de skills, want daar is het
-     * slots-veld ook mee gevuld. */
-    const over = skills.filter(sk => !vergeven.has(sk.naam) && sk.planeten > 1)
-    let i = 0
-    for (const acc of getoond) {
-      if (uit.has(acc.nr)) continue
-      const sk = over[i++]
-      if (sk) uit.set(acc.nr, sk.naam)
-    }
     return uit
-  }, [getoond, staatEr, skills])
+  }, [getoond, staatEr])
 
   /**
    * De vrachtlijst: wat sleep je van welke planeet naar welke?
@@ -718,8 +710,13 @@ export default function PiOpzet() {
               <div key={`${a.nr}:${i}`} style={{ ...kaart, marginBottom: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8,
                   marginBottom: '0.5rem' }}>
-                  <b style={{ color: 'var(--gold,#f0c040)' }}>
-                    {naamVanAcc.get(a.nr) ?? `ACCOUNT ${a.nr}`}</b>
+                  {/* Nummer én naam: je verwijst naar "account 1", maar je logt in
+                      als een character. */}
+                  <b style={{ color: 'var(--gold,#f0c040)' }}>ACCOUNT {a.nr}</b>
+                  {naamVanAcc.get(a.nr) && (
+                    <span style={{ color: 'var(--ok,#4ec9a0)', fontSize: '0.78rem' }}>
+                      {naamVanAcc.get(a.nr)}</span>
+                  )}
                   <span style={{ color: 'var(--text-dim)' }}>vliegt naar</span>
                   <b>{a.systeem}</b>
                   {(() => {
