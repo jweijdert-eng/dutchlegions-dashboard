@@ -156,9 +156,6 @@ export default function PiOpzet() {
   namenRef.current = namen
   const schRef = useRef(sch)
   schRef.current = sch
-  /* Op wiens fabrieken filter je de vrachtlijst? null = alles. Je logt in als
-   * één character, en dan wil je alleen weten wat er bij díé planeten in moet. */
-  const [vrachtAcc, setVrachtAcc] = useState<number | null>(null)
   const [bezet, setBezet] = useState<Set<string>>(new Set())
   const [staatEr, setStaatEr] = useState<
     { naam: string; planeten: { naam: string; wat: string }[] }[]>([])
@@ -429,112 +426,6 @@ export default function PiOpzet() {
     return uit
   }, [getoond, staatEr])
 
-  /**
-   * De vrachtlijst: wat sleep je van welke planeet naar welke?
-   *
-   * PI routeert alleen bínnen een planeet. Alles wat een fabriek nodig heeft en
-   * niet op diezelfde planeet gemaakt wordt, haal jij op bij de customs office
-   * en breng je naar de volgende. Eén regel per rit.
-   */
-  const logistiek = useMemo(() => {
-    if (!getoond.length) return []
-    /* Invoer per recept, op naam. De schematics staan op type-id, dus eerst een
-     * kaart naam → schematic. */
-    const opNaam = new Map<string, Schem>()
-    for (const x of Object.values(sch)) opNaam.set(x.schematic_name, x)
-    const naamVan = (id: number) => namen[String(id)] ?? `type ${id}`
-
-    /* Stap 1: wat maakt elke planeet? */
-    const maakt = new Map<string, Set<string>>()   // planeet → producten
-    const bron = new Map<string, string[]>()       // product → planeten
-    const zet = (planeet: string, product: string) => {
-      if (!maakt.has(planeet)) maakt.set(planeet, new Set())
-      maakt.get(planeet)!.add(product)
-      const lijst = bron.get(product) ?? []
-      if (!lijst.includes(planeet)) lijst.push(planeet)
-      bron.set(product, lijst)
-    }
-    for (const acc of getoond) {
-      for (const r of acc.rijen) {
-        if (r.rol.includes('Facility') || r.rol.includes('Plant')) {
-          for (const recept of fabriekVan.get(`${acc.nr}:${r.planeet}:${r.rol}`) ?? []) {
-            zet(r.planeet, recept)
-          }
-        } else {
-          const p1 = p1Van.get(r.rol.replace(' → P1', ''))
-          if (p1) zet(r.planeet, p1)
-        }
-      }
-    }
-
-    /* Stap 2: wat heeft elke planeet nodig, en waar komt dat vandaan? Meteen
-     * ook de andere kant op onthouden - vanaf een extractieplaneet wil je juist
-     * weten waar je je P1 naartoe brengt. */
-    const binnen = new Map<string, Map<string, string[]>>()  // planeet → wat ← van
-    const voor = new Map<string, string[]>()                 // planeet|wat → fabrieken
-    const heen = new Map<string, Map<string, string[]>>()    // planeet → wat → naar
-    const planeten: string[] = []
-    /* Wie zit er op die planeet? Een gedeelde planeet heeft er twee, en dan
-     * moet je weten wie van de twee dit spul moet ophalen. */
-    const accVan = new Map<string, number[]>()
-    for (const acc of getoond) {
-      for (const r of acc.rijen) {
-        if (!planeten.includes(r.planeet)) planeten.push(r.planeet)
-        const lijst = accVan.get(r.planeet) ?? []
-        if (!lijst.includes(acc.nr)) lijst.push(acc.nr)
-        accVan.set(r.planeet, lijst)
-      }
-    }
-    for (const planeet of planeten) {
-      const eigen = maakt.get(planeet) ?? new Set<string>()
-      for (const product of eigen) {
-        const recept = opNaam.get(product)
-        if (!recept) continue
-        for (const pin of recept.pins.filter(x => x.is_input)) {
-          const grondstof = naamVan(pin.type_id)
-          if (eigen.has(grondstof)) continue    // maakt hij zelf: niet slepen
-          const van = (bron.get(grondstof) ?? []).filter(x => x !== planeet)
-          if (!van.length) continue
-          if (!binnen.has(planeet)) binnen.set(planeet, new Map())
-          binnen.get(planeet)!.set(grondstof, van)
-          /* Welke fabriek op die planeet dit spul opeet. Dat is wat je wilt
-           * weten als je aflevert: "voor Hazmat Detection Systems", niet
-           * alleen "op 7G-QIG VII". */
-          const sleutel = `${planeet}|${grondstof}`
-          const eters = voor.get(sleutel) ?? []
-          if (!eters.includes(product)) eters.push(product)
-          voor.set(sleutel, eters)
-          for (const leverancier of van) {
-            if (!heen.has(leverancier)) heen.set(leverancier, new Map())
-            const lijst = heen.get(leverancier)!.get(grondstof) ?? []
-            if (!lijst.includes(planeet)) lijst.push(planeet)
-            heen.get(leverancier)!.set(grondstof, lijst)
-          }
-        }
-      }
-    }
-    /* Eén regel per rit: waar je het ophaalt, wat het is, waar het heen moet.
-     * Dat is de vorm waarin je het werk doet - een planeet met vier pijlen
-     * eronder las niemand. */
-    const vrachten: { van: string; vanAcc: number[]; wat: string; naar: string;
-                      naarAcc: number[]; voor: string[] }[] = []
-    for (const [naar, watKaart] of binnen) {
-      for (const [wat, vanaf] of watKaart) {
-        for (const van of vanaf) {
-          vrachten.push({ van, vanAcc: accVan.get(van) ?? [], wat,
-                          naar, naarAcc: accVan.get(naar) ?? [],
-                          voor: (voor.get(`${naar}|${wat}`) ?? []).sort() })
-        }
-      }
-    }
-    /* Op bestemming sorteren, niet op bron: de vraag is "wat moet er in mijn
-     * Oxides-fabriek", dus alle regels van dezelfde fabriek horen bij elkaar. */
-    vrachten.sort((a, b) => a.naar.localeCompare(b.naar)
-      || a.voor.join().localeCompare(b.voor.join())
-      || a.wat.localeCompare(b.wat))
-    return vrachten
-  }, [getoond, fabriekVan, p1Van, sch, namen])
-
   /* Wat je moet inkopen: één command center per kolonie, in de soort van de
    * planeet waar hij op komt. */
   const commandCenters = useMemo(() => {
@@ -794,86 +685,6 @@ export default function PiOpzet() {
               </div>
             ))}
           </div>
-
-          {logistiek.length > 0 && (() => {
-            /* Filteren op wie het moet ontvángen: de vraag is "wat moet er bij
-             * mijn fabrieken in", niet "wat komt er van mijn planeten af". */
-            const lijst = vrachtAcc === null
-              ? logistiek : logistiek.filter(x => x.naarAcc.includes(vrachtAcc))
-            const knop = (nr: number | null, tekst: string) => (
-              <button key={String(nr)} type="button" onClick={() => setVrachtAcc(nr)}
-                style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: 4,
-                  cursor: 'pointer', border: '1px solid rgba(255,255,255,0.12)',
-                  background: vrachtAcc === nr ? 'var(--gold,#f0c040)' : 'transparent',
-                  color: vrachtAcc === nr ? '#111' : 'var(--text-dim)' }}>{tekst}</button>
-            )
-            return (
-            <div style={{ ...kaart, marginTop: '1rem' }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                {knop(null, 'alles')}
-                {getoond.map(a => knop(a.nr, naamVanAcc.get(a.nr) ?? `account ${a.nr}`))}
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ borderCollapse: 'collapse', width: '100%',
-                  fontSize: '0.8rem' }}>
-                  <thead>
-                    <tr style={{ color: 'var(--text-dim)', fontSize: '0.68rem',
-                      letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                      <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0' }}>
-                        ophalen bij</th>
-                      <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0' }}>
-                        wat</th>
-                      <th style={{ textAlign: 'left', padding: '0.2rem 0 0.35rem 0' }}>
-                        afleveren bij</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lijst.map((v2, i) => {
-                      /* Wie er op een planeet zit: bij een gedeelde planeet meer
-                       * dan één naam. Alle namen tonen werd onleesbaar (tot vier
-                       * per cel), dus de eerste twee plus een teller voor de rest. */
-                      const wie = (nrs: number[]) => {
-                        const namenLijst = nrs.map(nr => naamVanAcc.get(nr) ?? `account ${nr}`)
-                        const kort = namenLijst.slice(0, 2).join(' / ')
-                        return namenLijst.length > 2
-                          ? `${kort} +${namenLijst.length - 2}` : kort
-                      }
-                      return (
-                        <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                          <td style={{ padding: '0.3rem 0.6rem 0.3rem 0', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontWeight: 600 }}>{v2.van}</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                              {wie(v2.vanAcc)}</div>
-                          </td>
-                          <td style={{ padding: '0.3rem 0.6rem 0.3rem 0',
-                            color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
-                          <td style={{ padding: '0.3rem 0' }}>
-                            <div>
-                              <span style={{ fontWeight: 600 }}>{v2.naar}</span>
-                              {v2.voor.length > 0 && (
-                                <span style={{ color: 'var(--text-dim)' }}>
-                                  {' '}&rarr; <span style={{ color: 'var(--green,#3ecf6e)' }}>
-                                    {v2.voor.join(' + ')}</span>-fabriek</span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                              {wie(v2.naarAcc)}</div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                PI routeert alleen binnen een planeet: elke regel is een rit langs de customs
-                office. Onder elke planeet staat wie erop zit; bij een gedeelde planeet mag je
-                kiezen wie de rit doet. Staat hetzelfde spul twee keer met een andere
-                bestemming, dan gaat het naar twee fabrieken.
-              </div>
-            </div>
-            )
-          })()}
 
           {commandCenters.length > 0 && (
             <div style={{ ...kaart, marginTop: '1rem' }}>
