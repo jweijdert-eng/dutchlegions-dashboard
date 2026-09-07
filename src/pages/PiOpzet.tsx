@@ -185,36 +185,47 @@ export default function PiOpzet() {
     return uit
   }, [sch, namen, keten])
 
-  /* De fabrieken op een rijtje, in groepjes zo groot als een planeet aankan.
-   * De planner telt alleen hoevéél fabrieksplaneten je nodig hebt; welke
-   * fabriek op welke planeet komt is hier pas een vraag. */
-  const fabriekGroepen = useMemo(() => {
-    if (!keten || !plan?.lijnen) return []
+  /* Alle fabrieken die het plan vraagt, op een rijtje en op niveau gesorteerd:
+   * eerst de P2's, dan de P3's, dan de P4. Wélke fabriek op wélke planeet komt
+   * is hier pas een vraag; de planner telt alleen hoeveel planeten je nodig
+   * hebt. */
+  const fabriekenLos = useMemo(() => {
+    if (!keten || !plan?.lijnen) return [] as string[]
     const los: string[] = []
     for (const st of [...keten.stappen].filter(x => !x.opExtractie)
       .sort((x, y) => x.niveau - y.niveau)) {
       for (let i = 0; i < Math.ceil(st.fabrieken * plan.lijnen); i++) los.push(st.naam)
     }
-    const groepen: string[][] = []
-    for (let i = 0; i < los.length; i += Math.max(1, perFabriekPlaneet)) {
-      groepen.push(los.slice(i, i + Math.max(1, perFabriekPlaneet)))
-    }
-    return groepen
-  }, [keten, plan, perFabriekPlaneet])
+    return los
+  }, [keten, plan])
 
-  /* Elke fabrieksregel in het plan krijgt één zo'n groepje, op volgorde. */
+  /* Uitsmeren over de fabrieksplaneten die er in het plan staan.
+   *
+   * Vaste groepjes van `perFabriekPlaneet` leken logisch, maar het plan rondt
+   * per systeem en per account naar boven af — er staan dus vaak méér
+   * fabrieksplaneten dan er volle groepjes zijn, en dan kreeg de laatste er
+   * geen: een regel die alleen "fabriek" zei, zonder één fabriek erachter.
+   * Nu krijgt elke planeet een eerlijk deel, nooit meer dan hij aankan. */
   const fabriekVan = useMemo(() => {
     const kaart = new Map<string, string[]>()
-    let n = 0
+    const regels: string[] = []
     for (const acc of rijen) {
       for (const r of acc.rijen) {
-        if (!(r.rol.includes('Facility') || r.rol.includes('Plant'))) continue
-        kaart.set(`${acc.nr}:${r.planeet}:${r.rol}`, fabriekGroepen[n] ?? [])
-        n++
+        if (r.rol.includes('Facility') || r.rol.includes('Plant')) {
+          regels.push(`${acc.nr}:${r.planeet}:${r.rol}`)
+        }
       }
     }
+    const cap = Math.max(1, perFabriekPlaneet)
+    let i = 0
+    regels.forEach((sleutel, k) => {
+      const nog = regels.length - k
+      const aantal = Math.min(cap, Math.ceil((fabriekenLos.length - i) / nog))
+      kaart.set(sleutel, fabriekenLos.slice(i, i + aantal))
+      i += aantal
+    })
     return kaart
-  }, [rijen, fabriekGroepen])
+  }, [rijen, fabriekenLos, perFabriekPlaneet])
 
   /* Hoeveel Basic Industry Facilities er op zo'n extractieplaneet komen: de
    * P1-fabrieken van die grondstof, verdeeld over de planeten die hem oogsten. */
