@@ -517,7 +517,7 @@ export default function PiOpzet() {
     }
     vrachten.sort((a, b) => a.van.localeCompare(b.van) || a.wat.localeCompare(b.wat))
     return vrachten
-  }, [getoond, fabriekVan, p1Van, sch, namen, naamVanAcc])
+  }, [getoond, fabriekVan, p1Van, sch, namen])
 
   /* Wat je moet inkopen: één command center per kolonie, in de soort van de
    * planeet waar hij op komt. */
@@ -800,47 +800,25 @@ export default function PiOpzet() {
                     </tr>
                   </thead>
                   <tbody>
-                    {logistiek.map((v2, i) => {
-                      const wie = (nrs: number[]) =>
-                        nrs.map(nr => naamVanAcc.get(nr) ?? `account ${nr}`).join(' + ')
-                      /* Blijft het bij hetzelfde character, dan is het een rondje
-                       * dat je in één keer doet; gaat het naar een ander, dan moet
-                       * je omloggen. Dat verschil is het enige wat hier telt.
-                       *
-                       * Overlap is genoeg: op een gedeelde planeet zitten twee
-                       * characters, en zit er eentje ook op de bestemming, dan kan
-                       * díé het in één keer doen. Op de lijstjes als geheel
-                       * vergelijken zei dan onterecht "ander character". */
-                      const zelfde = v2.vanAcc.some(nr => v2.naarAcc.includes(nr))
-                      return (
-                        <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                          <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
-                            whiteSpace: 'nowrap' }}>
-                            <b>{v2.van}</b>{' '}
-                            <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>
-                              {wie(v2.vanAcc)}</span>
-                          </td>
-                          <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
-                            color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
-                          <td style={{ padding: '0.25rem 0', whiteSpace: 'nowrap' }}>
-                            <b>{v2.naar}</b>{' '}
-                            <span style={{ fontSize: '0.72rem',
-                              color: zelfde ? 'var(--text-dim)' : 'var(--gold,#f0c040)' }}>
-                              {wie(v2.naarAcc)}
-                              {zelfde ? '' : ' ← overdragen'}</span>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                    {logistiek.map((v2, i) => (
+                      <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '0.25rem 0.6rem 0.25rem 0', whiteSpace: 'nowrap',
+                          fontWeight: 600 }}>{v2.van}</td>
+                        <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
+                          color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
+                        <td style={{ padding: '0.25rem 0', whiteSpace: 'nowrap',
+                          fontWeight: 600 }}>{v2.naar}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                PI routeert alleen binnen een planeet: elke regel hierboven is een rit langs de
-                customs office. Staat er &quot;overdragen&quot; bij, dan zit er geen enkel
-                character op beide planeten en moet het spul via je hangar van de een naar de
-                ander. Staat er twee keer hetzelfde spul met een andere bron, dan maken twee
-                planeten het en mag je de dichtstbijzijnde pakken.
+                PI routeert alleen binnen een planeet: elke regel is een rit langs de customs
+                office. Wie erop zit staat in de accountkaarten hierboven — bij een gedeelde
+                planeet kan dat meer dan één character zijn, en dan mag je kiezen wie het doet.
+                Staat hetzelfde spul twee keer met een andere bestemming, dan gaat het naar
+                twee fabrieken.
               </div>
             </div>
           )}
