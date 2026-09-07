@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAuth } from '../auth/AuthContext'
-import { getSkillsInfo } from '../api/esi'
+import { getPlanetInfo, getPlanets, getSkillsInfo } from '../api/esi'
 import {
   PLANEETKLEUR, PLANEETTYPE, PLANEET_P0,
   bouwKeten, kiesPlaneten, laadNamen, laadPlaneten, laadSchematics, laadSprongen,
@@ -104,6 +104,7 @@ export default function PiOpzet() {
     return () => { leeft = false }
   }, [])
   usePageLoading(bezig)
+  const { tokens } = useAuth()
 
   const accountSlots = useMemo(() => perAcc.split(/[,;\s]+/)
     .map(x => Math.max(0, Math.min(6, parseInt(x) || 0))).filter(Boolean), [perAcc])
@@ -143,6 +144,38 @@ export default function PiOpzet() {
     return { naam: s.naam, sprongen: s.sprongen, slots: 0, kar: 1, perType }
   }), [buurt])
 
+  /* Wat er nu écht in de grond staat.
+   *
+   * Zonder dit rekende de planner elke keer een verse opzet uit: zet je de
+   * kolonies neer en verandert er daarna iets aan de verdeling, dan schoof het
+   * plan naar andere planeten en klopte het niet meer met het spel. De planeten
+   * waar je al staat krijgen nu voorrang. */
+  const [bezet, setBezet] = useState<Set<string>>(new Set())
+  const [staatEr, setStaatEr] = useState<{ naam: string; planeten: string[] }[]>([])
+  const charSleutel = tokens.map(t => t.characterId).join(',')
+  useEffect(() => {
+    let leeft = true
+    if (!tokens.length) { setBezet(new Set()); setStaatEr([]); return }
+    ;(async () => {
+      const per: { naam: string; planeten: string[] }[] = []
+      const alle = new Set<string>()
+      for (const t of tokens) {
+        try {
+          const kolonies = await getPlanets(t.characterId, t.accessToken)
+          const namen2: string[] = []
+          for (const k of kolonies) {
+            const info = await getPlanetInfo(k.planet_id)
+            if (info?.name) { namen2.push(info.name); alle.add(info.name) }
+          }
+          if (namen2.length) per.push({ naam: t.characterName, planeten: namen2.sort() })
+        } catch { /* geen PI-scope of geen kolonies: dan telt hij niet mee */ }
+      }
+      if (leeft) { setBezet(alle); setStaatEr(per) }
+    })()
+    return () => { leeft = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [charSleutel])
+
   const keten = useMemo<Keten | null>(
     () => (Object.keys(sch).length ? bouwKeten(sch, namen, doel, 1) : null),
     [sch, namen, doel])
@@ -153,8 +186,8 @@ export default function PiOpzet() {
 
   const rijen = useMemo(() => {
     if (!plan || !keten || !plan.lijnen) return []
-    return perAccount(kiesPlaneten(plan as PasvormSys, keten, buurt, new Set()), accountSlots)
-  }, [plan, keten, buurt, accountSlots])
+    return perAccount(kiesPlaneten(plan as PasvormSys, keten, buurt, bezet), accountSlots)
+  }, [plan, keten, buurt, accountSlots, bezet])
 
   /* Hoeveel eindproduct er per dag uit komt: de bovenste stap maal het aantal
    * lijnen dat past. */
@@ -260,7 +293,6 @@ export default function PiOpzet() {
   }, [sch])
 
   /* Je skills uitlezen: dan hoef je de slots niet te tellen. */
-  const { tokens } = useAuth()
   const [skills, setSkills] = useState<{ naam: string; planeten: number; cc: number }[]>([])
   const [skillBezig, setSkillBezig] = useState(false)
   const [skillFout, setSkillFout] = useState('')
@@ -488,6 +520,25 @@ export default function PiOpzet() {
             </div>
           </div>
 
+          {staatEr.length > 0 && (
+            <div style={{ ...kaart, marginTop: '1rem' }}>
+              <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
+                color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
+                Wat je nu al hebt staan
+              </div>
+              {staatEr.map(k => (
+                <div key={k.naam} style={{ fontSize: '0.82rem', padding: '0.15rem 0' }}>
+                  <b>{k.naam}</b>{' '}
+                  <span style={{ color: 'var(--text-dim)' }}>{k.planeten.join(' · ')}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                Deze planeten krijgen voorrang in het plan hieronder, en staan daar met een
+                &#10003;. Zo blijft de opzet staan waar je al gebouwd hebt.
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gap: '0.7rem',
             gridTemplateColumns: 'repeat(auto-fill, minmax(23rem, 1fr))' }}>
             {rijen.map((a, i) => (
@@ -521,6 +572,9 @@ export default function PiOpzet() {
                         {r.planeet}
                         {r.gedeeld && <span style={{ color: 'var(--gold,#f0c040)' }}
                           title="Een ander account zet ook een kolonie op deze planeet. Dat mag, maar de extractors delen de hotspots.">+</span>}
+                        {bezet.has(r.planeet) && <span style={{ color: 'var(--ok,#4ec9a0)',
+                          marginLeft: 4, fontSize: '0.7rem' }}
+                          title="Hier staat al een kolonie van je">&#10003;</span>}
                       </span>
                       <span style={{ width: 64, fontSize: '0.74rem',
                         color: PLANEETKLEUR[r.type] ?? '#8a93a8' }}>{r.type}</span>
