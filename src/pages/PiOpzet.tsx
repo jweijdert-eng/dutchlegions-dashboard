@@ -468,6 +468,7 @@ export default function PiOpzet() {
      * ook de andere kant op onthouden - vanaf een extractieplaneet wil je juist
      * weten waar je je P1 naartoe brengt. */
     const binnen = new Map<string, Map<string, string[]>>()  // planeet → wat ← van
+    const voor = new Map<string, string[]>()                 // planeet|wat → fabrieken
     const heen = new Map<string, Map<string, string[]>>()    // planeet → wat → naar
     const planeten: string[] = []
     /* Wie zit er op die planeet? Een gedeelde planeet heeft er twee, en dan
@@ -493,6 +494,13 @@ export default function PiOpzet() {
           if (!van.length) continue
           if (!binnen.has(planeet)) binnen.set(planeet, new Map())
           binnen.get(planeet)!.set(grondstof, van)
+          /* Welke fabriek op die planeet dit spul opeet. Dat is wat je wilt
+           * weten als je aflevert: "voor Hazmat Detection Systems", niet
+           * alleen "op 7G-QIG VII". */
+          const sleutel = `${planeet}|${grondstof}`
+          const eters = voor.get(sleutel) ?? []
+          if (!eters.includes(product)) eters.push(product)
+          voor.set(sleutel, eters)
           for (const leverancier of van) {
             if (!heen.has(leverancier)) heen.set(leverancier, new Map())
             const lijst = heen.get(leverancier)!.get(grondstof) ?? []
@@ -505,13 +513,14 @@ export default function PiOpzet() {
     /* Eén regel per rit: waar je het ophaalt, wat het is, waar het heen moet.
      * Dat is de vorm waarin je het werk doet - een planeet met vier pijlen
      * eronder las niemand. */
-    const vrachten: { van: string; vanAcc: number[]; wat: string;
-                      naar: string; naarAcc: number[] }[] = []
+    const vrachten: { van: string; vanAcc: number[]; wat: string; naar: string;
+                      naarAcc: number[]; voor: string[] }[] = []
     for (const [naar, watKaart] of binnen) {
       for (const [wat, vanaf] of watKaart) {
         for (const van of vanaf) {
           vrachten.push({ van, vanAcc: accVan.get(van) ?? [], wat,
-                          naar, naarAcc: accVan.get(naar) ?? [] })
+                          naar, naarAcc: accVan.get(naar) ?? [],
+                          voor: (voor.get(`${naar}|${wat}`) ?? []).sort() })
         }
       }
     }
@@ -819,8 +828,15 @@ export default function PiOpzet() {
                           </td>
                           <td style={{ padding: '0.3rem 0.6rem 0.3rem 0',
                             color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
-                          <td style={{ padding: '0.3rem 0', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontWeight: 600 }}>{v2.naar}</div>
+                          <td style={{ padding: '0.3rem 0' }}>
+                            <div>
+                              <span style={{ fontWeight: 600 }}>{v2.naar}</span>
+                              {v2.voor.length > 0 && (
+                                <span style={{ color: 'var(--text-dim)' }}>
+                                  {' '}&rarr; <span style={{ color: 'var(--green,#3ecf6e)' }}>
+                                    {v2.voor.join(' + ')}</span>-fabriek</span>
+                              )}
+                            </div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
                               {wie(v2.naarAcc)}</div>
                           </td>
