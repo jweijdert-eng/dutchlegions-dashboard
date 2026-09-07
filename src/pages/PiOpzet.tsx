@@ -436,32 +436,47 @@ export default function PiOpzet() {
       }
     }
 
-    /* Stap 2: wat heeft elke planeet nodig, en waar komt dat vandaan? */
-    const uit: { planeet: string; maakt: string[]; haalt: { wat: string; van: string[] }[] }[] = []
-    const gezien = new Set<string>()
+    /* Stap 2: wat heeft elke planeet nodig, en waar komt dat vandaan? Meteen
+     * ook de andere kant op onthouden - vanaf een extractieplaneet wil je juist
+     * weten waar je je P1 naartoe brengt. */
+    const binnen = new Map<string, Map<string, string[]>>()  // planeet → wat ← van
+    const heen = new Map<string, Map<string, string[]>>()    // planeet → wat → naar
+    const planeten: string[] = []
     for (const acc of getoond) {
       for (const r of acc.rijen) {
-        if (gezien.has(r.planeet)) continue
-        gezien.add(r.planeet)
-        const eigen = maakt.get(r.planeet) ?? new Set<string>()
-        const nodig = new Map<string, string[]>()
-        for (const product of eigen) {
-          const recept = opNaam.get(product)
-          if (!recept) continue
-          for (const pin of recept.pins.filter(x => x.is_input)) {
-            const grondstof = naamVan(pin.type_id)
-            // Wat de planeet zelf maakt of zelf uit de grond haalt: niet slepen.
-            if (eigen.has(grondstof)) continue
-            const van = bron.get(grondstof)
-            if (van) nodig.set(grondstof, van.filter(x => x !== r.planeet))
-          }
-        }
-        uit.push({ planeet: r.planeet, maakt: [...eigen].sort(),
-                   haalt: [...nodig.entries()].map(([wat, van]) => ({ wat, van }))
-                     .sort((a, b) => a.wat.localeCompare(b.wat)) })
+        if (!planeten.includes(r.planeet)) planeten.push(r.planeet)
       }
     }
-    return uit
+    for (const planeet of planeten) {
+      const eigen = maakt.get(planeet) ?? new Set<string>()
+      for (const product of eigen) {
+        const recept = opNaam.get(product)
+        if (!recept) continue
+        for (const pin of recept.pins.filter(x => x.is_input)) {
+          const grondstof = naamVan(pin.type_id)
+          if (eigen.has(grondstof)) continue    // maakt hij zelf: niet slepen
+          const van = (bron.get(grondstof) ?? []).filter(x => x !== planeet)
+          if (!van.length) continue
+          if (!binnen.has(planeet)) binnen.set(planeet, new Map())
+          binnen.get(planeet)!.set(grondstof, van)
+          for (const leverancier of van) {
+            if (!heen.has(leverancier)) heen.set(leverancier, new Map())
+            const lijst = heen.get(leverancier)!.get(grondstof) ?? []
+            if (!lijst.includes(planeet)) lijst.push(planeet)
+            heen.get(leverancier)!.set(grondstof, lijst)
+          }
+        }
+      }
+    }
+    const sorteer = (m?: Map<string, string[]>) =>
+      [...(m ?? new Map()).entries()].map(([wat, waar]) => ({ wat, waar }))
+        .sort((a, b) => a.wat.localeCompare(b.wat))
+    return planeten.map(planeet => ({
+      planeet,
+      maakt: [...(maakt.get(planeet) ?? new Set<string>())].sort(),
+      haalt: sorteer(binnen.get(planeet)),
+      brengt: sorteer(heen.get(planeet)),
+    }))
   }, [getoond, fabriekVan, p1Van, sch, namen])
 
   /* Wat je moet inkopen: één command center per kolonie, in de soort van de
@@ -724,7 +739,7 @@ export default function PiOpzet() {
                 color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
                 Waar gaat het heen — wat je zelf moet slepen
               </div>
-              {logistiek.filter(x => x.haalt.length).map(x => (
+              {logistiek.filter(x => x.haalt.length || x.brengt.length).map(x => (
                 <div key={x.planeet} style={{ padding: '0.25rem 0',
                   borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ fontSize: '0.82rem' }}>
@@ -732,19 +747,27 @@ export default function PiOpzet() {
                     <span style={{ color: 'var(--text-dim)' }}>maakt </span>
                     <span style={{ color: 'var(--accent,#6cf)' }}>{x.maakt.join(', ')}</span>
                   </div>
+                  {x.brengt.map(h => (
+                    <div key={'uit' + h.wat} style={{ fontSize: '0.78rem', paddingLeft: 100,
+                      color: 'var(--text-dim)' }}>
+                      &#8594; {h.wat} naar <b style={{ color: 'var(--green,#3ecf6e)' }}>
+                        {h.waar.join(', ')}</b>
+                    </div>
+                  ))}
                   {x.haalt.map(h => (
-                    <div key={h.wat} style={{ fontSize: '0.78rem', paddingLeft: 100,
+                    <div key={'in' + h.wat} style={{ fontSize: '0.78rem', paddingLeft: 100,
                       color: 'var(--text-dim)' }}>
                       &#8592; {h.wat} van <b style={{ color: 'var(--text)' }}>
-                        {h.van.join(' of ')}</b>
+                        {h.waar.join(' of ')}</b>
                     </div>
                   ))}
                 </div>
               ))}
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
                 PI routeert alleen binnen een planeet: alles hierboven sleep je zelf via de
-                customs office. Planeten die niets hoeven te ontvangen (de extractors) staan
-                er niet bij.
+                customs office. &#8594; is wat je ophaalt en wegbrengt, &#8592; is wat er
+                binnen moet komen. Staat er &quot;of&quot;, dan maken twee planeten hetzelfde
+                en mag je kiezen.
               </div>
             </div>
           )}
