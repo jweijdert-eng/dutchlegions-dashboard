@@ -648,18 +648,20 @@ export function perAccount(
      *     ruimte bij de andere accounts al vol tegen de tijd dat de tweede
      *     kolonie aan de beurt is, en blijft alleen het account over dat die
      *     planeet al heeft. Zo kreeg account 1 dezelfde planeet twee keer.
-     *  2. **Het account met de meeste ruimte over.** Dat houdt de keuze open
-     *     voor wat er nog komt.
+     *  2. **Zo veel mogelijk op één account.** Account 1 eerst helemaal vol,
+     *     dan pas account 2. Dat scheelt inloggen: elke kolonie erbij op een
+     *     nieuw karakter is weer een client die je moet openen om te oogsten.
      */
     const kolonies = new Map<string, number>()
     for (const r of vak.planeten) kolonies.set(r.planeet, (kolonies.get(r.planeet) ?? 0) + 1)
     const volgorde = [...vak.planeten].sort(
       (a, b) => (kolonies.get(b.planeet) ?? 0) - (kolonies.get(a.planeet) ?? 0))
 
+    emmers.sort((a, b) => a.nr - b.nr)
     for (const rij of volgorde) {
-      const kan = emmers.filter(e => e.rijen.length < e.slots
-                                     && !e.rijen.some(r => r.planeet === rij.planeet))
-      const doel = kan.sort((x, y) => (y.slots - y.rijen.length) - (x.slots - x.rijen.length))[0]
+      // Het eerste account dat nog ruimte heeft en deze planeet nog niet heeft.
+      const doel = emmers.find(e => e.rijen.length < e.slots
+                                    && !e.rijen.some(r => r.planeet === rij.planeet))
       /* Past hij nergens meer, dan valt de regel weg. Dat is geen mooie
        * uitkomst, maar hem tóch bij een account zetten levert een kolonie op
        * die je in het spel niet kunt neerzetten - en daar heb je niets aan. */
