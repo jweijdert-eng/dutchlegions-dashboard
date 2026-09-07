@@ -808,8 +808,13 @@ export default function PiOpzet() {
                         nrs.map(nr => naamVanAcc.get(nr) ?? `account ${nr}`).join(' + ')
                       /* Blijft het bij hetzelfde character, dan is het een rondje
                        * dat je in één keer doet; gaat het naar een ander, dan moet
-                       * je omloggen. Dat verschil is het enige wat hier telt. */
-                      const zelfde = v2.vanAcc.join() === v2.naarAcc.join()
+                       * je omloggen. Dat verschil is het enige wat hier telt.
+                       *
+                       * Overlap is genoeg: op een gedeelde planeet zitten twee
+                       * characters, en zit er eentje ook op de bestemming, dan kan
+                       * díé het in één keer doen. Op de lijstjes als geheel
+                       * vergelijken zei dan onterecht "ander character". */
+                      const zelfde = v2.vanAcc.some(nr => v2.naarAcc.includes(nr))
                       return (
                         <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                           <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
@@ -824,7 +829,8 @@ export default function PiOpzet() {
                             <b>{v2.naar}</b>{' '}
                             <span style={{ fontSize: '0.72rem',
                               color: zelfde ? 'var(--text-dim)' : 'var(--gold,#f0c040)' }}>
-                              {wie(v2.naarAcc)}{zelfde ? '' : ' ← ander character'}</span>
+                              {wie(v2.naarAcc)}
+                              {zelfde ? '' : ' ← overdragen'}</span>
                           </td>
                         </tr>
                       )
@@ -834,8 +840,10 @@ export default function PiOpzet() {
               </div>
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
                 PI routeert alleen binnen een planeet: elke regel hierboven is een rit langs de
-                customs office. Staat er twee keer hetzelfde spul met een andere bron, dan
-                maken twee planeten het en mag je de dichtstbijzijnde pakken.
+                customs office. Staat er &quot;overdragen&quot; bij, dan zit er geen enkel
+                character op beide planeten en moet het spul via je hangar van de een naar de
+                ander. Staat er twee keer hetzelfde spul met een andere bron, dan maken twee
+                planeten het en mag je de dichtstbijzijnde pakken.
               </div>
             </div>
           )}
