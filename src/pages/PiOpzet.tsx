@@ -399,11 +399,47 @@ export default function PiOpzet() {
   })), [buurt, soorten])
 
   /**
-   * Wat gaat er van welke planeet naar welke?
+   * Welk character hoort bij welk accountnummer?
+   *
+   * De nummers komen uit het slots-veld en zijn op zichzelf naamloos. Twee
+   * manieren om er een naam bij te vinden, in deze volgorde:
+   *
+   *  1. **Aan de planeten.** Staat een account grotendeels op planeten waar een
+   *     bepaald character al een kolonie heeft, dan is hij het. Dat is de
+   *     betrouwbaarste, want die data komt uit het spel.
+   *  2. **Aan de skills.** Is het slots-veld met de knop "uit skills" gevuld,
+   *     dan staat het rijtje in dezelfde volgorde als de accounts.
+   */
+  const naamVanAcc = useMemo(() => {
+    const uit = new Map<number, string>()
+    const vergeven = new Set<string>()
+    for (const acc of getoond) {
+      let beste = '', raak = 0
+      for (const k of staatEr) {
+        if (vergeven.has(k.naam)) continue
+        const n = acc.rijen.filter(r => k.planeten.some(pl => pl.naam === r.planeet)).length
+        if (n > raak) { raak = n; beste = k.naam }
+      }
+      if (beste) { uit.set(acc.nr, beste); vergeven.add(beste) }
+    }
+    /* Wat er dan nog leeg is: op volgorde uit de skills, want daar is het
+     * slots-veld ook mee gevuld. */
+    const over = skills.filter(sk => !vergeven.has(sk.naam) && sk.planeten > 1)
+    let i = 0
+    for (const acc of getoond) {
+      if (uit.has(acc.nr)) continue
+      const sk = over[i++]
+      if (sk) uit.set(acc.nr, sk.naam)
+    }
+    return uit
+  }, [getoond, staatEr, skills])
+
+  /**
+   * De vrachtlijst: wat sleep je van welke planeet naar welke?
    *
    * PI routeert alleen bínnen een planeet. Alles wat een fabriek nodig heeft en
-   * niet op diezelfde planeet gemaakt wordt, sleep jij er met een schip heen.
-   * Per planeet: wat hij maakt, en wat hij nodig heeft met de bron erbij.
+   * niet op diezelfde planeet gemaakt wordt, haal jij op bij de customs office
+   * en breng je naar de volgende. Eén regel per rit.
    */
   const logistiek = useMemo(() => {
     if (!getoond.length) return []
@@ -474,22 +510,22 @@ export default function PiOpzet() {
         }
       }
     }
-    const metAcc = (naam: string) => {
-      const nrs = accVan.get(naam) ?? []
-      return nrs.length ? `${naam} (acc ${nrs.join('+')})` : naam
+    /* Eén regel per rit: waar je het ophaalt, wat het is, waar het heen moet.
+     * Dat is de vorm waarin je het werk doet - een planeet met vier pijlen
+     * eronder las niemand. */
+    const vrachten: { van: string; vanAcc: number[]; wat: string;
+                      naar: string; naarAcc: number[] }[] = []
+    for (const [naar, watKaart] of binnen) {
+      for (const [wat, vanaf] of watKaart) {
+        for (const van of vanaf) {
+          vrachten.push({ van, vanAcc: accVan.get(van) ?? [], wat,
+                          naar, naarAcc: accVan.get(naar) ?? [] })
+        }
+      }
     }
-    const sorteerMet = (m?: Map<string, string[]>) =>
-      [...(m ?? new Map()).entries()]
-        .map(([wat, waar]) => ({ wat, waar: (waar as string[]).map(metAcc) }))
-        .sort((a, b) => a.wat.localeCompare(b.wat))
-    return planeten.map(planeet => ({
-      planeet,
-      acc: accVan.get(planeet) ?? [],
-      maakt: [...(maakt.get(planeet) ?? new Set<string>())].sort(),
-      haalt: sorteerMet(binnen.get(planeet)),
-      brengt: sorteerMet(heen.get(planeet)),
-    }))
-  }, [getoond, fabriekVan, p1Van, sch, namen])
+    vrachten.sort((a, b) => a.van.localeCompare(b.van) || a.wat.localeCompare(b.wat))
+    return vrachten
+  }, [getoond, fabriekVan, p1Van, sch, namen, naamVanAcc])
 
   /* Wat je moet inkopen: één command center per kolonie, in de soort van de
    * planeet waar hij op komt. */
@@ -682,7 +718,8 @@ export default function PiOpzet() {
               <div key={`${a.nr}:${i}`} style={{ ...kaart, marginBottom: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8,
                   marginBottom: '0.5rem' }}>
-                  <b style={{ color: 'var(--gold,#f0c040)' }}>ACCOUNT {a.nr}</b>
+                  <b style={{ color: 'var(--gold,#f0c040)' }}>
+                    {naamVanAcc.get(a.nr) ?? `ACCOUNT ${a.nr}`}</b>
                   <span style={{ color: 'var(--text-dim)' }}>vliegt naar</span>
                   <b>{a.systeem}</b>
                   {(() => {
@@ -745,44 +782,60 @@ export default function PiOpzet() {
             ))}
           </div>
 
-          {logistiek.some(x => x.haalt.length) && (
+          {logistiek.length > 0 && (
             <div style={{ ...kaart, marginTop: '1rem' }}>
               <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
                 color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
-                Waar gaat het heen — wat je zelf moet slepen
+                Wat moet waarheen — {logistiek.length} ritten
               </div>
-              {logistiek.filter(x => x.haalt.length || x.brengt.length).map(x => (
-                <div key={x.planeet} style={{ padding: '0.25rem 0',
-                  borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ fontSize: '0.82rem' }}>
-                    <b style={{ width: 92, display: 'inline-block' }}>{x.planeet}</b>
-                    <span style={{ color: 'var(--gold,#f0c040)', fontSize: '0.72rem',
-                      marginRight: 6 }}>acc {x.acc.join('+')}</span>
-                    <span style={{ color: 'var(--text-dim)' }}>maakt </span>
-                    <span style={{ color: 'var(--accent,#6cf)' }}>{x.maakt.join(', ')}</span>
-                  </div>
-                  {x.brengt.map(h => (
-                    <div key={'uit' + h.wat} style={{ fontSize: '0.78rem', paddingLeft: 100,
-                      color: 'var(--text-dim)' }}>
-                      &#8594; {h.wat} naar <b style={{ color: 'var(--green,#3ecf6e)' }}>
-                        {h.waar.join(', ')}</b>
-                    </div>
-                  ))}
-                  {x.haalt.map(h => (
-                    <div key={'in' + h.wat} style={{ fontSize: '0.78rem', paddingLeft: 100,
-                      color: 'var(--text-dim)' }}>
-                      &#8592; {h.wat} van <b style={{ color: 'var(--text)' }}>
-                        {h.waar.join(' of ')}</b>
-                    </div>
-                  ))}
-                </div>
-              ))}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%',
+                  fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ color: 'var(--text-dim)', fontSize: '0.68rem',
+                      letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0' }}>
+                        ophalen bij</th>
+                      <th style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.35rem 0' }}>
+                        wat</th>
+                      <th style={{ textAlign: 'left', padding: '0.2rem 0 0.35rem 0' }}>
+                        afleveren bij</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logistiek.map((v2, i) => {
+                      const wie = (nrs: number[]) =>
+                        nrs.map(nr => naamVanAcc.get(nr) ?? `account ${nr}`).join(' + ')
+                      /* Blijft het bij hetzelfde character, dan is het een rondje
+                       * dat je in één keer doet; gaat het naar een ander, dan moet
+                       * je omloggen. Dat verschil is het enige wat hier telt. */
+                      const zelfde = v2.vanAcc.join() === v2.naarAcc.join()
+                      return (
+                        <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
+                            whiteSpace: 'nowrap' }}>
+                            <b>{v2.van}</b>{' '}
+                            <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>
+                              {wie(v2.vanAcc)}</span>
+                          </td>
+                          <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
+                            color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
+                          <td style={{ padding: '0.25rem 0', whiteSpace: 'nowrap' }}>
+                            <b>{v2.naar}</b>{' '}
+                            <span style={{ fontSize: '0.72rem',
+                              color: zelfde ? 'var(--text-dim)' : 'var(--gold,#f0c040)' }}>
+                              {wie(v2.naarAcc)}{zelfde ? '' : ' ← ander character'}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                PI routeert alleen binnen een planeet: alles hierboven sleep je zelf via de
-                customs office. &#8594; is wat je ophaalt en wegbrengt, &#8592; is wat er
-                binnen moet komen; achter elke planeet staat welk account erop zit, dus wie
-                het moet doen. Staat er &quot;of&quot;, dan maken twee planeten hetzelfde en
-                mag je kiezen.
+                PI routeert alleen binnen een planeet: elke regel hierboven is een rit langs de
+                customs office. Staat er twee keer hetzelfde spul met een andere bron, dan
+                maken twee planeten het en mag je de dichtstbijzijnde pakken.
               </div>
             </div>
           )}
