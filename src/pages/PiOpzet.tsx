@@ -442,9 +442,15 @@ export default function PiOpzet() {
     const binnen = new Map<string, Map<string, string[]>>()  // planeet → wat ← van
     const heen = new Map<string, Map<string, string[]>>()    // planeet → wat → naar
     const planeten: string[] = []
+    /* Wie zit er op die planeet? Een gedeelde planeet heeft er twee, en dan
+     * moet je weten wie van de twee dit spul moet ophalen. */
+    const accVan = new Map<string, number[]>()
     for (const acc of getoond) {
       for (const r of acc.rijen) {
         if (!planeten.includes(r.planeet)) planeten.push(r.planeet)
+        const lijst = accVan.get(r.planeet) ?? []
+        if (!lijst.includes(acc.nr)) lijst.push(acc.nr)
+        accVan.set(r.planeet, lijst)
       }
     }
     for (const planeet of planeten) {
@@ -468,14 +474,20 @@ export default function PiOpzet() {
         }
       }
     }
-    const sorteer = (m?: Map<string, string[]>) =>
-      [...(m ?? new Map()).entries()].map(([wat, waar]) => ({ wat, waar }))
+    const metAcc = (naam: string) => {
+      const nrs = accVan.get(naam) ?? []
+      return nrs.length ? `${naam} (acc ${nrs.join('+')})` : naam
+    }
+    const sorteerMet = (m?: Map<string, string[]>) =>
+      [...(m ?? new Map()).entries()]
+        .map(([wat, waar]) => ({ wat, waar: (waar as string[]).map(metAcc) }))
         .sort((a, b) => a.wat.localeCompare(b.wat))
     return planeten.map(planeet => ({
       planeet,
+      acc: accVan.get(planeet) ?? [],
       maakt: [...(maakt.get(planeet) ?? new Set<string>())].sort(),
-      haalt: sorteer(binnen.get(planeet)),
-      brengt: sorteer(heen.get(planeet)),
+      haalt: sorteerMet(binnen.get(planeet)),
+      brengt: sorteerMet(heen.get(planeet)),
     }))
   }, [getoond, fabriekVan, p1Van, sch, namen])
 
@@ -744,6 +756,8 @@ export default function PiOpzet() {
                   borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ fontSize: '0.82rem' }}>
                     <b style={{ width: 92, display: 'inline-block' }}>{x.planeet}</b>
+                    <span style={{ color: 'var(--gold,#f0c040)', fontSize: '0.72rem',
+                      marginRight: 6 }}>acc {x.acc.join('+')}</span>
                     <span style={{ color: 'var(--text-dim)' }}>maakt </span>
                     <span style={{ color: 'var(--accent,#6cf)' }}>{x.maakt.join(', ')}</span>
                   </div>
@@ -766,8 +780,9 @@ export default function PiOpzet() {
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
                 PI routeert alleen binnen een planeet: alles hierboven sleep je zelf via de
                 customs office. &#8594; is wat je ophaalt en wegbrengt, &#8592; is wat er
-                binnen moet komen. Staat er &quot;of&quot;, dan maken twee planeten hetzelfde
-                en mag je kiezen.
+                binnen moet komen; achter elke planeet staat welk account erop zit, dus wie
+                het moet doen. Staat er &quot;of&quot;, dan maken twee planeten hetzelfde en
+                mag je kiezen.
               </div>
             </div>
           )}
