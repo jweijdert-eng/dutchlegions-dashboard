@@ -809,10 +809,6 @@ export default function PiOpzet() {
             )
             return (
             <div style={{ ...kaart, marginTop: '1rem' }}>
-              <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
-                color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
-                Wat moet waarheen — {lijst.length} ritten
-              </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '0.5rem' }}>
                 {knop(null, 'alles')}
                 {getoond.map(a => knop(a.nr, naamVanAcc.get(a.nr) ?? `account ${a.nr}`))}
