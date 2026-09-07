@@ -638,12 +638,35 @@ export function perAccount(
     const systeem = vak.planeten[0]?.systeem ?? ''
     const emmers = kies(Math.max(1, vak.kar), vak.slots)
       .map(a => ({ ...a, rijen: [] as Voorstel[] }))
-    /* Ronde voor ronde uitdelen: iedereen eerst een eigen planeet, pas daarna
-     * een tweede kolonie ernaast. */
-    for (const rij of vak.planeten) {
-      const doel = emmers.filter(e => e.rijen.length < e.slots)
-        .sort((x, y) => x.rijen.length - y.rijen.length)[0] ?? emmers[0]
+    /* Uitdelen over de accounts.
+     *
+     * Eén karakter kan maar één kolonie per planeet hebben; een tweede kolonie
+     * op dezelfde planeet hoort dus bij een ánder account. Twee dingen zijn
+     * daarvoor nodig:
+     *
+     *  1. **De gedeelde planeten eerst.** Deel je op volgorde uit, dan zit de
+     *     ruimte bij de andere accounts al vol tegen de tijd dat de tweede
+     *     kolonie aan de beurt is, en blijft alleen het account over dat die
+     *     planeet al heeft. Zo kreeg account 1 dezelfde planeet twee keer.
+     *  2. **Het account met de meeste ruimte over.** Dat houdt de keuze open
+     *     voor wat er nog komt.
+     */
+    const kolonies = new Map<string, number>()
+    for (const r of vak.planeten) kolonies.set(r.planeet, (kolonies.get(r.planeet) ?? 0) + 1)
+    const volgorde = [...vak.planeten].sort(
+      (a, b) => (kolonies.get(b.planeet) ?? 0) - (kolonies.get(a.planeet) ?? 0))
+
+    for (const rij of volgorde) {
+      const kan = emmers.filter(e => e.rijen.length < e.slots
+                                     && !e.rijen.some(r => r.planeet === rij.planeet))
+      const doel = kan.sort((x, y) => (y.slots - y.rijen.length) - (x.slots - x.rijen.length))[0]
+      /* Past hij nergens meer, dan valt de regel weg. Dat is geen mooie
+       * uitkomst, maar hem tóch bij een account zetten levert een kolonie op
+       * die je in het spel niet kunt neerzetten - en daar heb je niets aan. */
       if (doel) doel.rijen.push(rij)
+    }
+    for (const e of emmers) {
+      e.rijen.sort((a, b) => vak.planeten.indexOf(a) - vak.planeten.indexOf(b))
     }
     for (const e of emmers) {
       if (e.rijen.length) uit.push({ nr: e.nr, slots: e.slots, systeem, rijen: e.rijen })
