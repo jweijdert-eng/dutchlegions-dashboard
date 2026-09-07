@@ -156,6 +156,9 @@ export default function PiOpzet() {
   namenRef.current = namen
   const schRef = useRef(sch)
   schRef.current = sch
+  /* Op wiens fabrieken filter je de vrachtlijst? null = alles. Je logt in als
+   * één character, en dan wil je alleen weten wat er bij díé planeten in moet. */
+  const [vrachtAcc, setVrachtAcc] = useState<number | null>(null)
   const [bezet, setBezet] = useState<Set<string>>(new Set())
   const [staatEr, setStaatEr] = useState<
     { naam: string; planeten: { naam: string; wat: string }[] }[]>([])
@@ -524,7 +527,11 @@ export default function PiOpzet() {
         }
       }
     }
-    vrachten.sort((a, b) => a.van.localeCompare(b.van) || a.wat.localeCompare(b.wat))
+    /* Op bestemming sorteren, niet op bron: de vraag is "wat moet er in mijn
+     * Oxides-fabriek", dus alle regels van dezelfde fabriek horen bij elkaar. */
+    vrachten.sort((a, b) => a.naar.localeCompare(b.naar)
+      || a.voor.join().localeCompare(b.voor.join())
+      || a.wat.localeCompare(b.wat))
     return vrachten
   }, [getoond, fabriekVan, p1Van, sch, namen])
 
@@ -788,11 +795,27 @@ export default function PiOpzet() {
             ))}
           </div>
 
-          {logistiek.length > 0 && (
+          {logistiek.length > 0 && (() => {
+            /* Filteren op wie het moet ontvángen: de vraag is "wat moet er bij
+             * mijn fabrieken in", niet "wat komt er van mijn planeten af". */
+            const lijst = vrachtAcc === null
+              ? logistiek : logistiek.filter(x => x.naarAcc.includes(vrachtAcc))
+            const knop = (nr: number | null, tekst: string) => (
+              <button key={String(nr)} type="button" onClick={() => setVrachtAcc(nr)}
+                style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: 4,
+                  cursor: 'pointer', border: '1px solid rgba(255,255,255,0.12)',
+                  background: vrachtAcc === nr ? 'var(--gold,#f0c040)' : 'transparent',
+                  color: vrachtAcc === nr ? '#111' : 'var(--text-dim)' }}>{tekst}</button>
+            )
+            return (
             <div style={{ ...kaart, marginTop: '1rem' }}>
               <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em',
                 color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '0.45rem' }}>
-                Wat moet waarheen — {logistiek.length} ritten
+                Wat moet waarheen — {lijst.length} ritten
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                {knop(null, 'alles')}
+                {getoond.map(a => knop(a.nr, naamVanAcc.get(a.nr) ?? `account ${a.nr}`))}
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%',
@@ -809,7 +832,7 @@ export default function PiOpzet() {
                     </tr>
                   </thead>
                   <tbody>
-                    {logistiek.map((v2, i) => {
+                    {lijst.map((v2, i) => {
                       /* Wie er op een planeet zit: bij een gedeelde planeet meer
                        * dan één naam. Alle namen tonen werd onleesbaar (tot vier
                        * per cel), dus de eerste twee plus een teller voor de rest. */
@@ -853,7 +876,8 @@ export default function PiOpzet() {
                 bestemming, dan gaat het naar twee fabrieken.
               </div>
             </div>
-          )}
+            )
+          })()}
 
           {commandCenters.length > 0 && (
             <div style={{ ...kaart, marginTop: '1rem' }}>
