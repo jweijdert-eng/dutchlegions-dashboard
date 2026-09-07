@@ -968,7 +968,17 @@ export default function Planets() {
             vraag.set(inp.typeId, r)
           }
         }
+        /* Wat deze planeet zelf uit de grond haalt hoeft niemand te brengen.
+         * Haalt de ECU te weinig voor de fabrieken, dan is dat een extractor die
+         * bijgesteld moet worden - geen rit. Anders stond er "koop je of mis je"
+         * bij Felsic Magma terwijl de extractor ernaast staat. */
+        const zelfGehaald = new Set<number>()
+        for (const e of extractors) {
+          const pid = e.extractor_details?.product_type_id
+          if (pid) zelfGehaald.add(pid)
+        }
         const behoefte: Behoefte[] = [...vraag.entries()]
+          .filter(([typeId]) => !zelfGehaald.has(typeId))
           .map(([typeId, r]) => ({ typeId, name: itemNames.get(typeId) ?? null,
                                    perHour: r.perHour - (maaktZelf.get(typeId) ?? 0),
                                    voor: [...r.voor].sort() }))
@@ -1205,7 +1215,7 @@ export default function Planets() {
                               )}
                             </>
                           ) : (
-                            <span style={{ color: '#f5912e' }}>koop je of mis je</span>
+                            <span style={{ color: '#f5912e' }}>geen eigen bron</span>
                           )}
                         </td>
                         <td style={{ padding: '0.3rem 0.6rem 0.3rem 0', color: '#1fd4c4' }}>
@@ -1228,9 +1238,10 @@ export default function Planets() {
                 </table>
               </div>
               <div style={{ marginTop: '0.45rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                Gerekend uit je kolonies zoals ze nu draaien. Staat er
-                &quot;koop je of mis je&quot;, dan maakt geen enkele kolonie van jou dat spul —
-                dan komt het uit de markt of staat die fabriek stil.
+                Gerekend uit je kolonies zoals ze nu draaien. Wat een planeet zelf uit de
+                grond haalt staat er niet bij — dat hoeft niemand te brengen. Staat er
+                &quot;geen eigen bron&quot;, dan maakt geen enkele kolonie van jou dat spul: dan
+                koop je het, of die fabriek staat stil.
               </div>
             </div>
           )}
