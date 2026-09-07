@@ -800,25 +800,41 @@ export default function PiOpzet() {
                     </tr>
                   </thead>
                   <tbody>
-                    {logistiek.map((v2, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '0.25rem 0.6rem 0.25rem 0', whiteSpace: 'nowrap',
-                          fontWeight: 600 }}>{v2.van}</td>
-                        <td style={{ padding: '0.25rem 0.6rem 0.25rem 0',
-                          color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
-                        <td style={{ padding: '0.25rem 0', whiteSpace: 'nowrap',
-                          fontWeight: 600 }}>{v2.naar}</td>
-                      </tr>
-                    ))}
+                    {logistiek.map((v2, i) => {
+                      /* Wie er op een planeet zit: bij een gedeelde planeet meer
+                       * dan één naam. Alle namen tonen werd onleesbaar (tot vier
+                       * per cel), dus de eerste twee plus een teller voor de rest. */
+                      const wie = (nrs: number[]) => {
+                        const namenLijst = nrs.map(nr => naamVanAcc.get(nr) ?? `account ${nr}`)
+                        const kort = namenLijst.slice(0, 2).join(' / ')
+                        return namenLijst.length > 2
+                          ? `${kort} +${namenLijst.length - 2}` : kort
+                      }
+                      return (
+                        <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '0.3rem 0.6rem 0.3rem 0', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontWeight: 600 }}>{v2.van}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                              {wie(v2.vanAcc)}</div>
+                          </td>
+                          <td style={{ padding: '0.3rem 0.6rem 0.3rem 0',
+                            color: 'var(--accent,#6cf)' }}>{v2.wat}</td>
+                          <td style={{ padding: '0.3rem 0', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontWeight: 600 }}>{v2.naar}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                              {wie(v2.naarAcc)}</div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
                 PI routeert alleen binnen een planeet: elke regel is een rit langs de customs
-                office. Wie erop zit staat in de accountkaarten hierboven — bij een gedeelde
-                planeet kan dat meer dan één character zijn, en dan mag je kiezen wie het doet.
-                Staat hetzelfde spul twee keer met een andere bestemming, dan gaat het naar
-                twee fabrieken.
+                office. Onder elke planeet staat wie erop zit; bij een gedeelde planeet mag je
+                kiezen wie de rit doet. Staat hetzelfde spul twee keer met een andere
+                bestemming, dan gaat het naar twee fabrieken.
               </div>
             </div>
           )}
