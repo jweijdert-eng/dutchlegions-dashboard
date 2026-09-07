@@ -10,11 +10,11 @@
  * is er bewust uit; de rekenkern eronder (`src/lib/pi.ts`) is ongewijzigd
  * gebleven, inclusief de correcties die in de praktijk gevonden zijn.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAuth } from '../auth/AuthContext'
-import { getPlanetInfo, getPlanets, getSkillsInfo } from '../api/esi'
+import { getPlanetDetail, getPlanetInfo, getPlanets, getSkillsInfo } from '../api/esi'
 import {
   PLANEETKLEUR, PLANEETTYPE, PLANEET_P0,
   bouwKeten, kiesPlaneten, laadNamen, laadPlaneten, laadSchematics, laadSprongen,
@@ -150,24 +150,57 @@ export default function PiOpzet() {
    * kolonies neer en verandert er daarna iets aan de verdeling, dan schoof het
    * plan naar andere planeten en klopte het niet meer met het spel. De planeten
    * waar je al staat krijgen nu voorrang. */
+  /* De async-lus hieronder leest namen en recepten; via een ref, anders zou hij
+   * opnieuw moeten draaien zodra die data binnen is. */
+  const namenRef = useRef(namen)
+  namenRef.current = namen
+  const schRef = useRef(sch)
+  schRef.current = sch
   const [bezet, setBezet] = useState<Set<string>>(new Set())
-  const [staatEr, setStaatEr] = useState<{ naam: string; planeten: string[] }[]>([])
+  const [staatEr, setStaatEr] = useState<
+    { naam: string; planeten: { naam: string; wat: string }[] }[]>([])
   const charSleutel = tokens.map(t => t.characterId).join(',')
   useEffect(() => {
     let leeft = true
     if (!tokens.length) { setBezet(new Set()); setStaatEr([]); return }
     ;(async () => {
-      const per: { naam: string; planeten: string[] }[] = []
+      const per: { naam: string; planeten: { naam: string; wat: string }[] }[] = []
       const alle = new Set<string>()
       for (const t of tokens) {
         try {
           const kolonies = await getPlanets(t.characterId, t.accessToken)
-          const namen2: string[] = []
+          const lijst: { naam: string; wat: string }[] = []
           for (const k of kolonies) {
             const info = await getPlanetInfo(k.planet_id)
-            if (info?.name) { namen2.push(info.name); alle.add(info.name) }
+            if (!info?.name) continue
+            alle.add(info.name)
+            /* Wat er op die planeet draait: de ECU zegt welke grondstof hij
+             * haalt, elke fabriek welk recept erin zit. Zo zie je in één regel
+             * of de planeet doet wat het plan ervan verwacht. */
+            let wat = ''
+            try {
+              const detail = await getPlanetDetail(t.characterId, k.planet_id, t.accessToken)
+              const telling = new Map<string, number>()
+              let haalt = ''
+              for (const pin of detail.pins ?? []) {
+                const grondstof = pin.extractor_details?.product_type_id
+                if (grondstof) {
+                  haalt = namenRef.current[String(grondstof)] ?? `type ${grondstof}`
+                } else if (pin.schematic_id) {
+                  const recept = schRef.current[String(pin.schematic_id)]?.schematic_name
+                    ?? `recept ${pin.schematic_id}`
+                  telling.set(recept, (telling.get(recept) ?? 0) + 1)
+                }
+              }
+              const fabrieken = [...telling.entries()].map(([n2, aantal]) => `${aantal}× ${n2}`)
+              wat = [haalt && `haalt ${haalt}`, ...fabrieken].filter(Boolean).join(', ')
+            } catch { /* detail mag missen; de planeetnaam is het belangrijkst */ }
+            lijst.push({ naam: info.name, wat })
           }
-          if (namen2.length) per.push({ naam: t.characterName, planeten: namen2.sort() })
+          if (lijst.length) {
+            per.push({ naam: t.characterName,
+                       planeten: lijst.sort((a, b) => a.naam.localeCompare(b.naam)) })
+          }
         } catch { /* geen PI-scope of geen kolonies: dan telt hij niet mee */ }
       }
       if (leeft) { setBezet(alle); setStaatEr(per) }
@@ -532,9 +565,15 @@ export default function PiOpzet() {
                 Wat je nu al hebt staan
               </div>
               {staatEr.map(k => (
-                <div key={k.naam} style={{ fontSize: '0.82rem', padding: '0.15rem 0' }}>
-                  <b>{k.naam}</b>{' '}
-                  <span style={{ color: 'var(--text-dim)' }}>{k.planeten.join(' · ')}</span>
+                <div key={k.naam} style={{ padding: '0.25rem 0' }}>
+                  <b style={{ fontSize: '0.82rem' }}>{k.naam}</b>
+                  {k.planeten.map(pl => (
+                    <div key={pl.naam} style={{ display: 'flex', gap: 8, fontSize: '0.78rem',
+                      padding: '0.1rem 0 0.1rem 0.8rem' }}>
+                      <span style={{ width: 92, fontWeight: 600 }}>{pl.naam}</span>
+                      <span style={{ color: 'var(--text-dim)' }}>{pl.wat || '—'}</span>
+                    </div>
+                  ))}
                 </div>
               ))}
               <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-dim)' }}>
