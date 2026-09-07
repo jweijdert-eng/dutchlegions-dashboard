@@ -241,24 +241,29 @@ export default function PiOpzet() {
    * Nu krijgt elke planeet een eerlijk deel, nooit meer dan hij aankan. */
   const fabriekVan = useMemo(() => {
     const kaart = new Map<string, string[]>()
-    const regels: string[] = []
-    for (const acc of rijen) {
-      for (const r of acc.rijen) {
-        if (r.rol.includes('Facility') || r.rol.includes('Plant')) {
-          regels.push(`${acc.nr}:${r.planeet}:${r.rol}`)
-        }
-      }
-    }
     const cap = Math.max(1, perFabriekPlaneet)
     let i = 0
-    regels.forEach((sleutel, k) => {
-      const nog = regels.length - k
-      const aantal = Math.min(cap, Math.ceil((fabriekenLos.length - i) / nog))
-      kaart.set(sleutel, fabriekenLos.slice(i, i + aantal))
-      i += aantal
-    })
+    for (const acc of rijen) {
+      for (const r of acc.rijen) {
+        if (!(r.rol.includes('Facility') || r.rol.includes('Plant'))) continue
+        kaart.set(`${acc.nr}:${r.planeet}:${r.rol}`, fabriekenLos.slice(i, i + cap))
+        i += cap
+      }
+    }
     return kaart
   }, [rijen, fabriekenLos, perFabriekPlaneet])
+
+  /* Planeten vol maken kan er eentje overhouden.
+   *
+   * Het plan reserveert de fabrieksplaneten per systeem en per account, en
+   * rondt daarbij elke keer naar boven af — samen dus soms één meer dan er
+   * fabrieken zijn. Die lege planeet hoort niet in het overzicht: hij kost je
+   * een slot en een command center voor niets. */
+  const getoond = useMemo(() => rijen
+    .map(a => ({ ...a, rijen: a.rijen.filter(r =>
+      !(r.rol.includes('Facility') || r.rol.includes('Plant'))
+      || (fabriekVan.get(`${a.nr}:${r.planeet}:${r.rol}`)?.length ?? 0) > 0) }))
+    .filter(a => a.rijen.length), [rijen, fabriekVan])
 
   /* Hoeveel Basic Industry Facilities er op zo'n extractieplaneet komen: de
    * P1-fabrieken van die grondstof, verdeeld over de planeten die hem oogsten. */
@@ -266,7 +271,7 @@ export default function PiOpzet() {
     const uit = new Map<string, number>()
     if (!keten || !plan?.lijnen) return uit
     const planeten = new Map<string, number>()
-    for (const acc of rijen) for (const r of acc.rijen) {
+    for (const acc of getoond) for (const r of acc.rijen) {
       if (r.rol.includes('Facility') || r.rol.includes('Plant')) continue
       const g = r.rol.replace(' → P1', '')
       planeten.set(g, (planeten.get(g) ?? 0) + 1)
@@ -278,7 +283,7 @@ export default function PiOpzet() {
       uit.set(grondstof, Math.max(1, Math.ceil(Math.ceil(stap.fabrieken * plan.lijnen) / n)))
     }
     return uit
-  }, [keten, plan, rijen, p1Van])
+  }, [keten, plan, getoond, p1Van])
 
   /* Wat elk eindproduct in Jita doet. Eén keer ophalen voor alle recepten:
    * daarmee kan de pagina zowel de opbrengst van je keuze tonen als zeggen wat
@@ -364,14 +369,14 @@ export default function PiOpzet() {
    * planeet waar hij op komt. */
   const commandCenters = useMemo(() => {
     const per = new Map<string, number>()
-    for (const acc of rijen) for (const r of acc.rijen) {
+    for (const acc of getoond) for (const r of acc.rijen) {
       per.set(r.type, (per.get(r.type) ?? 0) + 1)
     }
     return [...per.entries()]
       .map(([type, n]) => ({ type, n, typeId: CC_TYPE[type] ?? 0,
                              isk: n * (prijzen.get(CC_TYPE[type] ?? 0) ?? 0) }))
       .sort((a, b) => b.n - a.n)
-  }, [rijen, prijzen])
+  }, [getoond, prijzen])
 
   const heeftP4 = rijen.some(a => a.rijen.some(r => r.rol.startsWith('High-Tech')))
 
@@ -494,7 +499,7 @@ export default function PiOpzet() {
         </div>
       )}
 
-      {rijen.length > 0 && (
+      {getoond.length > 0 && (
         <>
           <div style={{ ...kaart, display: 'flex', gap: '1.6rem', flexWrap: 'wrap',
             alignItems: 'baseline' }}>
@@ -513,9 +518,9 @@ export default function PiOpzet() {
               </div>
             )}
             <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
-              {rijen.length} account{rijen.length === 1 ? '' : 's'} ·{' '}
-              {rijen.reduce((n, a) => n + a.rijen.length, 0)} kolonies ·{' '}
-              {rijen.reduce((n, a) => n + a.rijen.filter(r =>
+              {getoond.length} account{getoond.length === 1 ? '' : 's'} ·{' '}
+              {getoond.reduce((n, a) => n + a.rijen.length, 0)} kolonies ·{' '}
+              {getoond.reduce((n, a) => n + a.rijen.filter(r =>
                 r.rol.includes('Facility') || r.rol.includes('Plant')).length, 0)} daarvan fabriek
             </div>
           </div>
@@ -541,7 +546,7 @@ export default function PiOpzet() {
 
           <div style={{ display: 'grid', gap: '0.7rem',
             gridTemplateColumns: 'repeat(auto-fill, minmax(23rem, 1fr))' }}>
-            {rijen.map((a, i) => (
+            {getoond.map((a, i) => (
               <div key={`${a.nr}:${i}`} style={{ ...kaart, marginBottom: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8,
                   marginBottom: '0.5rem' }}>
@@ -659,7 +664,7 @@ export default function PiOpzet() {
             </div>
           )}
 
-          {rijen.some(a => a.systeem !== thuis) && (
+          {getoond.some(a => a.systeem !== thuis) && (
             <div style={{ marginTop: '0.8rem', fontSize: '0.78rem',
               color: 'var(--gold,#f0c040)' }}>
               Niet alles staat in {thuis}: daar liggen niet de planeetsoorten die dit
