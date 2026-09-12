@@ -52,6 +52,7 @@ await ctx.addInitScript(({ charId }) => {
     expiresAt: Date.now() + 7200_000, characterId: charId, characterName: 'Verify Tester',
   }]))
   localStorage.removeItem('mineralen.v1')
+  Object.keys(localStorage).filter(k => k.startsWith('mineralen.items.')).forEach(k => localStorage.removeItem(k))
 }, { charId: CHAR_ID })
 
 await ctx.route('**/api/contractdeals.php*', r => r.fulfill({
@@ -62,9 +63,40 @@ await ctx.route('**/api/*.php', r => r.fulfill({
   status: 200, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
   body: '{}',
 }))
+// Corp-contract met Tritanium, gezien door het ingelogde character (plus een
+// publiek en een eigen contract die overgeslagen moeten worden).
+const CORP_CONTRACTS = [
+  { contract_id: 555, type: 'item_exchange', status: 'outstanding', availability: 'corporation', title: 'trit voor de corp',
+    issuer_id: 90000099, issuer_corporation_id: 98000001, assignee_id: 98000001, date_issued: new Date(nu - 1800e3).toISOString(),
+    date_expired: new Date(nu + 3 * 86400e3).toISOString(), for_corporation: false, price: 1.0e7, reward: 0, volume: 30000,
+    start_location_id: 60014942 },
+  { contract_id: 556, type: 'item_exchange', status: 'outstanding', availability: 'public', title: 'publiek',
+    issuer_id: 90000098, date_issued: new Date().toISOString(), date_expired: new Date(nu + 86400e3).toISOString(),
+    for_corporation: false, price: 1, reward: 0, start_location_id: 60014942 },
+  { contract_id: 557, type: 'item_exchange', status: 'outstanding', availability: 'corporation', title: 'mijn eigen',
+    issuer_id: CHAR_ID, date_issued: new Date().toISOString(), date_expired: new Date(nu + 86400e3).toISOString(),
+    for_corporation: false, price: 1, reward: 0, start_location_id: 60014942 },
+]
+await ctx.route('**market.fuzzwork.co.uk/**', r => r.fulfill({
+  status: 200, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+  body: JSON.stringify({ '34': { sell: { percentile: '3.83' }, buy: { percentile: '3.60' } } }),
+}))
 // Structure 1054611409751 lost op naar Q-02UL; de andere geeft 403 (geen rechten).
 await ctx.route('**esi.evetech.net/**', r => {
   const url = r.request().url()
+  if (url.includes(`/characters/${CHAR_ID}/contracts/555/items/`)) {
+    return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
+      body: JSON.stringify([{ record_id: 1, type_id: 34, quantity: 3_000_000, is_included: true, is_singleton: false }]) })
+  }
+  if (url.includes(`/characters/${CHAR_ID}/contracts/`)) {
+    return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(url.includes('page=1') ? CORP_CONTRACTS : []) })
+  }
+  if (url.includes('/universe/names/')) {
+    return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
+      body: JSON.stringify([{ id: 90000099, name: 'Corp Buddy', category: 'character' },
+                           { id: 60014942, name: 'KFIE-Z III - Moon 7 - Blood Raiders Assembly Plant', category: 'station' }]) })
+  }
   if (url.includes('/universe/structures/1054611409751/')) {
     return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Q-02UL - Dutch Legions Fort', solar_system_id: 30004787, type_id: 35833 }) })
@@ -94,10 +126,18 @@ console.log('  korting groen −8.6%:', await page.locator('text=−8.6%').count
 console.log('  per stuk 3,50 / 3,83:', await page.locator('text=3,50').count())
 await page.screenshot({ path: SHOT + 'mineralen-eigen.png', fullPage: true })
 
-// Filter uit → alle drie
+// Filter uit → alle drie publieke + het corp-contract
 await page.locator('button:has-text("alleen onze systemen")').click()
 await page.waitForTimeout(300)
-console.log('  rijen zonder eigen-filter (verwacht 3):', await rijen().count())
+console.log('  rijen zonder eigen-filter (verwacht 4):', await rijen().count())
+console.log('  corp-badge (verwacht 1):', await page.locator('td span:text-is("Corp")').count())
+console.log('  corp-rij KFIE-Z met Corp Buddy:', await page.locator('tr:has-text("Corp Buddy"):has-text("KFIE-Z")').count())
+console.log('  corp-rij Tritanium 3.000.000 à 3,33 (verwacht 1):', await page.locator('tr:has-text("Corp Buddy"):has-text("3,33")').count())
+await page.locator('button:has-text("corp (1)")').click()
+await page.waitForTimeout(300)
+console.log('  rijen met corp uit (verwacht 3):', await rijen().count())
+await page.locator('button:has-text("corp (1)")').click()
+await page.waitForTimeout(300)
 console.log('  duurder dan Jita +19.0%:', await page.locator('text=+19.0%').count())
 console.log('  "+1 ander item" badge:', await page.locator('text=+1 ander item').count())
 console.log('  onbekende structure toont "?":', await page.locator('td:has-text("?")').count() > 0)
@@ -105,7 +145,7 @@ console.log('  onbekende structure toont "?":', await page.locator('td:has-text(
 // Alleen goedkoper dan Jita → 2 (rij 2 valt af)
 await page.locator('button:has-text("alleen goedkoper dan Jita")').click()
 await page.waitForTimeout(300)
-console.log('  rijen alleen goedkoper (verwacht 2):', await rijen().count())
+console.log('  rijen alleen goedkoper (verwacht 3):', await rijen().count())
 
 // Uitklappen
 await rijen().first().click()
