@@ -4,13 +4,17 @@ import EveImage from '../components/EveImage'
 import MineralenMarkt from '../components/MineralenMarkt'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAuth } from '../auth/AuthContext'
-import { getContracts, getContractItems, getStructureInfo, openContractWindow, resolveNames,
-         type Contract, type ContractItem } from '../api/esi'
+import { getCompressedOres, getContracts, getContractItems, getStructureInfo, openContractWindow, resolveNames,
+         MINERAL_IDS, type CompressedOre, type Contract, type ContractItem } from '../api/esi'
 import type { TokenData } from '../auth/sso'
 
 // Mineralen kopen in de eigen ruimte: publieke item-exchange-contracten in Delve
 // waar mineralen in zitten, vergeleken met de Jita-prijs. Zo zie je of het
 // goedkoper is om lokaal te kopen dan zelf een sleep uit Jita te halen.
+//
+// Gecomprimeerd erts telt mee als mineralen-in-wording: het wordt tegen de
+// Jita-prijs van het erts zelf gewaardeerd, en daarnaast rekenen we uit wat het
+// na raffinage (instelbaar percentage) aan mineralen oplevert tegen Jita.
 //
 // De data komt van api/contractdeals.php?action=mineralen. Die kent de sov-kaart
 // (welke systemen van onze alliantie zijn) en de NPC-stations; player-structures
@@ -32,6 +36,12 @@ interface Mineraal {
   waarde: number
 }
 
+// Gecomprimeerd erts: als een mineraal, plus wat het bij 100% raffinage oplevert.
+interface Erts extends Mineraal {
+  portie: number                      // 'inhoud' geldt per zoveel stuks
+  inhoud: Array<[number, number]>     // [mineraalId, aantal]
+}
+
 interface Overig {
   typeId: number
   naam: string
@@ -48,13 +58,14 @@ interface Row {
   betaalt: number
   volume: number
   waardeJita: number
-  waardeMineralen: number
+  waardeMineralen: number    // Jita-waarde van mineralen + erts samen
   korting: number | null     // % onder Jita-sell (negatief = duurder dan Jita)
   mineralen: Mineraal[]
+  erts: Erts[]
   overig: Overig[]
   aantalOverig: number
-  puur: boolean              // alleen mineralen, verder niets
-  perStuk: number | null     // alleen bij één soort mineraal
+  puur: boolean              // alleen mineralen/erts, verder niets
+  perStuk: number | null     // alleen bij één soort mineraal of erts
   heeftInlever: boolean
   prijsOnbekend: boolean
   verlooptOp: string
@@ -74,10 +85,13 @@ type Bron = 'publiek' | 'corp' | 'alliantie' | 'persoonlijk'
 const BRON_LABEL: Record<Bron, string> = { publiek: 'Publiek', corp: 'Corp', alliantie: 'Alliantie', persoonlijk: 'Persoonlijk' }
 const BRON_KLEUR: Record<Bron, string> = { publiek: 'var(--text-dim)', corp: 'var(--blue)', alliantie: 'var(--green)', persoonlijk: 'var(--gold)' }
 
-// Row + wat deze pagina er zelf bij weet (structure-naam, eigen systeem).
+// Row + wat deze pagina er zelf bij weet (structure-naam, eigen systeem, raffinage).
 interface VRow extends Row {
   systeemNaam: string
   eigen: boolean
+  geraffineerd: Mineraal[]        // mineralen + wat het erts na raffinage oplevert, tegen Jita
+  waardeGeraffineerd: number
+  kortingGeraffineerd: number | null
 }
 
 interface Feed {
@@ -102,6 +116,9 @@ const LS_KEY = 'mineralen.v1'
 function loadSettings(): Record<string, unknown> {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') } catch { return {} }
 }
+// Raffinage-opbrengst als je erts lokaal laat raffineren. Een Tatara met T2-rig
+// in nullsec en goede skills zit rond de 85%; instelbaar op de pagina.
+const RAFFINAGE_STANDAARD = 85
 
 // ── Stijl (zelfde look als de andere pagina's) ──
 const INPUT: React.CSSProperties = {
@@ -146,7 +163,29 @@ function fmtVerloopt(iso: string) {
 const systeemUitNaam = (naam: string) => naam.split(' ')[0] ?? ''
 
 // De acht mineralen (SDE-groep 18) — zelfde lijst als de server gebruikt.
-const MINERALEN = new Set([34, 35, 36, 37, 38, 39, 40, 11399])
+const MINERALEN = new Set(Object.keys(MINERAL_IDS).map(Number))
+
+/**
+ * Wat een contract na raffinage aan mineralen oplevert, tegen Jita: de losse
+ * mineralen erin plus de raffinage-opbrengst van het erts (pct%, naar beneden
+ * afgerond per portie zoals in het spel).
+ */
+function raffineer(r: Row, pct: number, jita: Map<number, { sell: number; buy: number }>): Mineraal[] {
+  const uit = new Map<number, Mineraal>()
+  const tel = (typeId: number, aantal: number) => {
+    const p = jita.get(typeId)
+    const m = uit.get(typeId)
+    if (m) { m.aantal += aantal; m.waarde += aantal * m.jitaSell }
+    else uit.set(typeId, { typeId, naam: MINERAL_IDS[typeId] ?? `#${typeId}`, aantal,
+                           jitaSell: p?.sell ?? 0, jitaBuy: p?.buy ?? 0, waarde: aantal * (p?.sell ?? 0) })
+  }
+  for (const m of r.mineralen) tel(m.typeId, m.aantal)
+  for (const e of r.erts) {
+    const porties = Math.floor(e.aantal / e.portie)
+    for (const [mid, q] of e.inhoud) tel(mid, Math.floor(porties * q * pct / 100))
+  }
+  return [...uit.values()].sort((a, b) => b.waarde - a.waarde)
+}
 
 // Contract-inhoud verandert nooit; bewaren in localStorage zodat een herlaad
 // geen ESI-call per contract kost. Sleutels van verlopen contracten ruimen we
@@ -187,13 +226,15 @@ async function jitaPrijzen(typeIds: number[]): Promise<Map<number, { sell: numbe
 }
 
 /**
- * Corp-, alliantie- en persoonlijke contracten met mineralen, gezien door je
- * ingelogde characters. Zelfde waardering als de server: Jita-sell per item,
- * inleveritems tellen als kosten, beloning gaat van de prijs af.
+ * Corp-, alliantie- en persoonlijke contracten met mineralen of erts, gezien
+ * door je ingelogde characters. Zelfde waardering als de server: Jita-sell per
+ * item, inleveritems tellen als kosten, beloning gaat van de prijs af.
  */
 async function laadEigenContracten(tokens: TokenData[]): Promise<Row[]> {
   if (!tokens.length) return []
   const mijnIds = new Set(tokens.map(t => t.characterId))
+  const ertsLijst = await getCompressedOres()
+  const isMineraalOfErts = (typeId: number) => MINERALEN.has(typeId) || ertsLijst.has(typeId)
 
   // Elke character ziet wat zijn corp/alliantie ziet; dubbele (zelfde corp) ontdubbelen.
   const gezien = new Map<number, { c: Contract; t: TokenData }>()
@@ -218,7 +259,7 @@ async function laadEigenContracten(tokens: TokenData[]): Promise<Row[]> {
       if (!items) return
       itemsNaarCache(c.contract_id, items)
     }
-    if (items.some(i => i.is_included && MINERALEN.has(i.type_id))) met.push({ c, t, items })
+    if (items.some(i => i.is_included && isMineraalOfErts(i.type_id))) met.push({ c, t, items })
   }))
   if (!met.length) return []
 
@@ -234,6 +275,7 @@ async function laadEigenContracten(tokens: TokenData[]): Promise<Row[]> {
     let waardeJita = 0, waardeMineralen = 0, kostenGeef = 0
     let heeftInlever = false, prijsOnbekend = false
     const mineralen = new Map<number, Mineraal>()
+    const ertsen = new Map<number, Erts>()
     const overig: Overig[] = []
     for (const i of items) {
       const p = prijzen.get(i.type_id)
@@ -243,20 +285,27 @@ async function laadEigenContracten(tokens: TokenData[]): Promise<Row[]> {
       if (!isBpc && !sell) prijsOnbekend = true
       if (!i.is_included) { kostenGeef += sell * i.quantity; heeftInlever = true; continue }
       waardeJita += sell * i.quantity
-      if (MINERALEN.has(i.type_id)) {
+      const erts: CompressedOre | undefined = ertsLijst.get(i.type_id)
+      if (MINERALEN.has(i.type_id) || erts) {
         waardeMineralen += sell * i.quantity
-        const m = mineralen.get(i.type_id)
-        if (m) { m.aantal += i.quantity; m.waarde += sell * i.quantity }
-        else mineralen.set(i.type_id, { typeId: i.type_id, naam: namen.get(i.type_id) ?? `#${i.type_id}`, aantal: i.quantity,
-                                         jitaSell: sell, jitaBuy: p?.buy ?? 0, waarde: sell * i.quantity })
+        // Zelfde mineraal/erts kan in meerdere stapels zitten: samenvoegen.
+        const m = mineralen.get(i.type_id) ?? ertsen.get(i.type_id)
+        if (m) { m.aantal += i.quantity; m.waarde += sell * i.quantity; continue }
+        const basis: Mineraal = { typeId: i.type_id, naam: namen.get(i.type_id) ?? `#${i.type_id}`, aantal: i.quantity,
+                                  jitaSell: sell, jitaBuy: p?.buy ?? 0, waarde: sell * i.quantity }
+        if (erts) ertsen.set(i.type_id, { ...basis, naam: erts.name, portie: erts.portionSize, inhoud: erts.minerals })
+        else mineralen.set(i.type_id, basis)
       } else {
         overig.push({ typeId: i.type_id, naam: namen.get(i.type_id) ?? `#${i.type_id}`, aantal: i.quantity, isBpc, waarde: sell * i.quantity })
       }
     }
     const mins = [...mineralen.values()].sort((a, b) => b.waarde - a.waarde)
+    const erts = [...ertsen.values()].sort((a, b) => b.waarde - a.waarde)
     overig.sort((a, b) => b.waarde - a.waarde)
     const betaalt = c.price + kostenGeef - c.reward
     const puur = overig.length === 0
+    // Eén soort mineraal of erts en verder niets: dan is de prijs per stuk zinvol.
+    const enkel = mins.length + erts.length === 1 ? (mins[0] ?? erts[0]) : null
     const locId = c.start_location_id ?? 0
     const locatie = locId && locId <= 2_147_483_647 ? (namen.get(locId) ?? '') : ''
     const bron: Bron = c.availability === 'alliance' ? 'alliantie' : c.availability === 'corporation' ? 'corp' : 'persoonlijk'
@@ -264,8 +313,8 @@ async function laadEigenContracten(tokens: TokenData[]): Promise<Row[]> {
       id: c.contract_id, titel: c.title ?? '', prijs: c.price, beloning: c.reward, betaalt, volume: c.volume ?? 0,
       waardeJita, waardeMineralen,
       korting: waardeJita > 0 ? (waardeJita - betaalt) / waardeJita * 100 : null,
-      mineralen: mins, overig: overig.slice(0, 6), aantalOverig: overig.length, puur,
-      perStuk: puur && mins.length === 1 && mins[0].aantal > 0 ? betaalt / mins[0].aantal : null,
+      mineralen: mins, erts, overig: overig.slice(0, 6), aantalOverig: overig.length, puur,
+      perStuk: puur && enkel && enkel.aantal > 0 ? betaalt / enkel.aantal : null,
       heeftInlever, prijsOnbekend,
       verlooptOp: c.date_expired, uitgegeven: c.date_issued,
       locatieId: locId, locatie, systeem: locatie ? systeemUitNaam(locatie) : '',
@@ -295,11 +344,16 @@ export default function Mineralen() {
   const [alleenEigen, setAlleenEigen] = useState(saved.alleenEigen !== false)
   const [alleenPuur, setAlleenPuur] = useState(saved.alleenPuur === true)
   const [alleenGoedkoper, setAlleenGoedkoper] = useState(saved.alleenGoedkoper === true)
+  const [toonMineralen, setToonMineralen] = useState(saved.toonMineralen !== false)
+  const [toonErts, setToonErts] = useState(saved.toonErts !== false)
+  const [raffinage, setRaffinage] = useState(typeof saved.raffinage === 'number' ? saved.raffinage : RAFFINAGE_STANDAARD)
   const [bronnen, setBronnen] = useState<Record<Bron, boolean>>({
     publiek: true, corp: true, alliantie: true, persoonlijk: true,
     ...((saved.bronnen as Partial<Record<Bron, boolean>>) ?? {}),
   })
   const [auto, setAuto] = useState(false)
+  // Jita-prijs van de acht mineralen, om de raffinage-opbrengst van erts te waarderen.
+  const [jitaMineralen, setJitaMineralen] = useState<Map<number, { sell: number; buy: number }>>(new Map())
   // Corp/alliantie-contracten via je eigen characters (los van de publieke feed).
   const [eigenRows, setEigenRows] = useState<Row[]>([])
   const [ladenEigen, setLadenEigen] = useState(false)
@@ -309,8 +363,14 @@ export default function Mineralen() {
   usePageLoading(laden || ladenEigen)
 
   useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify({ sort, alleenEigen, alleenPuur, alleenGoedkoper, bronnen }))
-  }, [sort, alleenEigen, alleenPuur, alleenGoedkoper, bronnen])
+    localStorage.setItem(LS_KEY, JSON.stringify({ sort, alleenEigen, alleenPuur, alleenGoedkoper, toonMineralen, toonErts, raffinage, bronnen }))
+  }, [sort, alleenEigen, alleenPuur, alleenGoedkoper, toonMineralen, toonErts, raffinage, bronnen])
+
+  useEffect(() => {
+    let afgebroken = false
+    void jitaPrijzen([...MINERALEN]).then(m => { if (!afgebroken) setJitaMineralen(m) })
+    return () => { afgebroken = true }
+  }, [])
 
   const tokenSleutel = tokens.map(t => `${t.characterId}:${t.expiresAt}`).join(',')
   useEffect(() => {
@@ -388,13 +448,19 @@ export default function Mineralen() {
       const s = structuren[r.locatieId]
       const systeemNaam = r.systeem || (s ? systeemUitNaam(s.naam) : '')
       const isEigen = (s?.systeemId ? !!eigen[String(s.systeemId)] : false) || eigenNamen.has(systeemNaam)
-      return { ...r, systeemNaam, eigen: isEigen }
+      // Oudere feed-rijen (vóór erts) hebben geen 'erts'-veld.
+      const erts = r.erts ?? []
+      const geraffineerd = erts.length ? raffineer({ ...r, erts }, raffinage, jitaMineralen) : []
+      const waardeGeraffineerd = geraffineerd.reduce((som, m) => som + m.waarde, 0)
+      return { ...r, erts, systeemNaam, eigen: isEigen, geraffineerd, waardeGeraffineerd,
+               kortingGeraffineerd: waardeGeraffineerd > 0 ? (waardeGeraffineerd - r.betaalt) / waardeGeraffineerd * 100 : null }
     })
-  }, [feed, eigenRows, structuren, eigen, eigenNamen])
+  }, [feed, eigenRows, structuren, eigen, eigenNamen, raffinage, jitaMineralen])
 
   const rows = useMemo<VRow[]>(() => {
     const g = alle.filter(r =>
       bronnen[r.bron] &&
+      ((toonMineralen && r.mineralen.length > 0) || (toonErts && r.erts.length > 0)) &&
       (!alleenEigen || r.eigen) &&
       (!alleenPuur || r.puur) &&
       (!alleenGoedkoper || (r.korting ?? -Infinity) > 0))
@@ -407,11 +473,12 @@ export default function Mineralen() {
       }
     })
     return g
-  }, [alle, bronnen, alleenEigen, alleenPuur, alleenGoedkoper, sort])
+  }, [alle, bronnen, toonMineralen, toonErts, alleenEigen, alleenPuur, alleenGoedkoper, sort])
 
   const stats = useMemo(() => ({
     totaal:      alle.length,
     publiek:     alle.filter(r => r.bron === 'publiek').length,
+    metErts:     alle.filter(r => r.erts.length > 0).length,
     inEigen:     alle.filter(r => r.eigen).length,
     onbekend:    alle.filter(r => !r.systeemNaam).length,
     beste:       rows.reduce((m, r) => Math.max(m, r.korting ?? -Infinity), -Infinity),
@@ -423,15 +490,29 @@ export default function Mineralen() {
   const eigenLijst = Object.values(eigen)
 
   return (
-    <Layout header={<PageHeader title="⛏️ Mineralen" sub="mineralen in Delve — op de markt en in contracten (publiek én corp/alliantie) — vergeleken met Jita: kopen zonder sleep" />}>
+    <Layout header={<PageHeader title="⛏️ Mineralen" sub="mineralen en compressed erts in Delve — op de markt en in contracten (publiek én corp/alliantie) — vergeleken met Jita: kopen zonder sleep" />}>
       {/* Balk: filters + sorteren + scannen */}
       <div style={{ ...PANEL, padding: '0.75rem 1rem', marginBottom: '0.75rem',
                     display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
         <div>
+          <div style={LABEL}>INHOUD</div>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <Toggle aan={toonMineralen} zet={setToonMineralen} label={`mineralen (${alle.filter(r => r.mineralen.length > 0).length})`} />
+            <Toggle aan={toonErts} zet={setToonErts} label={`compressed erts (${stats.metErts})`} />
+            <label title="Raffinage-opbrengst als je het erts lokaal laat raffineren (structure + rig + skills)"
+                   style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+              raffinage
+              <input type="number" min={30} max={100} step={0.5} value={raffinage}
+                     onChange={e => { const v = Number(e.target.value); if (isFinite(v)) setRaffinage(Math.min(100, Math.max(30, v))) }}
+                     style={{ ...INPUT, width: 58, textAlign: 'right' }} />%
+            </label>
+          </div>
+        </div>
+        <div>
           <div style={LABEL}>TONEN</div>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
             <Toggle aan={alleenEigen} zet={setAlleenEigen} label={`alleen onze systemen${eigenLijst.length ? ` (${eigenLijst.length})` : ''}`} />
-            <Toggle aan={alleenPuur} zet={setAlleenPuur} label="alleen puur mineralen" />
+            <Toggle aan={alleenPuur} zet={setAlleenPuur} label="alleen puur mineralen/erts" />
             <Toggle aan={alleenGoedkoper} zet={setAlleenGoedkoper} label="alleen goedkoper dan Jita" />
           </div>
         </div>
@@ -465,10 +546,17 @@ export default function Mineralen() {
       {hulpOpen && (
         <div style={{ ...PANEL, padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.78rem', lineHeight: 1.55, color: 'var(--text-dim)' }}>
           <p style={{ margin: '0 0 0.4rem' }}>
-            <b style={{ color: 'var(--text)' }}>Wat je ziet.</b> Alle publieke item-exchange-contracten in Delve waar mineralen in zitten
-            (Tritanium t/m Morphite). De <b>Jita-waarde</b> is wat dezelfde inhoud in Jita 4-4 kost (sell-orders).
+            <b style={{ color: 'var(--text)' }}>Wat je ziet.</b> Alle publieke item-exchange-contracten in Delve waar mineralen
+            (Tritanium t/m Morphite) of compressed erts in zitten. De <b>Jita-waarde</b> is wat dezelfde inhoud in Jita 4-4 kost (sell-orders).
             <b> Korting</b> is hoeveel procent je daaronder betaalt — rood betekent duurder dan Jita, maar dat kan nog
             steeds uit als je er een sleep mee uitspaart.
+          </p>
+          <p style={{ margin: '0 0 0.4rem' }}>
+            <b style={{ color: 'var(--text)' }}>Compressed erts</b> telt mee als mineralen-in-wording: alle "Compressed …"-erts
+            dat na raffinage alleen mineralen oplevert (dus geen ijs of maanerts). Het wordt tegen de Jita-prijs van het erts
+            zelf gewaardeerd; daarnaast staat bij <b>na raffinage</b> wat het bij het ingestelde raffinagepercentage aan
+            mineralen oplevert (Jita-waarde) en hoeveel je daar dan onder betaalt. Een Tatara met T2-rig in nullsec en
+            goede skills zit rond de 85%.
           </p>
           <p style={{ margin: '0 0 0.4rem' }}>
             <b style={{ color: 'var(--text)' }}>Bron.</b> "Publiek" komt uit de openbare contractmarkt (iedereen ziet die).
@@ -486,7 +574,8 @@ export default function Mineralen() {
             <b style={{ color: 'var(--text)' }}>Markt.</b> Het blok "Markt in eigen ruimte" kijkt naar sell-orders: in de
             NPC-stations van Delve (publiek) en in onze structures met een Market Hub (Fortizar/Keepstar/Azbel/Sotiyo/
             Tatara in onze sov-systemen, opgezocht en uitgelezen met je token — de lijst wordt een dag bewaard, "markt
-            verversen" zoekt opnieuw). Groen = lokaal goedkoper dan of gelijk aan Jita.
+            verversen" zoekt opnieuw). De acht mineralen staan er altijd; compressed erts alleen als er lokaal aanbod is,
+            met erbij wat één stuk na raffinage aan mineralen waard is. Groen = lokaal goedkoper dan of gelijk aan Jita.
           </p>
           <p style={{ margin: 0 }}>
             <b style={{ color: 'var(--text)' }}>Dekking.</b> De inhoud van een contract kost één ESI-call, dus per verzoek
@@ -498,11 +587,11 @@ export default function Mineralen() {
 
       {/* Tegels */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.6rem', marginBottom: '0.75rem' }}>
-        <Tegel label="Mineraalcontracten" waarde={String(stats.totaal)} sub={`${stats.publiek} publiek · ${stats.totaal - stats.publiek} corp/alliantie · ${stats.inEigen} in onze systemen`} />
+        <Tegel label="Mineraalcontracten" waarde={String(stats.totaal)} sub={`${stats.publiek} publiek · ${stats.totaal - stats.publiek} corp/alliantie · ${stats.metErts} met erts · ${stats.inEigen} in onze systemen`} />
         <Tegel label="Getoond" waarde={String(rows.length)} sub={stats.onbekend ? `${stats.onbekend} op onbekende locatie` : 'alles herkend'} />
         <Tegel label="Beste korting" waarde={isFinite(stats.beste) ? `${stats.beste.toFixed(1)}%` : '—'}
                kleur={isFinite(stats.beste) ? (stats.beste > 0 ? 'var(--green)' : 'var(--red)') : undefined} sub="t.o.v. Jita sell" />
-        <Tegel label="Mineraalwaarde" waarde={fmtISK(stats.mineraalWaarde)} sub="Jita-waarde van de getoonde rijen" />
+        <Tegel label="Mineraalwaarde" waarde={fmtISK(stats.mineraalWaarde)} sub="Jita-waarde van mineralen + erts in de getoonde rijen" />
         <Tegel label="Gescand" waarde={t ? `${t.gescand} / ${t.kandidaten}` : '—'}
                sub={t ? (t.nog_te_gaan ? `${t.nog_te_gaan} nog te gaan` : 'alles gescand') : 'contracten in Delve'}
                kleur={t && t.nog_te_gaan ? 'var(--gold)' : undefined} />
@@ -511,7 +600,7 @@ export default function Mineralen() {
       {(fout || foutEigen) && <div style={{ color: 'var(--red)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>{[fout, foutEigen].filter(Boolean).join(' ')}</div>}
 
       {/* Markt: pas als de sov-lijst binnen is, anders zoeken we in het luchtledige */}
-      {feed && <MineralenMarkt tokens={tokens} systemen={feed.eigenSystemen ?? {}} />}
+      {feed && <MineralenMarkt tokens={tokens} systemen={feed.eigenSystemen ?? {}} raffinage={raffinage} />}
 
       <div style={{ ...LABEL, marginBottom: '0.4rem' }}>CONTRACTEN</div>
 
@@ -521,7 +610,7 @@ export default function Mineralen() {
           <thead>
             <tr style={{ background: 'var(--surface2)' }}>
               <th style={{ ...TH, textAlign: 'left' }}>Systeem</th>
-              <th style={{ ...TH, textAlign: 'left' }}>Mineralen</th>
+              <th style={{ ...TH, textAlign: 'left' }}>Mineralen / erts</th>
               <th style={TH}>Jita-waarde</th>
               <th style={TH}>Prijs</th>
               <th style={TH}>Korting</th>
@@ -537,15 +626,17 @@ export default function Mineralen() {
               <tr><td colSpan={10} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1.5rem' }}>
                 {(laden && !feed) || ladenEigen ? 'Laden…'
                   : alle.length === 0
-                    ? (t && t.nog_te_gaan ? 'Nog geen mineraalcontracten gevonden — zet "automatisch scannen" aan.' : 'Geen mineraalcontracten in Delve op dit moment.')
-                    : 'Niets over na filteren — zet "alleen onze systemen" of "alleen puur mineralen" uit.'}
+                    ? (t && t.nog_te_gaan ? 'Nog geen mineraal- of ertscontracten gevonden — zet "automatisch scannen" aan.' : 'Geen mineraal- of ertscontracten in Delve op dit moment.')
+                    : 'Niets over na filteren — zet "alleen onze systemen" of "alleen puur mineralen/erts" uit, of zet mineralen/erts weer aan.'}
               </td></tr>
             )}
             {rows.map(r => {
               const isOpen = open === r.id
               const kortingKleur = r.korting === null ? 'var(--text-dim)' : r.korting > 0 ? 'var(--green)' : 'var(--red)'
+              const raffKleur = r.kortingGeraffineerd === null ? 'var(--text-dim)' : r.kortingGeraffineerd > 0 ? 'var(--green)' : 'var(--red)'
               const structuur = structuren[r.locatieId]
               const locatieNaam = r.locatie || structuur?.naam || (r.locatieId > 2_147_483_647 ? `structure ${r.locatieId}` : `station ${r.locatieId}`)
+              const enkel = r.mineralen.length + r.erts.length === 1 ? (r.mineralen[0] ?? r.erts[0]) : null
               return (
                 <Fragment key={r.id}>
                   <tr onClick={() => setOpen(isOpen ? null : r.id)}
@@ -569,6 +660,16 @@ export default function Mineralen() {
                             {m.naam} <b>{fmtAantal(m.aantal)}</b>
                           </span>
                         ))}
+                        {r.erts.map(e => (
+                          <span key={e.typeId}
+                                title={`${fmtAantal(e.aantal)} × ${e.naam} · Jita ${fmtStuk(e.jitaSell)} · levert bij ${raffinage}%: ${
+                                  e.inhoud.map(([mid, q]) => `${fmtAantal(Math.floor(Math.floor(e.aantal / e.portie) * q * raffinage / 100))} ${MINERAL_IDS[mid] ?? mid}`).join(', ')}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem',
+                                         background: 'var(--surface2)', border: '1px dashed var(--gold)', borderRadius: 3, padding: '0.1rem 0.4rem' }}>
+                            <EveImage category="types" id={e.typeId} variation="icon" size={32} px={14} />
+                            {e.naam.replace(/^Batch Compressed /, 'Batch C. ').replace(/^Compressed /, 'C. ')} <b>{fmtAantal(e.aantal)}</b>
+                          </span>
+                        ))}
                         {!r.puur && (
                           <span style={{ fontSize: '0.66rem', color: 'var(--gold)', alignSelf: 'center' }}>
                             +{r.aantalOverig} ander{r.aantalOverig === 1 ? '' : 'e'} item{r.aantalOverig === 1 ? '' : 's'}
@@ -582,11 +683,17 @@ export default function Mineralen() {
                     <td style={{ ...TD, fontWeight: 700 }}>{fmtISK(r.betaalt)}</td>
                     <td style={{ ...TD, fontWeight: 700, color: kortingKleur }}>
                       {r.korting === null ? '—' : `${r.korting > 0 ? '−' : '+'}${Math.abs(r.korting).toFixed(1)}%`}
+                      {r.erts.length > 0 && (
+                        <div style={{ fontSize: '0.64rem', fontWeight: 400, color: raffKleur }}
+                             title={`Jita-waarde van de mineralen na raffinage (${raffinage}%): ${fmtISK(r.waardeGeraffineerd)}`}>
+                          na raff. {r.kortingGeraffineerd === null ? '—' : `${r.kortingGeraffineerd > 0 ? '−' : '+'}${Math.abs(r.kortingGeraffineerd).toFixed(1)}%`}
+                        </div>
+                      )}
                     </td>
                     <td style={TD}>
-                      {r.perStuk !== null && r.mineralen[0]
-                        ? <span title={`Jita sell ${fmtStuk(r.mineralen[0].jitaSell)} · buy ${fmtStuk(r.mineralen[0].jitaBuy)}`}>
-                            {fmtStuk(r.perStuk)} <span style={{ color: 'var(--text-dim)', fontSize: '0.68rem' }}>/ {fmtStuk(r.mineralen[0].jitaSell)}</span>
+                      {r.perStuk !== null && enkel
+                        ? <span title={`Jita sell ${fmtStuk(enkel.jitaSell)} · buy ${fmtStuk(enkel.jitaBuy)}`}>
+                            {fmtStuk(r.perStuk)} <span style={{ color: 'var(--text-dim)', fontSize: '0.68rem' }}>/ {fmtStuk(enkel.jitaSell)}</span>
                           </span>
                         : <span style={{ color: 'var(--text-dim)' }}>—</span>}
                     </td>
@@ -615,7 +722,7 @@ export default function Mineralen() {
                             <div style={LABEL}>INHOUD</div>
                             <table style={{ borderCollapse: 'collapse' }}>
                               <tbody>
-                                {r.mineralen.map(m => (
+                                {[...r.mineralen, ...r.erts].map(m => (
                                   <tr key={`m${m.typeId}`}>
                                     <td style={{ padding: '0.15rem 0.6rem 0.15rem 0' }}>{m.naam}</td>
                                     <td style={{ padding: '0.15rem 0.6rem', textAlign: 'right' }}>{fmtAantal(m.aantal)}</td>
@@ -637,6 +744,33 @@ export default function Mineralen() {
                               </tbody>
                             </table>
                           </div>
+                          {r.erts.length > 0 && (
+                            <div>
+                              <div style={LABEL}>NA RAFFINAGE ({raffinage}%)</div>
+                              <table style={{ borderCollapse: 'collapse' }}>
+                                <tbody>
+                                  {r.geraffineerd.map(m => (
+                                    <tr key={`g${m.typeId}`}>
+                                      <td style={{ padding: '0.15rem 0.6rem 0.15rem 0' }}>{m.naam}</td>
+                                      <td style={{ padding: '0.15rem 0.6rem', textAlign: 'right' }}>{fmtAantal(m.aantal)}</td>
+                                      <td style={{ padding: '0.15rem 0.6rem', textAlign: 'right', color: 'var(--text-dim)' }}>à {fmtStuk(m.jitaSell)}</td>
+                                      <td style={{ padding: '0.15rem 0 0.15rem 0.6rem', textAlign: 'right' }}>{fmtISK(m.waarde)}</td>
+                                    </tr>
+                                  ))}
+                                  <tr style={{ borderTop: '1px solid var(--border)', fontWeight: 700 }}>
+                                    <td colSpan={3} style={{ padding: '0.2rem 0.6rem 0.15rem 0' }}>Jita-waarde mineralen</td>
+                                    <td style={{ padding: '0.2rem 0 0.15rem 0.6rem', textAlign: 'right' }}>{fmtISK(r.waardeGeraffineerd)}</td>
+                                  </tr>
+                                  <tr style={{ color: raffKleur }}>
+                                    <td colSpan={3} style={{ padding: '0.15rem 0.6rem 0.15rem 0' }}>prijs t.o.v. die waarde</td>
+                                    <td style={{ padding: '0.15rem 0 0.15rem 0.6rem', textAlign: 'right', fontWeight: 700 }}>
+                                      {r.kortingGeraffineerd === null ? '—' : `${r.kortingGeraffineerd > 0 ? '−' : '+'}${Math.abs(r.kortingGeraffineerd).toFixed(1)}%`}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                           <div style={{ color: 'var(--text-dim)', lineHeight: 1.7 }}>
                             <div style={LABEL}>CONTRACT</div>
                             {r.titel && <div>“{r.titel}”</div>}

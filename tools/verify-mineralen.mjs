@@ -41,6 +41,14 @@ const FEED = {
       overig: [], aantalOverig: 0, heeftInlever: false, prijsOnbekend: false,
       uitgegeven: new Date(nu - 60e3).toISOString(), verlooptOp: new Date(nu + 86400e3).toISOString(),
       locatieId: 1052738603765, locatie: '', systeem: '', issuerId: 90000044, issuer: 'Onbekend', forCorp: false },
+    // compressed erts in dezelfde Q-02UL-structure: 1 mln Compressed Veldspar (levert 4 Trit/stuk bij 100%)
+    { id: 4, titel: 'veldspar', prijs: 1.1e7, beloning: 0, betaalt: 1.1e7, volume: 1000,
+      waardeJita: 1.2e7, waardeMineralen: 1.2e7, korting: 8.3, puur: true, perStuk: 11,
+      mineralen: [],
+      erts: [{ typeId: 62516, naam: 'Compressed Veldspar', aantal: 1_000_000, jitaSell: 12, jitaBuy: 11.5, waarde: 1.2e7, portie: 100, inhoud: [[34, 400]] }],
+      overig: [], aantalOverig: 0, heeftInlever: false, prijsOnbekend: false,
+      uitgegeven: new Date(nu - 600e3).toISOString(), verlooptOp: new Date(nu + 4 * 86400e3).toISOString(),
+      locatieId: 1054611409751, locatie: '', systeem: '', issuerId: 90000042, issuer: 'Miner Mike', forCorp: false },
   ],
 }
 
@@ -74,6 +82,10 @@ const CORP_CONTRACTS = [
   { contract_id: 556, type: 'item_exchange', status: 'outstanding', availability: 'public', title: 'publiek',
     issuer_id: 90000098, date_issued: new Date().toISOString(), date_expired: new Date(nu + 86400e3).toISOString(),
     for_corporation: false, price: 1, reward: 0, start_location_id: 60014942 },
+  { contract_id: 558, type: 'item_exchange', status: 'outstanding', availability: 'alliance', title: 'scordite',
+    issuer_id: 90000099, issuer_corporation_id: 98000001, date_issued: new Date(nu - 900e3).toISOString(),
+    date_expired: new Date(nu + 2 * 86400e3).toISOString(), for_corporation: false, price: 4.0e6, reward: 0, volume: 750,
+    start_location_id: 60014942 },
   { contract_id: 557, type: 'item_exchange', status: 'outstanding', availability: 'corporation', title: 'mijn eigen',
     issuer_id: CHAR_ID, date_issued: new Date().toISOString(), date_expired: new Date(nu + 86400e3).toISOString(),
     for_corporation: false, price: 1, reward: 0, start_location_id: 60014942 },
@@ -81,7 +93,9 @@ const CORP_CONTRACTS = [
 await ctx.route('**market.fuzzwork.co.uk/**', r => r.fulfill({
   status: 200, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
   body: JSON.stringify({ '34': { sell: { percentile: '3.83' }, buy: { percentile: '3.60' } },
-                         '35': { sell: { percentile: '17.95' }, buy: { percentile: '17.00' } } }),
+                         '35': { sell: { percentile: '17.95' }, buy: { percentile: '17.00' } },
+                         '62516': { sell: { percentile: '12.00' }, buy: { percentile: '11.50' } },
+                         '62520': { sell: { percentile: '9.00' }, buy: { percentile: '8.50' } } }),
 }))
 // Structure 1054611409751 lost op naar Q-02UL; de andere geeft 403 (geen rechten).
 await ctx.route('**esi.evetech.net/**', r => {
@@ -90,8 +104,10 @@ await ctx.route('**esi.evetech.net/**', r => {
   // Markt: NPC-station Tritanium 3,70 (publieke regio-orders); structure in Q-02UL
   // met Tritanium 3,40 en Pyerite 20,00 (+ een koop-order die genegeerd moet worden).
   if (url.includes('/markets/10000060/orders/')) {
-    return json(url.includes('type_id=34') && url.includes('page=1')
-      ? [{ order_id: 1, type_id: 34, is_buy_order: false, price: 3.70, volume_remain: 250000, location_id: 60014942 }]
+    return json(url.includes('page=1')
+      ? [{ order_id: 1, type_id: 34, is_buy_order: false, price: 3.70, volume_remain: 250000, location_id: 60014942 },
+         { order_id: 5, type_id: 62516, is_buy_order: false, price: 11.50, volume_remain: 40000, location_id: 60014942 },
+         { order_id: 6, type_id: 28433, is_buy_order: false, price: 999, volume_remain: 1, location_id: 60014942 }]   // ijs: negeren
       : [])
   }
   if (url.includes(`/characters/${CHAR_ID}/search/`)) return json({ structure: url.includes('Q-02UL') ? [1054611409751] : [] })
@@ -100,11 +116,15 @@ await ctx.route('**esi.evetech.net/**', r => {
       { order_id: 2, type_id: 34, is_buy_order: false, price: 3.40, volume_remain: 5_000_000, location_id: 1054611409751 },
       { order_id: 3, type_id: 35, is_buy_order: false, price: 20.00, volume_remain: 800_000, location_id: 1054611409751 },
       { order_id: 4, type_id: 34, is_buy_order: true,  price: 1.00, volume_remain: 1, location_id: 1054611409751 },
+      { order_id: 7, type_id: 62516, is_buy_order: false, price: 13.00, volume_remain: 200_000, location_id: 1054611409751 },
     ] : [])
   }
   if (url.includes(`/characters/${CHAR_ID}/contracts/555/items/`)) {
     return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
       body: JSON.stringify([{ record_id: 1, type_id: 34, quantity: 3_000_000, is_included: true, is_singleton: false }]) })
+  }
+  if (url.includes(`/characters/${CHAR_ID}/contracts/558/items/`)) {
+    return json([{ record_id: 1, type_id: 62520, quantity: 500_000, is_included: true, is_singleton: false }])
   }
   if (url.includes(`/characters/${CHAR_ID}/contracts/`)) {
     return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
@@ -138,8 +158,28 @@ console.log('  sidebar-link /mineralen:', link)
 // Standaard: alleen onze systemen → alleen rij 1 (Q-02UL, via structure-lookup)
 // Contracten-tabel (kop 'Systeem'), niet de markt-tabel (kop 'Mineraal').
 const contractTabel = page.locator('table').filter({ has: page.locator('th:text-is("Systeem")') })
-const rijen = () => contractTabel.locator('tbody > tr').filter({ hasText: /Tritanium|Mexallon|Megacyte/ })
-console.log('  rijen standaard (verwacht 1, Q-02UL):', await rijen().count())
+const rijen = () => contractTabel.locator('tbody > tr').filter({ hasText: /Tritanium|Mexallon|Megacyte|Veldspar|Scordite/ })
+console.log('  rijen standaard (verwacht 2, Q-02UL: Tritanium + Compressed Veldspar):', await rijen().count())
+const ertsRij = rijen().filter({ hasText: 'Veldspar' }).first()
+console.log('  ertsrij: korting −8.3% + na raff. −15.5% (bij 85%):', await ertsRij.locator('text=−8.3%').count(), await ertsRij.locator('text=na raff. −15.5%').count())
+console.log('  ertsrij per stuk 11,00 / 12,00:', await ertsRij.locator('text=11,00').count())
+await ertsRij.click()
+await page.waitForTimeout(300)
+console.log('  uitklap NA RAFFINAGE (85%) met 3.400.000 Tritanium:', await page.locator('text=NA RAFFINAGE (85%)').count(), await page.locator('text=3.400.000').count())
+await contractTabel.screenshot({ path: SHOT + 'mineralen-erts.png' })
+await ertsRij.click()
+// Raffinage naar 50% → 2.000.000 Tritanium = 7,66 mln → prijs 11 mln zit er 43,6% boven
+await page.locator('input[type="number"]').fill('50')
+await page.waitForTimeout(300)
+console.log('  bij 50%: na raff. +43.6%:', await ertsRij.locator('text=na raff. +43.6%').count())
+await page.locator('input[type="number"]').fill('85')
+await page.waitForTimeout(300)
+// Erts-filter uit → alleen de Tritanium-rij
+await page.locator('button:has-text("compressed erts (")').click()
+await page.waitForTimeout(300)
+console.log('  zonder erts (verwacht 1):', await rijen().count())
+await page.locator('button:has-text("compressed erts (")').click()
+await page.waitForTimeout(300)
 const q02 = await contractTabel.locator('td:has-text("Q-02UL")').first().textContent().catch(() => '')
 console.log('  eerste rij systeem:', q02?.trim().slice(0, 40))
 console.log('  korting groen −8.6%:', await page.locator('text=−8.6%').count())
@@ -148,7 +188,7 @@ await page.screenshot({ path: SHOT + 'mineralen-eigen.png', fullPage: true })
 
 console.log('--- Markt ---')
 await page.waitForSelector('text=structures met markt:', { timeout: 20000 })
-const markt = page.locator('table').filter({ has: page.locator('th:text-is("Mineraal")') })
+const markt = page.locator('table').filter({ has: page.locator('th:text-is("Mineraal / erts")') })
 const tritRij = markt.locator('tbody tr').filter({ hasText: 'Tritanium' }).first()
 console.log('  Tritanium: lokaal 3,40 −11.2% Q-02UL:', await tritRij.locator('text=3,40').count(), await tritRij.locator('text=−11.2%').count(), await tritRij.locator('text=Q-02UL').count())
 console.log('  Tritanium orders ≤ Jita (verwacht "2 · 5.250.000 st."):', (await tritRij.locator('td').last().textContent())?.trim())
@@ -156,7 +196,11 @@ const pyRij = markt.locator('tbody tr').filter({ hasText: 'Pyerite' }).first()
 console.log('  Pyerite: lokaal 20,00 +11.4%:', await pyRij.locator('text=20,00').count(), await pyRij.locator('text=+11.4%').count())
 const mexRij = markt.locator('tbody tr').filter({ hasText: 'Mexallon' }).first()
 console.log('  Mexallon: geen aanbod:', await mexRij.locator('text=geen aanbod').count())
-console.log('  kop: 1 van 8 goedkoper · 1 structure:', await page.locator('text=/1 van 8 mineralen.*1 structure met markt/').count())
+console.log('  kop: 1 van 8 mineralen en 1 van 1 erts goedkoper · 1 structure:', await page.locator('text=/1 van 8 mineralen en 1 van 1 soorten compressed erts.*1 structure met markt/').count())
+const veldRij = markt.locator('tbody tr').filter({ hasText: 'Compressed Veldspar' }).first()
+console.log('  Compressed Veldspar: lokaal 11,50 −4.2% · na raffinage 13,02 −11.7%:', await veldRij.locator('text=11,50').count(), await veldRij.locator('text=−4.2%').count(), await veldRij.locator('text=13,02').count(), await veldRij.locator('text=−11.7%').count())
+console.log('  ijs staat er niet tussen:', await markt.locator('text=Blue Ice').count() === 0)
+console.log('  sectiekop COMPRESSED ERTS (1):', await markt.locator('text=COMPRESSED ERTS MET LOKAAL AANBOD (1)').count())
 await tritRij.click()
 await page.waitForTimeout(200)
 console.log('  uitklap toont NPC-order 3,70:', await markt.locator('text=3,70').count())
@@ -165,13 +209,15 @@ await tritRij.click()
 // Filter uit → alle drie publieke + het corp-contract
 await page.locator('button:has-text("alleen onze systemen")').click()
 await page.waitForTimeout(300)
-console.log('  rijen zonder eigen-filter (verwacht 4):', await rijen().count())
-console.log('  corp-badge (verwacht 1):', await page.locator('td span:text-is("Corp")').count())
+console.log('  rijen zonder eigen-filter (verwacht 6):', await rijen().count())
+console.log('  corp-badge (verwacht 1) + alliantie-badge (verwacht 1):', await page.locator('td span:text-is("Corp")').count(), await page.locator('td span:text-is("Alliantie")').count())
+const scorRij = rijen().filter({ hasText: 'Scordite' }).first()
+console.log('  alliantie-rij C. Scordite 500.000, korting −11.1%:', await scorRij.locator('text=C. Scordite').count(), await scorRij.locator('text=−11.1%').count())
 console.log('  corp-rij KFIE-Z met Corp Buddy:', await page.locator('tr:has-text("Corp Buddy"):has-text("KFIE-Z")').count())
 console.log('  corp-rij Tritanium 3.000.000 à 3,33 (verwacht 1):', await page.locator('tr:has-text("Corp Buddy"):has-text("3,33")').count())
 await page.locator('button:has-text("corp (1)")').click()
 await page.waitForTimeout(300)
-console.log('  rijen met corp uit (verwacht 3):', await rijen().count())
+console.log('  rijen met corp uit (verwacht 5):', await rijen().count())
 await page.locator('button:has-text("corp (1)")').click()
 await page.waitForTimeout(300)
 console.log('  duurder dan Jita +19.0%:', await page.locator('text=+19.0%').count())
@@ -181,7 +227,7 @@ console.log('  onbekende structure toont "?":', await page.locator('td:has-text(
 // Alleen goedkoper dan Jita → 2 (rij 2 valt af)
 await page.locator('button:has-text("alleen goedkoper dan Jita")').click()
 await page.waitForTimeout(300)
-console.log('  rijen alleen goedkoper (verwacht 3):', await rijen().count())
+console.log('  rijen alleen goedkoper (verwacht 5):', await rijen().count())
 
 // Uitklappen
 await rijen().first().click()

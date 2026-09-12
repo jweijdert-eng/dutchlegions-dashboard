@@ -1077,6 +1077,51 @@ export async function getReprocessBundle(): Promise<Record<string, Array<[number
   catch { return {} }
 }
 
+// De acht mineralen (SDE-groep 18).
+export const MINERAL_IDS: Record<number, string> = {
+  34: 'Tritanium', 35: 'Pyerite', 36: 'Mexallon', 37: 'Isogen',
+  38: 'Nocxium', 39: 'Zydrine', 40: 'Megacyte', 11399: 'Morphite',
+}
+const CATEGORY_ASTEROID = 25
+
+export interface CompressedOre {
+  typeId: number
+  name: string
+  portionSize: number                 // 'minerals' geldt per zoveel stuks
+  minerals: Array<[number, number]>   // raffinage-opbrengst bij 100%: [mineraalId, aantal]
+}
+
+// Gecomprimeerd erts dat je tot mineralen raffineert — dezelfde selectie als
+// cdErts() in api/contractdeals.php: categorie Asteroid, naam "Compressed …" of
+// "Batch Compressed …", en de raffinage levert UITSLUITEND de acht mineralen op
+// (dus geen ijs, maanerts of gemengd X-Grade-erts).
+let _compressedOres: Promise<Map<number, CompressedOre>> | null = null
+export function getCompressedOres(): Promise<Map<number, CompressedOre>> {
+  if (!_compressedOres) {
+    _compressedOres = (async () => {
+      const out = new Map<number, CompressedOre>()
+      try {
+        const [names, types, groups, rep] = await Promise.all([
+          loadBundle<Record<string, string>>('type-names.json'),
+          loadBundle<Record<string, TypeInfoTuple>>('type-info.json'),
+          loadBundle<Record<string, [string, number]>>('groups.json'),
+          loadBundle<Record<string, Array<[number, number]>>>('reprocess.json'),
+        ])
+        for (const [id, name] of Object.entries(names)) {
+          if (!/^(Batch )?Compressed /.test(name)) continue
+          const t = types[id]
+          if (!t || groups[String(t[0])]?.[1] !== CATEGORY_ASTEROID) continue
+          const minerals = rep[id]
+          if (!minerals?.length || !minerals.every(([mid]) => MINERAL_IDS[mid])) continue
+          out.set(Number(id), { typeId: Number(id), name, portionSize: t[2] || 1, minerals })
+        }
+      } catch { /* zonder bundels: geen erts */ }
+      return out
+    })()
+  }
+  return _compressedOres
+}
+
 // SDE-bundels voor de bouwlocatie-kiezer.
 export async function getSystems(): Promise<Record<string, [string, number, number]>> {
   return _systemsBundle()
@@ -1347,9 +1392,10 @@ export async function getRegionOrders(regionId: number, typeId: number): Promise
 export async function getAllRegionOrders(
   regionId: number,
   onProgress?: (done: number, total: number) => void,
+  orderType: 'all' | 'sell' | 'buy' = 'all',
 ): Promise<PublicMarketOrder[]> {
   const url = (p: number) =>
-    `${BASE}/markets/${regionId}/orders/?datasource=tranquility&order_type=all&page=${p}`
+    `${BASE}/markets/${regionId}/orders/?datasource=tranquility&order_type=${orderType}&page=${p}`
   const first = await esiFetch(url(1))
   if (!first.ok) throw new Error(`ESI region-orders: ${first.status}`)
   const pages = parseInt(first.headers.get('x-pages') ?? '1') || 1

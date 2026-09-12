@@ -1,22 +1,22 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import EveImage from './EveImage'
 import type { TokenData } from '../auth/sso'
-import { getRegionOrders, getStructureInfo, getStructureOrders, resolveNames, searchStructure,
-         type PublicMarketOrder } from '../api/esi'
+import { getAllRegionOrders, getCompressedOres, getStructureInfo, getStructureOrders, resolveNames, searchStructure,
+         MINERAL_IDS, type CompressedOre, type PublicMarketOrder } from '../api/esi'
 
-// Mineralen op de markt in de eigen ruimte, vergeleken met Jita.
+// Mineralen en compressed erts op de markt in de eigen ruimte, vergeleken met Jita.
 //
 // Nullsec-markten zitten in Upwell-structures en die zijn niet publiek: we
 // zoeken ze op met het token van de gebruiker (structure-search per sov-systeem,
 // alleen L/XL-types die een Market Hub kunnen dragen) en lezen dan het hele
-// orderboek uit. Daarnaast de NPC-stations in Delve via de publieke regio-orders.
-// Per mineraal tonen we de goedkoopste lokale sell-orders naast de Jita-prijs.
+// orderboek uit. Daarnaast de NPC-stations in Delve via de publieke regio-orders
+// (alle sell-orders van de regio: een paar pagina's, en zo vangen we ook de
+// ~170 soorten compressed erts zonder een call per type).
+// Per mineraal tonen we de goedkoopste lokale sell-orders naast de Jita-prijs;
+// erts alleen als er lokaal aanbod is, met wat één stuk na raffinage oplevert.
 
 const DELVE = 10000060
-const MINERALEN: Record<number, string> = {
-  34: 'Tritanium', 35: 'Pyerite', 36: 'Mexallon', 37: 'Isogen',
-  38: 'Nocxium', 39: 'Zydrine', 40: 'Megacyte', 11399: 'Morphite',
-}
+const MINERALEN = MINERAL_IDS
 // Alleen structures waar een Standup Market Hub in past (L/XL): Fortizar (+faction),
 // Keepstar (+Palatine), Azbel, Sotiyo, Tatara. Astrahus/Raitaru/Athanor kunnen dat niet.
 const MARKT_TYPES = new Set([35833, 35834, 35826, 35827, 35836, 40340, 47512, 47513, 47514, 47515, 47516])
@@ -25,7 +25,13 @@ const CACHE_UREN = 24
 
 interface Structuur { id: number; naam: string; systeemId: number; typeId: number }
 interface Order { prijs: number; volume: number; locatieId: number; locatie: string; systeem: string; structure: boolean }
-interface Rij { typeId: number; naam: string; jita: number; orders: Order[] }
+interface Rij {
+  typeId: number
+  naam: string
+  jita: number
+  orders: Order[]
+  erts?: CompressedOre    // gezet bij compressed erts (alleen rijen met lokaal aanbod)
+}
 
 const TH: React.CSSProperties = {
   textAlign: 'right', padding: '0.4rem 0.7rem', color: 'var(--text-dim)', fontSize: '0.58rem',
@@ -46,16 +52,24 @@ function verschilPct(lokaal: number, jita: number) { return jita > 0 ? (lokaal -
 function verschilKleur(p: number | null) { return p === null ? 'var(--text-dim)' : p <= 0 ? 'var(--green)' : 'var(--red)' }
 function fmtVerschil(p: number | null) { return p === null ? '—' : `${p > 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%` }
 
-async function jitaPrijzen(): Promise<Map<number, number>> {
+// Jita 4-4 sell per type (Fuzzwork geeft strings terug).
+async function jitaPrijzen(typeIds: number[]): Promise<Map<number, number>> {
   const uit = new Map<number, number>()
-  try {
-    const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${Object.keys(MINERALEN).join(',')}`,
-                          { signal: AbortSignal.timeout(8000) })
-    if (!r.ok) return uit
-    const data = await r.json() as Record<string, { sell: { percentile: string } }>
-    for (const [id, agg] of Object.entries(data)) uit.set(Number(id), Number(agg.sell?.percentile ?? 0))
-  } catch { /* leeg: dan geen vergelijking */ }
+  for (let i = 0; i < typeIds.length; i += 200) {
+    try {
+      const r = await fetch(`https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=${typeIds.slice(i, i + 200).join(',')}`,
+                            { signal: AbortSignal.timeout(8000) })
+      if (!r.ok) continue
+      const data = await r.json() as Record<string, { sell: { percentile: string } }>
+      for (const [id, agg] of Object.entries(data)) uit.set(Number(id), Number(agg.sell?.percentile ?? 0))
+    } catch { /* leeg: dan geen vergelijking */ }
+  }
   return uit
+}
+
+// Wat één stuk erts na raffinage (pct%) aan mineralen oplevert, tegen Jita.
+function raffinageWaarde(erts: CompressedOre, pct: number, jita: Map<number, number>): number {
+  return erts.minerals.reduce((som, [mid, q]) => som + q / erts.portionSize * pct / 100 * (jita.get(mid) ?? 0), 0)
 }
 
 // Een handvol tegelijk, niet alle 24 systemen in één klap.
@@ -116,10 +130,11 @@ async function structuurOrders(s: Structuur, tokens: TokenData[]): Promise<Publi
   return null
 }
 
-export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData[]; systemen: Record<string, string> }) {
+export default function MineralenMarkt({ tokens, systemen, raffinage }: { tokens: TokenData[]; systemen: Record<string, string>; raffinage: number }) {
   const [laden, setLaden] = useState(false)
   const [status, setStatus] = useState('')
   const [rijen, setRijen] = useState<Rij[]>([])
+  const [jita, setJita] = useState<Map<number, number>>(new Map())
   const [structuren, setStructuren] = useState<Structuur[]>([])
   const [zonderMarkt, setZonderMarkt] = useState<string[]>([])
   const [forbidden, setForbidden] = useState(false)
@@ -132,15 +147,16 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
 
   const laad = useCallback(async (afgebroken: () => boolean) => {
     setLaden(true)
-    setStatus('Jita-prijzen en Delve-stations ophalen…')
-    const typeIds = Object.keys(MINERALEN).map(Number)
+    setStatus('Delve-stations ophalen…')
+    const mineraalIds = Object.keys(MINERALEN).map(Number)
 
-    const [jita, regioOrders] = await Promise.all([
-      jitaPrijzen(),
-      Promise.all(typeIds.map(tid => getRegionOrders(DELVE, tid).catch(() => [] as PublicMarketOrder[]))),
+    const [ertsLijst, regioOrders] = await Promise.all([
+      getCompressedOres(),
+      getAllRegionOrders(DELVE, undefined, 'sell').catch(() => [] as PublicMarketOrder[]),
     ])
     if (afgebroken()) return
-    const alleOrders: PublicMarketOrder[] = regioOrders.flat().filter(o => !o.is_buy_order)
+    const telt = (tid: number) => !!MINERALEN[tid] || ertsLijst.has(tid)
+    const alleOrders: PublicMarketOrder[] = regioOrders.filter(o => !o.is_buy_order && telt(o.type_id))
 
     let gevonden: Structuur[] = []
     let metMarkt: Structuur[] = []
@@ -156,14 +172,19 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
         const orders = await structuurOrders(s, tokens)
         if (!orders) return
         metMarkt.push(s)
-        for (const o of orders) if (!o.is_buy_order && MINERALEN[o.type_id]) alleOrders.push({ ...o, location_id: s.id })
+        for (const o of orders) if (!o.is_buy_order && telt(o.type_id)) alleOrders.push({ ...o, location_id: s.id })
       })
       if (afgebroken()) return
     }
 
-    // Namen van NPC-stations (structures kennen we al).
+    // Jita-prijzen: de mineralen altijd, erts alleen waar lokaal aanbod van is.
+    setStatus('Jita-prijzen ophalen…')
+    const ertsMetAanbod = [...new Set(alleOrders.map(o => o.type_id).filter(tid => ertsLijst.has(tid)))]
     const stationIds = [...new Set(alleOrders.map(o => o.location_id).filter(id => id <= 2_147_483_647))]
-    const namen = await resolveNames(stationIds).catch(() => new Map<number, string>())
+    const [jitaPrijs, namen] = await Promise.all([
+      jitaPrijzen([...mineraalIds, ...ertsMetAanbod]),
+      resolveNames(stationIds).catch(() => new Map<number, string>()),   // NPC-stations; structures kennen we al
+    ])
     if (afgebroken()) return
     const structuurNaam = new Map(gevonden.map(s => [s.id, s.naam]))
 
@@ -176,10 +197,19 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
       perType.set(o.type_id, lijst)
     }
     metMarkt = metMarkt.sort((a, b) => a.naam.localeCompare(b.naam))
-    setRijen(typeIds.map(tid => ({
-      typeId: tid, naam: MINERALEN[tid], jita: jita.get(tid) ?? 0,
-      orders: (perType.get(tid) ?? []).sort((a, b) => a.prijs - b.prijs),
-    })))
+    const ertsRijen: Rij[] = ertsMetAanbod
+      .map(tid => ertsLijst.get(tid)!)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(e => ({ typeId: e.typeId, naam: e.name, jita: jitaPrijs.get(e.typeId) ?? 0, erts: e,
+                   orders: (perType.get(e.typeId) ?? []).sort((a, b) => a.prijs - b.prijs) }))
+    setJita(jitaPrijs)
+    setRijen([
+      ...mineraalIds.map(tid => ({
+        typeId: tid, naam: MINERALEN[tid], jita: jitaPrijs.get(tid) ?? 0,
+        orders: (perType.get(tid) ?? []).sort((a, b) => a.prijs - b.prijs),
+      })),
+      ...ertsRijen,
+    ])
     setStructuren(metMarkt)
     setZonderMarkt(gevonden.filter(s => !metMarkt.some(m => m.id === s.id)).map(s => s.naam))
     setForbidden(verboden)
@@ -195,7 +225,10 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenSleutel, systemenSleutel, versie])
 
-  const goedkoper = useMemo(() => rijen.filter(r => r.orders[0] && r.jita > 0 && r.orders[0].prijs <= r.jita).length, [rijen])
+  const mineraalRijen = useMemo(() => rijen.filter(r => !r.erts), [rijen])
+  const ertsRijen     = useMemo(() => rijen.filter(r => !!r.erts), [rijen])
+  const goedkoper = useMemo(() => mineraalRijen.filter(r => r.orders[0] && r.jita > 0 && r.orders[0].prijs <= r.jita).length, [mineraalRijen])
+  const ertsGoedkoper = useMemo(() => ertsRijen.filter(r => r.orders[0] && r.jita > 0 && r.orders[0].prijs <= r.jita).length, [ertsRijen])
 
   return (
     <div style={{ ...PANEL, marginBottom: '0.75rem' }}>
@@ -204,7 +237,7 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
           <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>MARKT IN EIGEN RUIMTE</div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
             {laden ? status : rijen.length
-              ? `${goedkoper} van ${rijen.length} mineralen lokaal goedkoper dan (of gelijk aan) Jita · ${structuren.length} structure${structuren.length === 1 ? '' : 's'} met markt · NPC-stations in Delve`
+              ? `${goedkoper} van ${mineraalRijen.length} mineralen en ${ertsGoedkoper} van ${ertsRijen.length} soorten compressed erts lokaal goedkoper dan (of gelijk aan) Jita · ${structuren.length} structure${structuren.length === 1 ? '' : 's'} met markt · NPC-stations in Delve`
               : 'sell-orders in onze structures en de Delve-stations, naast de Jita-prijs'}
           </div>
         </div>
@@ -228,34 +261,51 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--surface2)' }}>
-              <th style={{ ...TH, textAlign: 'left' }}>Mineraal</th>
+              <th style={{ ...TH, textAlign: 'left' }}>Mineraal / erts</th>
               <th style={TH}>Jita sell</th>
               <th style={TH}>Lokaal beste</th>
               <th style={TH}>Verschil</th>
+              <th style={TH} title={`Jita-waarde van de mineralen die één stuk erts na raffinage (${raffinage}%) oplevert, en hoeveel de lokale prijs daaronder zit`}>Na raffinage</th>
               <th style={TH}>Volume</th>
               <th style={{ ...TH, textAlign: 'left' }}>Waar</th>
               <th style={TH}>Orders ≤ Jita</th>
             </tr>
           </thead>
           <tbody>
-            {rijen.map(r => {
+            {rijen.map((r, idx) => {
               const beste = r.orders[0]
               const pct = beste ? verschilPct(beste.prijs, r.jita) : null
               const onderJita = r.orders.filter(o => r.jita > 0 && o.prijs <= r.jita)
               const volumeOnderJita = onderJita.reduce((s, o) => s + o.volume, 0)
               const isOpen = open === r.typeId
+              // Erts: wat één stuk na raffinage oplevert, en hoe de lokale prijs zich daartoe verhoudt.
+              const raff = r.erts ? raffinageWaarde(r.erts, raffinage, jita) : 0
+              const raffPct = r.erts && beste && raff > 0 ? verschilPct(beste.prijs, raff) : null
               return (
                 <Fragment key={r.typeId}>
+                  {r.erts && idx === mineraalRijen.length && (
+                    <tr style={{ background: 'var(--surface2)' }}>
+                      <td colSpan={8} style={{ padding: '0.35rem 0.7rem', fontSize: '0.58rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.1em' }}>
+                        COMPRESSED ERTS MET LOKAAL AANBOD ({ertsRijen.length})
+                      </td>
+                    </tr>
+                  )}
                   <tr onClick={() => setOpen(isOpen ? null : r.typeId)}
                       style={{ borderTop: '1px solid var(--border)', cursor: r.orders.length ? 'pointer' : 'default', background: isOpen ? 'var(--surface2)' : undefined }}>
                     <td style={{ ...TD, textAlign: 'left' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+                            title={r.erts ? `per ${r.erts.portionSize} st. bij 100%: ${r.erts.minerals.map(([mid, q]) => `${fmtAantal(q)} ${MINERALEN[mid] ?? mid}`).join(', ')}` : undefined}>
                         <EveImage category="types" id={r.typeId} variation="icon" size={32} px={18} />{r.naam}
                       </span>
                     </td>
                     <td style={{ ...TD, color: 'var(--text-dim)' }}>{r.jita ? fmtStuk(r.jita) : '—'}</td>
                     <td style={{ ...TD, fontWeight: 700 }}>{beste ? fmtStuk(beste.prijs) : <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>geen aanbod</span>}</td>
                     <td style={{ ...TD, fontWeight: 700, color: verschilKleur(pct) }}>{fmtVerschil(pct)}</td>
+                    <td style={{ ...TD, color: 'var(--text-dim)' }}>
+                      {r.erts
+                        ? <>{raff > 0 ? fmtStuk(raff) : '—'} <span style={{ fontSize: '0.68rem', color: verschilKleur(raffPct) }}>{fmtVerschil(raffPct)}</span></>
+                        : '—'}
+                    </td>
                     <td style={TD}>{beste ? fmtAantal(beste.volume) : '—'}</td>
                     <td style={{ ...TD, textAlign: 'left', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }} title={beste?.locatie}>
                       {beste ? <><b>{beste.systeem}</b> <span style={{ color: 'var(--text-dim)', fontSize: '0.7rem' }}>{beste.locatie.slice(beste.systeem.length).replace(/^\s*-\s*/, '')}</span></> : '—'}
@@ -266,7 +316,7 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
                   </tr>
                   {isOpen && r.orders.length > 0 && (
                     <tr style={{ background: 'var(--surface2)' }}>
-                      <td colSpan={7} style={{ padding: '0.3rem 0.9rem 0.6rem' }}>
+                      <td colSpan={8} style={{ padding: '0.3rem 0.9rem 0.6rem' }}>
                         <table style={{ borderCollapse: 'collapse', fontSize: '0.74rem' }}>
                           <tbody>
                             {r.orders.slice(0, 12).map((o, i) => {
@@ -290,7 +340,7 @@ export default function MineralenMarkt({ tokens, systemen }: { tokens: TokenData
               )
             })}
             {!rijen.length && (
-              <tr><td colSpan={7} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>{laden ? status || 'Laden…' : 'Geen marktdata.'}</td></tr>
+              <tr><td colSpan={8} style={{ ...TD, textAlign: 'center', color: 'var(--text-dim)', padding: '1rem' }}>{laden ? status || 'Laden…' : 'Geen marktdata.'}</td></tr>
             )}
           </tbody>
         </table>

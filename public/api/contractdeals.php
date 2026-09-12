@@ -589,9 +589,50 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
 const CD_THUIS_REGIO     = 10000060;   // Delve
 const CD_THUIS_ALLIANTIE = 99013537;   // Insidious. — "wij"
 const CD_SOV_SECONDEN    = 21600;      // sov-kaart 6 uur vasthouden, verandert zelden
+const CD_ERTS_SECONDEN   = 86400;      // ertslijst uit de SDE-bundels 1 dag vasthouden
+const CD_CAT_ASTEROID    = 25;         // SDE-categorie van alle erts
 // De acht mineralen (SDE-groep 18). Vast gegeven, dus geen SDE-lookup nodig.
 const CD_MINERALEN = [34 => 'Tritanium', 35 => 'Pyerite', 36 => 'Mexallon', 37 => 'Isogen',
                       38 => 'Nocxium', 39 => 'Zydrine', 40 => 'Megacyte', 11399 => 'Morphite'];
+
+/**
+ * Gecomprimeerd erts dat je tot mineralen raffineert: {typeId: [naam, portie, inhoud]}.
+ *
+ * Compressed ore telt mee als mineralen-in-wording — een contract vol Compressed
+ * Veldspar is net zo goed een mineralenkoop als een stapel Tritanium. Uit de
+ * SDE-bundels: categorie Asteroid, naam "Compressed …" of "Batch Compressed …",
+ * en de raffinage-uitkomst bestaat UITSLUITEND uit de acht mineralen. Dat sluit
+ * ijs, maanerts en het gemengde X-Grade-erts (mineralen + maangoed) uit.
+ * 'inhoud' is de raffinage-opbrengst per 'portie' stuks bij 100%.
+ */
+function cdErts(PDO $pdo): array {
+    static $erts = null;
+    if ($erts !== null) return $erts;
+    $cache = cdCacheGet($pdo, 'cd_erts', CD_ERTS_SECONDEN);
+    if ($cache) return $erts = $cache['data'];
+
+    $lees = function (string $bestand): array {
+        $ruw = @file_get_contents(__DIR__ . '/../' . $bestand);
+        return $ruw === false ? [] : (json_decode($ruw, true) ?: []);
+    };
+    $namen = $lees('type-names.json');       // {typeId: naam}
+    $info  = $lees('type-info.json');        // {typeId: [groepId, volume, portie]}
+    $groepen = $lees('groups.json');         // {groepId: [naam, categorieId]}
+    $rep   = $lees('reprocess.json');        // {typeId: [[materiaalId, aantal], …]}
+
+    $erts = [];
+    foreach ($namen as $tid => $naam) {
+        if (!preg_match('/^(Batch )?Compressed /', $naam)) continue;
+        $gid = (int)($info[$tid][0] ?? 0);
+        if ((int)($groepen[$gid][1] ?? 0) !== CD_CAT_ASTEROID) continue;
+        $inhoud = $rep[$tid] ?? [];
+        if (!$inhoud) continue;
+        foreach ($inhoud as $m) if (!isset(CD_MINERALEN[(int)$m[0]])) continue 2;
+        $erts[(int)$tid] = ['naam' => $naam, 'portie' => max(1, (int)($info[$tid][2] ?? 1)), 'inhoud' => $inhoud];
+    }
+    if ($erts) cdCacheSet($pdo, 'cd_erts', $erts);
+    return $erts;
+}
 
 /** Alle item-exchange-contracten in de thuisregio, nieuwste eerst (30 min cache). */
 function cdThuisKandidaten(PDO $pdo, bool $force = false): array {
@@ -661,13 +702,16 @@ function cdEigenSystemen(PDO $pdo): array {
 }
 
 /**
- * Gescande contracten met mineralen erin, gewaardeerd tegen Jita.
+ * Gescande contracten met mineralen of gecomprimeerd erts erin, gewaardeerd tegen Jita.
  *
  * 'korting' is hoeveel procent je onder de Jita-verkoopprijs betaalt (negatief
  * = duurder dan Jita, wat in nullsec nog steeds de moeite kan zijn). Bij een
- * contract met precies één mineraal geven we ook de prijs per stuk.
+ * contract met precies één soort mineraal of erts geven we ook de prijs per stuk.
+ * Erts wordt tegen de Jita-prijs van het erts zelf gewaardeerd; wat het na
+ * raffinage oplevert rekent de frontend uit (die kent het raffinagepercentage).
  */
 function cdMineralen(PDO $pdo, array $kandidaten): array {
+    $erts = cdErts($pdo);
     $ids = array_column($kandidaten, 'id');
     $inhoud = [];
     foreach (array_chunk($ids, 500) as $chunk) {
@@ -679,7 +723,7 @@ function cdMineralen(PDO $pdo, array $kandidaten): array {
         }
     }
 
-    // Eerst uitzeven op mineralen, pas dan prijzen ophalen — anders waarderen
+    // Eerst uitzeven op mineralen/erts, pas dan prijzen ophalen — anders waarderen
     // we honderden gefitte schepen voor niets.
     $met = [];
     $typeIds = [];
@@ -688,7 +732,8 @@ function cdMineralen(PDO $pdo, array $kandidaten): array {
         if (!$items) continue;
         $mineraal = false;
         foreach ($items as $i) {
-            if (!empty($i['is_included']) && isset(CD_MINERALEN[(int)($i['type_id'] ?? 0)])) { $mineraal = true; break; }
+            $tid = (int)($i['type_id'] ?? 0);
+            if (!empty($i['is_included']) && (isset(CD_MINERALEN[$tid]) || isset($erts[$tid]))) { $mineraal = true; break; }
         }
         if (!$mineraal) continue;
         $met[] = $k;
@@ -710,7 +755,8 @@ function cdMineralen(PDO $pdo, array $kandidaten): array {
     $rijen = [];
     foreach ($met as $k) {
         $waardeJita = 0.0; $waardeMineralen = 0.0; $kostenGeef = 0.0;
-        $mineralen = []; $overig = []; $heeftInlever = false; $prijsOnbekend = false;
+        $stapels = ['mineralen' => [], 'erts' => []];
+        $overig = []; $heeftInlever = false; $prijsOnbekend = false;
 
         foreach ($inhoud[$k['id']] as $i) {
             $tid    = (int)($i['type_id'] ?? 0);
@@ -726,34 +772,45 @@ function cdMineralen(PDO $pdo, array $kandidaten): array {
                 continue;
             }
             $waardeJita += $sell * $aantal;
-            if (isset(CD_MINERALEN[$tid])) {
+            if (isset(CD_MINERALEN[$tid]) || isset($erts[$tid])) {
                 $waardeMineralen += $sell * $aantal;
-                // Zelfde mineraal kan in meerdere stapels zitten: samenvoegen.
-                if (isset($mineralen[$tid])) { $mineralen[$tid]['aantal'] += $aantal; $mineralen[$tid]['waarde'] += $sell * $aantal; }
-                else $mineralen[$tid] = ['typeId' => $tid, 'naam' => CD_MINERALEN[$tid], 'aantal' => $aantal,
-                                         'jitaSell' => $sell, 'jitaBuy' => (float)($p['buy'] ?? 0), 'waarde' => $sell * $aantal];
+                $soort = isset(CD_MINERALEN[$tid]) ? 'mineralen' : 'erts';
+                $stapel = &$stapels[$soort];
+                // Zelfde mineraal/erts kan in meerdere stapels zitten: samenvoegen.
+                if (isset($stapel[$tid])) { $stapel[$tid]['aantal'] += $aantal; $stapel[$tid]['waarde'] += $sell * $aantal; }
+                else {
+                    $stapel[$tid] = ['typeId' => $tid, 'naam' => CD_MINERALEN[$tid] ?? $erts[$tid]['naam'], 'aantal' => $aantal,
+                                     'jitaSell' => $sell, 'jitaBuy' => (float)($p['buy'] ?? 0), 'waarde' => $sell * $aantal];
+                    // Bij erts ook wat het bij 100% raffinage oplevert (per portie).
+                    if ($soort === 'erts') $stapel[$tid] += ['portie' => $erts[$tid]['portie'], 'inhoud' => $erts[$tid]['inhoud']];
+                }
+                unset($stapel);
             } else {
                 $overig[] = ['typeId' => $tid, 'naam' => $p['name'] ?? ('#' . $tid), 'aantal' => $aantal,
                              'isBpc' => $isBpc, 'waarde' => $sell * $aantal];
             }
         }
+        $mineralen = array_values($stapels['mineralen']);
+        $ertsen    = array_values($stapels['erts']);
         usort($mineralen, fn($a, $b) => $b['waarde'] <=> $a['waarde']);
+        usort($ertsen,    fn($a, $b) => $b['waarde'] <=> $a['waarde']);
         usort($overig,    fn($a, $b) => $b['waarde'] <=> $a['waarde']);
 
         $betaalt = $k['prijs'] + $kostenGeef - $k['beloning'];
         $puur    = !$overig;
+        // Eén soort mineraal of erts en verder niets: dan is de prijs per stuk zinvol.
+        $enkel   = (count($mineralen) + count($ertsen) === 1) ? ($mineralen[0] ?? $ertsen[0]) : null;
         $rijen[] = $k + [
             'betaalt'         => $betaalt,
             'waardeJita'      => $waardeJita,
             'waardeMineralen' => $waardeMineralen,
             'korting'         => $waardeJita > 0 ? (($waardeJita - $betaalt) / $waardeJita * 100) : null,
-            'mineralen'       => array_values($mineralen),
+            'mineralen'       => $mineralen,
+            'erts'            => $ertsen,
             'overig'          => array_slice($overig, 0, 6),
             'aantalOverig'    => count($overig),
             'puur'            => $puur,
-            // Eén soort mineraal en verder niets: dan is de prijs per stuk zinvol.
-            'perStuk'         => ($puur && count($mineralen) === 1 && $mineralen[0]['aantal'] > 0)
-                                    ? $betaalt / $mineralen[0]['aantal'] : null,
+            'perStuk'         => ($puur && $enkel && $enkel['aantal'] > 0) ? $betaalt / $enkel['aantal'] : null,
             'heeftInlever'    => $heeftInlever,
             'prijsOnbekend'   => $prijsOnbekend,
         ];
