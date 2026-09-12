@@ -52,6 +52,7 @@ await ctx.addInitScript(({ charId }) => {
     expiresAt: Date.now() + 7200_000, characterId: charId, characterName: 'Verify Tester',
   }]))
   localStorage.removeItem('mineralen.v1')
+  localStorage.removeItem('mineralen.markt.v1')
   Object.keys(localStorage).filter(k => k.startsWith('mineralen.items.')).forEach(k => localStorage.removeItem(k))
 }, { charId: CHAR_ID })
 
@@ -79,11 +80,28 @@ const CORP_CONTRACTS = [
 ]
 await ctx.route('**market.fuzzwork.co.uk/**', r => r.fulfill({
   status: 200, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
-  body: JSON.stringify({ '34': { sell: { percentile: '3.83' }, buy: { percentile: '3.60' } } }),
+  body: JSON.stringify({ '34': { sell: { percentile: '3.83' }, buy: { percentile: '3.60' } },
+                         '35': { sell: { percentile: '17.95' }, buy: { percentile: '17.00' } } }),
 }))
 // Structure 1054611409751 lost op naar Q-02UL; de andere geeft 403 (geen rechten).
 await ctx.route('**esi.evetech.net/**', r => {
   const url = r.request().url()
+  const json = body => r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  // Markt: NPC-station Tritanium 3,70 (publieke regio-orders); structure in Q-02UL
+  // met Tritanium 3,40 en Pyerite 20,00 (+ een koop-order die genegeerd moet worden).
+  if (url.includes('/markets/10000060/orders/')) {
+    return json(url.includes('type_id=34') && url.includes('page=1')
+      ? [{ order_id: 1, type_id: 34, is_buy_order: false, price: 3.70, volume_remain: 250000, location_id: 60014942 }]
+      : [])
+  }
+  if (url.includes(`/characters/${CHAR_ID}/search/`)) return json({ structure: url.includes('Q-02UL') ? [1054611409751] : [] })
+  if (url.includes('/markets/structures/1054611409751/')) {
+    return json(url.includes('page=1') ? [
+      { order_id: 2, type_id: 34, is_buy_order: false, price: 3.40, volume_remain: 5_000_000, location_id: 1054611409751 },
+      { order_id: 3, type_id: 35, is_buy_order: false, price: 20.00, volume_remain: 800_000, location_id: 1054611409751 },
+      { order_id: 4, type_id: 34, is_buy_order: true,  price: 1.00, volume_remain: 1, location_id: 1054611409751 },
+    ] : [])
+  }
   if (url.includes(`/characters/${CHAR_ID}/contracts/555/items/`)) {
     return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' },
       body: JSON.stringify([{ record_id: 1, type_id: 34, quantity: 3_000_000, is_included: true, is_singleton: false }]) })
@@ -118,13 +136,31 @@ const link = await page.locator('a[href="/mineralen"]').count()
 console.log('  sidebar-link /mineralen:', link)
 
 // Standaard: alleen onze systemen → alleen rij 1 (Q-02UL, via structure-lookup)
-const rijen = () => page.locator('tbody tr').filter({ hasText: /Tritanium|Mexallon|Megacyte/ })
+// Contracten-tabel (kop 'Systeem'), niet de markt-tabel (kop 'Mineraal').
+const contractTabel = page.locator('table').filter({ has: page.locator('th:text-is("Systeem")') })
+const rijen = () => contractTabel.locator('tbody > tr').filter({ hasText: /Tritanium|Mexallon|Megacyte/ })
 console.log('  rijen standaard (verwacht 1, Q-02UL):', await rijen().count())
-const q02 = await page.locator('td:has-text("Q-02UL")').first().textContent().catch(() => '')
+const q02 = await contractTabel.locator('td:has-text("Q-02UL")').first().textContent().catch(() => '')
 console.log('  eerste rij systeem:', q02?.trim().slice(0, 40))
 console.log('  korting groen −8.6%:', await page.locator('text=−8.6%').count())
 console.log('  per stuk 3,50 / 3,83:', await page.locator('text=3,50').count())
 await page.screenshot({ path: SHOT + 'mineralen-eigen.png', fullPage: true })
+
+console.log('--- Markt ---')
+await page.waitForSelector('text=structures met markt:', { timeout: 20000 })
+const markt = page.locator('table').filter({ has: page.locator('th:text-is("Mineraal")') })
+const tritRij = markt.locator('tbody tr').filter({ hasText: 'Tritanium' }).first()
+console.log('  Tritanium: lokaal 3,40 −11.2% Q-02UL:', await tritRij.locator('text=3,40').count(), await tritRij.locator('text=−11.2%').count(), await tritRij.locator('text=Q-02UL').count())
+console.log('  Tritanium orders ≤ Jita (verwacht "2 · 5.250.000 st."):', (await tritRij.locator('td').last().textContent())?.trim())
+const pyRij = markt.locator('tbody tr').filter({ hasText: 'Pyerite' }).first()
+console.log('  Pyerite: lokaal 20,00 +11.4%:', await pyRij.locator('text=20,00').count(), await pyRij.locator('text=+11.4%').count())
+const mexRij = markt.locator('tbody tr').filter({ hasText: 'Mexallon' }).first()
+console.log('  Mexallon: geen aanbod:', await mexRij.locator('text=geen aanbod').count())
+console.log('  kop: 1 van 8 goedkoper · 1 structure:', await page.locator('text=/1 van 8 mineralen.*1 structure met markt/').count())
+await tritRij.click()
+await page.waitForTimeout(200)
+console.log('  uitklap toont NPC-order 3,70:', await markt.locator('text=3,70').count())
+await tritRij.click()
 
 // Filter uit → alle drie publieke + het corp-contract
 await page.locator('button:has-text("alleen onze systemen")').click()

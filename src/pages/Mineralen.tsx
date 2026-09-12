@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
+import MineralenMarkt from '../components/MineralenMarkt'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useAuth } from '../auth/AuthContext'
 import { getContracts, getContractItems, getStructureInfo, openContractWindow, resolveNames,
@@ -422,7 +423,7 @@ export default function Mineralen() {
   const eigenLijst = Object.values(eigen)
 
   return (
-    <Layout header={<PageHeader title="⛏️ Mineralen" sub="contracten met mineralen in Delve — publiek én corp/alliantie — vergeleken met Jita: kopen zonder sleep" />}>
+    <Layout header={<PageHeader title="⛏️ Mineralen" sub="mineralen in Delve — op de markt en in contracten (publiek én corp/alliantie) — vergeleken met Jita: kopen zonder sleep" />}>
       {/* Balk: filters + sorteren + scannen */}
       <div style={{ ...PANEL, padding: '0.75rem 1rem', marginBottom: '0.75rem',
                     display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
@@ -481,6 +482,12 @@ export default function Mineralen() {
             met je eigen token opgezocht; kan dat niet (geen docking-rechten), dan blijft het systeem leeg en valt
             het contract buiten "alleen onze systemen".
           </p>
+          <p style={{ margin: '0 0 0.4rem' }}>
+            <b style={{ color: 'var(--text)' }}>Markt.</b> Het blok "Markt in eigen ruimte" kijkt naar sell-orders: in de
+            NPC-stations van Delve (publiek) en in onze structures met een Market Hub (Fortizar/Keepstar/Azbel/Sotiyo/
+            Tatara in onze sov-systemen, opgezocht en uitgelezen met je token — de lijst wordt een dag bewaard, "markt
+            verversen" zoekt opnieuw). Groen = lokaal goedkoper dan of gelijk aan Jita.
+          </p>
           <p style={{ margin: 0 }}>
             <b style={{ color: 'var(--text)' }}>Dekking.</b> De inhoud van een contract kost één ESI-call, dus per verzoek
             worden er ~60 nieuwe gescand (nieuwste eerst). Zet "automatisch scannen" aan tot alles gescand is; daarna
@@ -502,6 +509,11 @@ export default function Mineralen() {
       </div>
 
       {(fout || foutEigen) && <div style={{ color: 'var(--red)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>{[fout, foutEigen].filter(Boolean).join(' ')}</div>}
+
+      {/* Markt: pas als de sov-lijst binnen is, anders zoeken we in het luchtledige */}
+      {feed && <MineralenMarkt tokens={tokens} systemen={feed.eigenSystemen ?? {}} />}
+
+      <div style={{ ...LABEL, marginBottom: '0.4rem' }}>CONTRACTEN</div>
 
       {/* Tabel */}
       <div style={{ ...PANEL, overflowX: 'auto' }}>
