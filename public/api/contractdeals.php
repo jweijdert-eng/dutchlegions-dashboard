@@ -13,8 +13,9 @@
  *   - per verzoek een harde call- en tijdslimiet, zodat de pagina snel blijft.
  * De dekking groeit dus met elk bezoek; wat nog niet gewaardeerd is telt niet mee.
  *
- *   GET ?action=list   → gewaardeerde contracten + voortgang
- *   GET ?action=scan   → alleen scannen (voor een periodieke warmer), geeft tellers
+ *   GET ?action=list      → gewaardeerde contracten + voortgang
+ *   GET ?action=scan      → alleen scannen (voor een periodieke warmer), geeft tellers
+ *   GET ?action=mineralen → mineraalcontracten in de eigen regio, tegen Jita (zie onder)
  */
 
 require_once 'config.php';
@@ -321,18 +322,14 @@ function cdUpdateNames(PDO $pdo, array $typeIds): void {
 
 // ---------------------------------------------------------------- contracten
 
-/** Kandidaten van één hub ophalen (of uit de cache halen). */
-function cdRegioKandidaten(PDO $pdo, int $regioId, bool $force = false): array {
-    [$hubNaam, $stationId] = CD_HUBS[$regioId];
-    $key = 'cd_lijst_' . $regioId;
-    $cache = $force ? null : cdCacheGet($pdo, $key, CD_LIJST_SECONDEN);
-    if ($cache) return $cache['data'];
-
+/**
+ * Alle openbare contracten van één regio (alle pagina's, binnen het tijdsbudget).
+ * Geeft null als de eerste pagina al mislukt — dan valt de aanroeper terug op
+ * z'n oude cache.
+ */
+function cdRegioContracten(int $regioId): ?array {
     [$ok, $eerste, $hdrs] = cdEsi("/contracts/public/{$regioId}/", ['page' => 1]);
-    if (!$ok) {
-        $oud = cdCacheGet($pdo, $key, 0);
-        return $oud ? $oud['data'] : [];
-    }
+    if (!$ok) return null;
     $paginas = max(1, (int)($hdrs['x-pages'] ?? 1));
     $alles = $eerste;
 
@@ -342,6 +339,21 @@ function cdRegioKandidaten(PDO $pdo, int $regioId, bool $force = false): array {
         [$ok2, $rows] = cdEsi("/contracts/public/{$regioId}/", ['page' => $p]);
         if (!$ok2 || !$rows) break;
         $alles = array_merge($alles, $rows);
+    }
+    return $alles;
+}
+
+/** Kandidaten van één hub ophalen (of uit de cache halen). */
+function cdRegioKandidaten(PDO $pdo, int $regioId, bool $force = false): array {
+    [$hubNaam, $stationId] = CD_HUBS[$regioId];
+    $key = 'cd_lijst_' . $regioId;
+    $cache = $force ? null : cdCacheGet($pdo, $key, CD_LIJST_SECONDEN);
+    if ($cache) return $cache['data'];
+
+    $alles = cdRegioContracten($regioId);
+    if ($alles === null) {
+        $oud = cdCacheGet($pdo, $key, 0);
+        return $oud ? $oud['data'] : [];
     }
 
     $kandidaten = [];
@@ -566,11 +578,235 @@ function cdWaardeer(PDO $pdo, array $kandidaten): array {
     return $rijen;
 }
 
+// ---------------------------------------------------------------- mineralen thuis
+
+// Mineralen kopen in de eigen ruimte scheelt een sleep vanuit Jita. Daarom scannen
+// we de thuisregio apart: ALLE item-exchange-contracten (geen prijsvloer — een
+// stapel Tritanium kost maar een paar miljoen), en houden alleen contracten over
+// waar mineralen in zitten. De waardering blijft tegen Jita, zodat je ziet of het
+// goedkoper is dan zelf halen. Via de sov-kaart weet de frontend welke systemen
+// van ons zijn; structure-namen lost die zelf op met het token van de gebruiker.
+const CD_THUIS_REGIO     = 10000060;   // Delve
+const CD_THUIS_ALLIANTIE = 99013537;   // Insidious. — "wij"
+const CD_SOV_SECONDEN    = 21600;      // sov-kaart 6 uur vasthouden, verandert zelden
+// De acht mineralen (SDE-groep 18). Vast gegeven, dus geen SDE-lookup nodig.
+const CD_MINERALEN = [34 => 'Tritanium', 35 => 'Pyerite', 36 => 'Mexallon', 37 => 'Isogen',
+                      38 => 'Nocxium', 39 => 'Zydrine', 40 => 'Megacyte', 11399 => 'Morphite'];
+
+/** Alle item-exchange-contracten in de thuisregio, nieuwste eerst (30 min cache). */
+function cdThuisKandidaten(PDO $pdo, bool $force = false): array {
+    $key = 'cd_lijst_thuis';
+    $cache = $force ? null : cdCacheGet($pdo, $key, CD_LIJST_SECONDEN);
+    if ($cache) return $cache['data'];
+
+    $alles = cdRegioContracten(CD_THUIS_REGIO);
+    if ($alles === null) {
+        $oud = cdCacheGet($pdo, $key, 0);
+        return $oud ? $oud['data'] : [];
+    }
+
+    $kandidaten = [];
+    foreach ($alles as $c) {
+        if (($c['type'] ?? '') !== 'item_exchange') continue;
+        $kandidaten[] = [
+            'id'         => (int)$c['contract_id'],
+            'prijs'      => (float)($c['price'] ?? 0),
+            'beloning'   => (float)($c['reward'] ?? 0),
+            'volume'     => (float)($c['volume'] ?? 0),
+            'titel'      => (string)($c['title'] ?? ''),
+            'uitgegeven' => (string)($c['date_issued'] ?? ''),
+            'verlooptOp' => (string)($c['date_expired'] ?? ''),
+            'locatieId'  => (int)($c['start_location_id'] ?? 0),
+            'issuerId'   => (int)($c['issuer_id'] ?? 0),
+            'issuerCorpId' => (int)($c['issuer_corporation_id'] ?? 0),
+            'forCorp'    => !empty($c['for_corporation']),
+        ];
+    }
+    usort($kandidaten, fn($a, $b) => strcmp($b['uitgegeven'], $a['uitgegeven']));
+
+    cdCacheSet($pdo, $key, $kandidaten);
+    return $kandidaten;
+}
+
+/**
+ * {systeemId: naam} van de systemen waar onze alliantie sov heeft.
+ *
+ * /sovereignty/map/ is openbaar maar groot (alle nullsec-systemen), dus die
+ * houden we zes uur vast. De namen komen uit de gebundelde systems.json —
+ * geen ESI-call per systeem.
+ */
+function cdEigenSystemen(PDO $pdo): array {
+    $cache = cdCacheGet($pdo, 'cd_sov_thuis', CD_SOV_SECONDEN);
+    if ($cache) return $cache['data'];
+
+    [$ok, $kaart] = cdEsi('/sovereignty/map/');
+    if (!$ok) {
+        $oud = cdCacheGet($pdo, 'cd_sov_thuis', 0);
+        return $oud ? $oud['data'] : [];
+    }
+
+    $systemen = [];
+    $ruw = @file_get_contents(__DIR__ . '/../systems.json');
+    if ($ruw !== false) $systemen = json_decode($ruw, true) ?: [];   // {id: [naam, sec, regio]}
+
+    $uit = [];
+    foreach ($kaart as $s) {
+        if ((int)($s['alliance_id'] ?? 0) !== CD_THUIS_ALLIANTIE) continue;
+        $sid = (int)($s['system_id'] ?? 0);
+        $uit[(string)$sid] = $systemen[(string)$sid][0] ?? (string)$sid;
+    }
+    asort($uit);
+    cdCacheSet($pdo, 'cd_sov_thuis', $uit);
+    return $uit;
+}
+
+/**
+ * Gescande contracten met mineralen erin, gewaardeerd tegen Jita.
+ *
+ * 'korting' is hoeveel procent je onder de Jita-verkoopprijs betaalt (negatief
+ * = duurder dan Jita, wat in nullsec nog steeds de moeite kan zijn). Bij een
+ * contract met precies één mineraal geven we ook de prijs per stuk.
+ */
+function cdMineralen(PDO $pdo, array $kandidaten): array {
+    $ids = array_column($kandidaten, 'id');
+    $inhoud = [];
+    foreach (array_chunk($ids, 500) as $chunk) {
+        $in = implode(',', array_fill(0, count($chunk), '?'));
+        $st = $pdo->prepare("SELECT contract_id, items FROM cc_items WHERE contract_id IN ($in)");
+        $st->execute($chunk);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $inhoud[(int)$r['contract_id']] = json_decode($r['items'], true) ?: [];
+        }
+    }
+
+    // Eerst uitzeven op mineralen, pas dan prijzen ophalen — anders waarderen
+    // we honderden gefitte schepen voor niets.
+    $met = [];
+    $typeIds = [];
+    foreach ($kandidaten as $k) {
+        $items = $inhoud[$k['id']] ?? null;
+        if (!$items) continue;
+        $mineraal = false;
+        foreach ($items as $i) {
+            if (!empty($i['is_included']) && isset(CD_MINERALEN[(int)($i['type_id'] ?? 0)])) { $mineraal = true; break; }
+        }
+        if (!$mineraal) continue;
+        $met[] = $k;
+        foreach ($items as $i) if (!empty($i['type_id'])) $typeIds[(int)$i['type_id']] = true;
+    }
+    if (!$met) return [];
+    $typeIds = array_keys($typeIds);
+    cdUpdatePrices($pdo, $typeIds);
+    cdUpdateNames($pdo, $typeIds);
+
+    $prijzen = [];
+    foreach (array_chunk($typeIds, 500) as $chunk) {
+        $in = implode(',', array_fill(0, count($chunk), '?'));
+        $st = $pdo->prepare("SELECT * FROM cc_prices WHERE type_id IN ($in)");
+        $st->execute($chunk);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $prijzen[(int)$r['type_id']] = $r;
+    }
+
+    $rijen = [];
+    foreach ($met as $k) {
+        $waardeJita = 0.0; $waardeMineralen = 0.0; $kostenGeef = 0.0;
+        $mineralen = []; $overig = []; $heeftInlever = false; $prijsOnbekend = false;
+
+        foreach ($inhoud[$k['id']] as $i) {
+            $tid    = (int)($i['type_id'] ?? 0);
+            $aantal = (int)($i['quantity'] ?? 0);
+            $p      = $prijzen[$tid] ?? null;
+            $isBpc  = !empty($i['is_blueprint_copy']);
+            $sell   = $isBpc ? 0.0 : (float)($p['sell_safe'] ?? 0);
+            if (!$isBpc && !$sell) $prijsOnbekend = true;
+
+            if (empty($i['is_included'])) {           // moet je zelf inleveren
+                $kostenGeef += $sell * $aantal;
+                $heeftInlever = true;
+                continue;
+            }
+            $waardeJita += $sell * $aantal;
+            if (isset(CD_MINERALEN[$tid])) {
+                $waardeMineralen += $sell * $aantal;
+                // Zelfde mineraal kan in meerdere stapels zitten: samenvoegen.
+                if (isset($mineralen[$tid])) { $mineralen[$tid]['aantal'] += $aantal; $mineralen[$tid]['waarde'] += $sell * $aantal; }
+                else $mineralen[$tid] = ['typeId' => $tid, 'naam' => CD_MINERALEN[$tid], 'aantal' => $aantal,
+                                         'jitaSell' => $sell, 'jitaBuy' => (float)($p['buy'] ?? 0), 'waarde' => $sell * $aantal];
+            } else {
+                $overig[] = ['typeId' => $tid, 'naam' => $p['name'] ?? ('#' . $tid), 'aantal' => $aantal,
+                             'isBpc' => $isBpc, 'waarde' => $sell * $aantal];
+            }
+        }
+        usort($mineralen, fn($a, $b) => $b['waarde'] <=> $a['waarde']);
+        usort($overig,    fn($a, $b) => $b['waarde'] <=> $a['waarde']);
+
+        $betaalt = $k['prijs'] + $kostenGeef - $k['beloning'];
+        $puur    = !$overig;
+        $rijen[] = $k + [
+            'betaalt'         => $betaalt,
+            'waardeJita'      => $waardeJita,
+            'waardeMineralen' => $waardeMineralen,
+            'korting'         => $waardeJita > 0 ? (($waardeJita - $betaalt) / $waardeJita * 100) : null,
+            'mineralen'       => array_values($mineralen),
+            'overig'          => array_slice($overig, 0, 6),
+            'aantalOverig'    => count($overig),
+            'puur'            => $puur,
+            // Eén soort mineraal en verder niets: dan is de prijs per stuk zinvol.
+            'perStuk'         => ($puur && count($mineralen) === 1 && $mineralen[0]['aantal'] > 0)
+                                    ? $betaalt / $mineralen[0]['aantal'] : null,
+            'heeftInlever'    => $heeftInlever,
+            'prijsOnbekend'   => $prijsOnbekend,
+        ];
+    }
+    usort($rijen, fn($a, $b) => ($b['korting'] ?? -INF) <=> ($a['korting'] ?? -INF));
+
+    // NPC-stations lost de server op (naam bevat het systeem); structures doet
+    // de frontend met het token van de gebruiker.
+    $locaties = cdLocaties($pdo, array_column($rijen, 'locatieId'));
+    $naamIds = [];
+    foreach ($rijen as $r) {
+        if (!empty($r['issuerId']))     $naamIds[] = $r['issuerId'];
+        if (!empty($r['forCorp']) && !empty($r['issuerCorpId'])) $naamIds[] = $r['issuerCorpId'];
+    }
+    $namen = cdNamen($pdo, $naamIds);
+    foreach ($rijen as &$r) {
+        $loc = $locaties[$r['locatieId']] ?? null;
+        $r['locatie']    = $loc['naam'] ?? '';
+        $r['systeem']    = $loc['systeem'] ?? '';
+        $r['issuer']     = $namen[$r['issuerId']] ?? '';
+        $r['issuerCorp'] = !empty($r['forCorp']) ? ($namen[$r['issuerCorpId']] ?? '') : '';
+    }
+    unset($r);
+    return $rijen;
+}
+
 // ---------------------------------------------------------------- routes
 
 $pdo = getDB();
 cdSchema($pdo);
 $action = $_GET['action'] ?? 'list';
+
+// De thuisregio staat los van de hubs: eigen kandidatenlijst, zelfde scanner en
+// inhoud-cache. Per verzoek weer hooguit CD_ITEMS_PER_CALL nieuwe contracten.
+if ($action === 'mineralen') {
+    $kandidaten = cdThuisKandidaten($pdo, !empty($_GET['refresh']));
+    $scan  = cdScan($pdo, $kandidaten);
+    $rijen = cdMineralen($pdo, $kandidaten);
+    echo json_encode([
+        'ok'            => true,
+        'regio'         => 'Delve',
+        'eigenSystemen' => cdEigenSystemen($pdo),
+        'bijgewerkt'    => date('c'),
+        'rows'          => $rijen,
+        'totalen'       => [
+            'kandidaten'  => count($kandidaten),
+            'gescand'     => count($kandidaten) - $scan['nog_te_gaan'],
+            'nog_te_gaan' => $scan['nog_te_gaan'],
+            'mineraal'    => count($rijen),
+        ],
+    ]);
+    exit;
+}
 
 $kandidaten = cdKandidaten($pdo, !empty($_GET['refresh']));
 $scan = cdScan($pdo, $kandidaten);

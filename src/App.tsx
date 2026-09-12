@@ -36,6 +36,7 @@ const Skills       = lz(() => import('./pages/Skills'))
 const Blueprints   = lz(() => import('./pages/Blueprints'))
 const Contracts    = lz(() => import('./pages/Contracts'))
 const Koopjes      = lz(() => import('./pages/Koopjes'))
+const Mineralen    = lz(() => import('./pages/Mineralen'))
 const Notes        = lz(() => import('./pages/Notes'))
 const Ideeen       = lz(() => import('./pages/Ideeen'))
 const EveNews      = lz(() => import('./pages/EveNews'))
@@ -260,6 +261,7 @@ function AppRoutes() {
       <Route path="/blueprints" element={<ProtectedRoute><Blueprints /></ProtectedRoute>} />
       <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
       <Route path="/koopjes"    element={<ProtectedRoute><Koopjes /></ProtectedRoute>} />
+      <Route path="/mineralen"  element={<ProtectedRoute><Mineralen /></ProtectedRoute>} />
       <Route path="/notes"      element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/ideeen"     element={<ProtectedRoute><Ideeen /></ProtectedRoute>} />
       <Route path="/eve-news"   element={<ProtectedRoute><EveNews /></ProtectedRoute>} />
