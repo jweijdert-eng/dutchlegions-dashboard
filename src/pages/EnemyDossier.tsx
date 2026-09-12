@@ -139,7 +139,7 @@ export default function EnemyDossier() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <span style={{ width: 20, textAlign: 'right', fontSize: '0.8rem', fontWeight: 800, color: i < 3 ? 'var(--gold)' : 'var(--text-dim)' }}>{i + 1}</span>
                 <a href={`https://zkillboard.com/corporation/${e.corpId}/`} target="_blank" rel="noreferrer">
-                  <EveImage category="corporations" id={e.corpId} variation="logo" size={48} px={40} style={{ borderRadius: 4, display: 'block' }} />
+                  <EveImage category="corporations" id={e.corpId} variation="logo" size={64} px={40} style={{ borderRadius: 4, display: 'block' }} />
                 </a>
               </div>
 

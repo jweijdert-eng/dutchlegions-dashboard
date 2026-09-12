@@ -133,7 +133,13 @@ export default function Notifications() {
           const nameMap = await resolveNames(senderIds).catch(() => new Map<number, string>())
           for (const m of unread) {
             result.push({
-                id:       `mail-${t.characterId}-${m.mail_id}`,
+              id:       `mail-${t.characterId}-${m.mail_id}`,
+              type:     'mail',
+              severity: 'info',
+              icon:     TYPE_ICON.mail,
+              title:    m.subject || '(geen onderwerp)',
+              body:     `Van ${nameMap.get(m.from) ?? `ID ${m.from}`}`,
+              time:     timeAgo(m.timestamp),
               link:     '/mail',
             })
           }
