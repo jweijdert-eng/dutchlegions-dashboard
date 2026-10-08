@@ -4,6 +4,19 @@ cors();
 
 $pdo = getDB();
 
+// GitHub zegt 401 als het token verlopen of ingetrokken is: dat moet de admin dan
+// kunnen zien en vervangen, in plaats van een kale foutcode.
+function githubFout(int $code, $resp = null): void {
+    http_response_code(502);
+    if ($code === 401) {
+        echo json_encode(['error' => 'GitHub-token verlopen of ingetrokken, stel een nieuw token in', 'patOngeldig' => true]);
+        return;
+    }
+    $uit = ['error' => "GitHub gaf HTTP $code"];
+    if ($resp !== null) $uit['detail'] = $resp;
+    echo json_encode($uit);
+}
+
 function pat(PDO $pdo): string {
     $r = $pdo->query("SELECT value FROM settings WHERE `key` = 'github_pat'")->fetch(PDO::FETCH_ASSOC);
     return $r ? trim($r['value']) : '';
@@ -52,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         if ($code === 204) { echo json_encode(['ok' => true]); }
-        else { http_response_code(502); echo json_encode(['error' => "GitHub gaf HTTP $code", 'detail' => $resp]); }
+        else { githubFout($code, $resp); }
         exit;
     }
 
@@ -78,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode($run
                 ? ['status' => $run['status'], 'conclusion' => $run['conclusion'], 'created_at' => $run['created_at'], 'url' => $run['html_url']]
                 : ['status' => null]);
-        } else { http_response_code(502); echo json_encode(['error' => "GitHub gaf HTTP $code"]); }
+        } else { githubFout($code); }
         exit;
     }
 

@@ -363,7 +363,7 @@ export default function Admin() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ characterId: adminToken.characterId, action: 'save', pat: patInput.trim() }),
     }).catch(() => {})
-    setHasPat(true); setShowPatField(false); setPatInput('')
+    setHasPat(true); setShowPatField(false); setPatInput(''); setTriggerMsg(null)
   }
 
   async function runUpdate() {
@@ -376,6 +376,9 @@ export default function Admin() {
     }).then(r => r.json()).catch(() => ({ error: 'netwerkfout' }))
     if (r.ok) {
       setUpdateStart(Date.now()); setUpdatePct(3); setUpdating(true)
+    } else if (r.patOngeldig) {
+      // Verlopen of ingetrokken token: meteen het veld openen om een nieuw te plakken
+      setShowPatField(true); setTriggerMsg(`Mislukt: ${r.error}`)
     } else {
       setTriggerMsg(`Mislukt: ${r.error ?? ''}`); setTimeout(() => setTriggerMsg(null), 6000)
     }
@@ -1457,11 +1460,9 @@ export default function Admin() {
                   disabled={updating}
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.8rem', cursor: updating ? 'default' : 'pointer', opacity: updating ? 0.6 : 1 }}
                 >{updating ? '⏳ Bezig…' : '↻ Nu bijwerken'}</button>
-                {!hasPat && (
-                  <button onClick={() => setShowPatField(s => !s)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.65rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                    GitHub-token instellen
-                  </button>
-                )}
+                <button onClick={() => setShowPatField(s => !s)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.65rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                  {hasPat ? 'GitHub-token vervangen' : 'GitHub-token instellen'}
+                </button>
                 {triggerMsg && (
                   <span style={{ fontSize: '0.65rem', color: triggerMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{triggerMsg}</span>
                 )}
@@ -1487,7 +1488,7 @@ export default function Admin() {
                     <button onClick={savePat} style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.7rem', fontWeight: 600, padding: '0.35rem 0.7rem', cursor: 'pointer' }}>Opslaan</button>
                   </div>
                   <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.3rem', lineHeight: 1.5 }}>
-                    Maak op github.com een fine-grained token voor deze repo met <strong>Actions: Read and write</strong>. Wordt veilig in de database bewaard (niet in de code).
+                    Maak op github.com een fine-grained token voor deze repo met <strong>Actions: Read and write</strong>. Wordt veilig in de database bewaard (niet in de code). Een token verloopt: kies bij het maken een lange vervaldatum.
                   </div>
                 </div>
               )}
