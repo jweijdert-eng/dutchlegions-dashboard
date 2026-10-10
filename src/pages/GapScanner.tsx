@@ -9,15 +9,14 @@ import Layout, { PageHeader } from '../components/Layout'
 const THE_FORGE = 10000002
 const JITA_44 = 60003760
 
-// Handelshubs die de scanner kan doorzoeken. Jita = publieke regio-orders (geen
-// token nodig); de nullsec-hubs BKG-Q2 en 4-HWWF zijn PLAYER-STRUCTURES, dus die
-// haal je op via de structure-markt met je token (scope esi-markets.structure_markets.v1
-// + markt-toegang tot de structure). Dagvolume komt van de regio-historie.
+// Handelshubs die de scanner kan doorzoeken: publieke regio-orders op het
+// hub-station, geen token nodig. Een player-structure kan ook (kind 'structure'):
+// die haal je op via de structure-markt met je token (scope
+// esi-markets.structure_markets.v1 + markt-toegang). Dagvolume komt van de regio-historie.
 type Hub = { key: string; label: string; kind: 'region' | 'structure'; region: number; station?: number; structure?: number }
 const HUBS: Hub[] = [
-  { key: 'jita',  label: 'Jita 4-4', kind: 'region',    region: THE_FORGE, station: JITA_44 },
-  { key: 'bkg',   label: 'BKG-Q2',   kind: 'structure', region: 10000055,  structure: 1032721770598 },
-  { key: '4hwwf', label: '4-HWWF',   kind: 'structure', region: 10000003,  structure: 1053970513596 },
+  { key: 'jita',  label: 'Jita 4-4',   kind: 'region', region: THE_FORGE, station: JITA_44 },
+  { key: 'amarr', label: 'Amarr VIII', kind: 'region', region: 10000043,  station: 60008494 },
 ]
 
 // ── Categorie-definities (via inventory-groepen/categorieën uit de SDE-bundel) ──
@@ -181,7 +180,11 @@ export default function GapScanner() {
   const [minVolume, setMinVolume] = useState(() => (loadSettings().minVolume as number) ?? 1)
   const [maxDays, setMaxDays] = useState(() => (loadSettings().maxDays as number) ?? 0)   // 0 = geen limiet
   const [sortKey, setSortKey] = useState<SortKey>(() => (loadSettings().sortKey as SortKey) ?? 'potential')
-  const [hubKey, setHubKey] = useState<string>(() => (loadSettings().hubKey as string) ?? 'jita')
+  // Een bewaarde hub die er niet meer is (BKG-Q2, 4-HWWF) valt terug op Jita.
+  const [hubKey, setHubKey] = useState<string>(() => {
+    const k = loadSettings().hubKey as string | undefined
+    return HUBS.some(h => h.key === k) ? k! : 'jita'
+  })
   const hub = HUBS.find(h => h.key === hubKey) ?? HUBS[0]
 
   // Instellingen bewaren zodra ze wijzigen.
@@ -355,7 +358,7 @@ export default function GapScanner() {
   }
 
   return (
-    <Layout header={<PageHeader title="🕳️ Gap Scanner" sub="Snelle flips: een prijs-gat in de goedkoopste sell-orders van een handelshub, gefilterd op dagelijks handelsvolume. Jita, of je nullsec-structures BKG-Q2 / 4-HWWF (met je token)." />}>
+    <Layout header={<PageHeader title="🕳️ Gap Scanner" sub="Snelle flips: een prijs-gat in de goedkoopste sell-orders van een handelshub, gefilterd op dagelijks handelsvolume. Jita of Amarr." />}>
       <div style={{ width: '100%' }}>
 
       {/* Markt / hub */}
