@@ -67,7 +67,7 @@ function buyVerdict(m: { netMarginPct: number; dayVolume?: number; trendPct?: nu
   return { label: 'KOOP NU', color: '#4ade80', reason: reasons.includes('goedkoop nu') ? 'goedkoop t.o.v. 30d' : 'goede marge & volume' }
 }
 
-interface Fees { broker: number; tax: number } // fracties
+export interface Fees { broker: number; tax: number } // fracties
 const PRESETS = [
   { label: 'Geen skills',  broker: 0.05,  tax: 0.08 },
   { label: 'Basis skills', broker: 0.03,  tax: 0.072 },
@@ -75,7 +75,7 @@ const PRESETS = [
   { label: 'Corp/NPC hub', broker: 0.003, tax: 0.036 },
 ]
 
-interface Row {
+export interface Row {
   typeId: number; name: string
   bestBuy: number; bestSell: number; spread: number
   netMargin: number; netMarginPct: number
@@ -84,7 +84,7 @@ interface Row {
   trendPct?: number; volatilityPct?: number; iskPerDay?: number
 }
 
-function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] {
+export function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] {
   const byType = new Map<number, { bs: number; bb: number; sv: number; bv: number }>()
   for (const o of orders) {
     if (o.location_id !== JITA_STATION) continue
@@ -111,7 +111,7 @@ function scanJita(orders: PublicMarketOrder[], fees: Fees): Omit<Row, 'name'>[] 
 // Stats uit de markt-historie: recent dagvolume, 30d gemiddelde/min/max,
 // trend (recente helft vs oudere helft, in %) en volatiliteit (variatie-
 // coëfficiënt = stdev/gemiddelde, in %).
-function historyStats(hist: RegionHistoryPoint[]) {
+export function historyStats(hist: RegionHistoryPoint[]) {
   const h30 = hist.slice(-30)
   const avgs = h30.map(h => h.average)
   const n = avgs.length
