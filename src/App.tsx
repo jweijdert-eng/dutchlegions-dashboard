@@ -58,6 +58,7 @@ const HubArbitrage = lz(() => import('./pages/HubArbitrage'))
 const JitaMonitor  = lz(() => import('./pages/JitaMonitor'))
 const JitaPositions = lz(() => import('./pages/JitaPositions'))
 const JitaToday    = lz(() => import('./pages/JitaToday'))
+const Handelscentrum = lz(() => import('./pages/Handelscentrum'))
 const KillOfWeek   = lz(() => import('./pages/KillOfWeek'))
 const Leaderboard  = lz(() => import('./pages/Leaderboard'))
 const TopMiners    = lz(() => import('./pages/TopMiners'))
@@ -252,6 +253,7 @@ function AppRoutes() {
       <Route path="/jita-monitor" element={<ProtectedRoute><JitaMonitor /></ProtectedRoute>} />
       <Route path="/jita-positions" element={<ProtectedRoute><JitaPositions /></ProtectedRoute>} />
       <Route path="/jita-today" element={<ProtectedRoute><JitaToday /></ProtectedRoute>} />
+      <Route path="/handel" element={<ProtectedRoute><Handelscentrum /></ProtectedRoute>} />
       <Route path="/industry"  element={<ProtectedRoute><Industry /></ProtectedRoute>} />
       <Route path="/mining"    element={<ProtectedRoute><Mining /></ProtectedRoute>} />
       <Route path="/planets"   element={<ProtectedRoute><Planets /></ProtectedRoute>} />
