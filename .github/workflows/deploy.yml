@@ -35,6 +35,12 @@ jobs:
           VITE_EVE_CLIENT_ID: ${{ secrets.VITE_EVE_CLIENT_ID }}
           VITE_EVE_REDIRECT_URI: ${{ secrets.VITE_EVE_REDIRECT_URI }}
 
+      # Het databasewachtwoord staat niet in de (openbare) repo: dat komt uit het geheim.
+      - name: Databasewachtwoord uit het geheim
+        run: node tools/schrijf-geheim.mjs
+        env:
+          DB_PASS: ${{ secrets.DB_PASS }}
+
       - name: Upload via FTP
         uses: ./.github/actions/ftp-deploy-retry
         with:

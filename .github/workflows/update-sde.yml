@@ -67,6 +67,13 @@ jobs:
           VITE_EVE_CLIENT_ID: ${{ secrets.VITE_EVE_CLIENT_ID }}
           VITE_EVE_REDIRECT_URI: ${{ secrets.VITE_EVE_REDIRECT_URI }}
 
+      # Ook hier: zonder dit bestand ruimt de upload het geheime wachtwoord op de server op.
+      - name: Databasewachtwoord uit het geheim
+        if: steps.diff.outputs.changed == 'true'
+        run: node tools/schrijf-geheim.mjs
+        env:
+          DB_PASS: ${{ secrets.DB_PASS }}
+
       - name: Upload via FTP
         if: steps.diff.outputs.changed == 'true'
         uses: ./.github/actions/ftp-deploy-retry

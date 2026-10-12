@@ -7,3 +7,7 @@ dist/
 
 # Screenshots van de verify-tools
 .shots/
+
+# Databasewachtwoord: wordt bij het deployen uit het GitHub-geheim DB_PASS geschreven
+public/api/config.geheim.php
+dist/api/config.geheim.php
