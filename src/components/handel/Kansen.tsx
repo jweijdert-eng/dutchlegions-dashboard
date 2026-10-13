@@ -10,6 +10,17 @@ interface Markt { bestBuy: number | null; bestSell: number | null; margePct: num
 // De laatste scan blijft bewaard zolang de pagina open is: wisselen van tabblad
 // hoeft geen minuut opnieuw scannen te kosten.
 let laatsteScan: { tijd: number; rijen: Kans[] } | null = null
+// En de namen die we hier opzochten ook: anders staat de bewaarde scan er na een
+// tabwissel met #nummers in plaats van namen.
+const bekendeNamen = new Map<number, string>()
+// Een scan die nog loopt als je van tabblad wisselt: bij terugkomst pakken we hem weer op.
+let lopendeScan: Promise<void> | null = null
+
+async function namenErbij(ids: number[]) {
+  const missen = [...new Set(ids)].filter(id => !bekendeNamen.has(id))
+  if (!missen.length) return
+  for (const [id, n] of await resolveNames(missen)) bekendeNamen.set(id, n)
+}
 
 /** Koop op de beste buy + 1 cent, verkoop op de beste sell − 1 cent, met fees. */
 function margeNu(bestBuy: number | null, bestSell: number | null, f: Fees) {
@@ -32,7 +43,7 @@ async function marktInJita(typeId: number, f: Fees): Promise<Markt> {
 }
 
 export default function Kansen({ g, onItem }: { g: Gegevens; onItem: (typeId: number, locationId?: number) => void }) {
-  const [namen, setNamen] = useState<Map<number, string>>(g.namen)
+  const [namen, setNamen] = useState<Map<number, string>>(() => new Map(bekendeNamen))
   const [scan, setScan] = useState(laatsteScan)
   const [bezig, setBezig] = useState<string | null>(null)
   const [fout, setFout] = useState<string | null>(null)
@@ -42,11 +53,22 @@ export default function Kansen({ g, onItem }: { g: Gegevens; onItem: (typeId: nu
 
   const naamMap = useMemo(() => new Map([...g.namen, ...namen]), [g.namen, namen])
   const extraNamen = useCallback(async (ids: number[]) => {
-    const missen = ids.filter(id => !naamMap.has(id))
-    if (!missen.length) return
-    const nm = await resolveNames(missen)
-    setNamen(m => new Map([...m, ...nm]))
-  }, [naamMap])
+    await namenErbij(ids.filter(id => !g.namen.has(id)))
+    setNamen(new Map(bekendeNamen))
+  }, [g.namen])
+
+  // Namen van een bewaarde scan altijd (opnieuw) zeker stellen.
+  useEffect(() => { if (scan) extraNamen(scan.rijen.map(r => r.typeId)).catch(() => {}) }, [scan, extraNamen])
+
+  // Liep er nog een scan toen je terugkwam? Dan wachten we gewoon mee.
+  useEffect(() => {
+    if (!lopendeScan) return
+    let weg = false
+    setBezig('De scan loopt nog…')
+    lopendeScan.then(() => { if (!weg) setScan(laatsteScan) }).catch(() => {})
+      .finally(() => { if (!weg) setBezig(null) })
+    return () => { weg = true }
+  }, [])
 
   // Favorieten: items waar je eerder netto winst op maakte, de beste eerst.
   const favorieten = useMemo(() => {
@@ -77,8 +99,9 @@ export default function Kansen({ g, onItem }: { g: Gegevens; onItem: (typeId: nu
   }, [favorieten, volg])
 
   async function scanNu() {
+    if (lopendeScan) return
     setFout(null)
-    try {
+    lopendeScan = (async () => {
       setBezig('Orders van heel The Forge ophalen…')
       const orders = await getAllRegionOrders(JITA.regio, (done, total) => setBezig(`Orders ophalen… ${done}/${total}`))
       setBezig('Rekenen…')
@@ -98,12 +121,17 @@ export default function Kansen({ g, onItem }: { g: Gegevens; onItem: (typeId: nu
       }))
       rijen.sort((a, b) => b.dayProfit - a.dayProfit)
       const top = rijen.slice(0, 15)
-      await extraNamen(top.map(r => r.typeId))
+      // Namen vóórdat de scan klaar heet, en buiten dit tabblad bewaard.
+      await namenErbij(top.map(r => r.typeId))
       laatsteScan = { tijd: Date.now(), rijen: top }
+    })()
+    try {
+      await lopendeScan
+      setNamen(new Map(bekendeNamen))
       setScan(laatsteScan)
     } catch (e) {
       setFout(e instanceof Error ? e.message : 'Scan mislukt')
-    } finally { setBezig(null) }
+    } finally { lopendeScan = null; setBezig(null) }
   }
 
   function wisselVolg(typeId: number) {

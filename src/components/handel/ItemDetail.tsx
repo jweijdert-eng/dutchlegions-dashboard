@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts'
-import { getRegionHistory, getRegionOrders, openMarketWindow, type PublicMarketOrder, type RegionHistoryPoint } from '../../api/esi'
+import { getRegionHistory, getRegionOrders, openMarketWindow, resolveNames, type PublicMarketOrder, type RegionHistoryPoint } from '../../api/esi'
 import EveImage from '../EveImage'
 import { historyStats } from '../../pages/JitaScanner'
 import { fmtISK, hubVan, HUBS, JITA, kleur, leesVolg, nettoWinst, plus, zetVolg, type Hub } from '../../utils/handel'
@@ -15,7 +15,15 @@ export default function ItemDetail({ typeId, plek, g, onClose }: { typeId: numbe
   const [boek, setBoek] = useState<PublicMarketOrder[] | null>(null)
   const [perHub, setPerHub] = useState<HubPrijs[] | null>(null)
   const [volgt, setVolgt] = useState(() => leesVolg().includes(typeId))
-  const naam = g.namen.get(typeId) ?? `#${typeId}`
+  // Items uit de scan of de volglijst staan niet altijd in de namen van de pagina.
+  const [eigenNaam, setEigenNaam] = useState<string | null>(null)
+  useEffect(() => {
+    if (g.namen.has(typeId)) return
+    let weg = false
+    resolveNames([typeId]).then(m => { if (!weg) setEigenNaam(m.get(typeId) ?? null) }).catch(() => {})
+    return () => { weg = true }
+  }, [typeId, g.namen])
+  const naam = g.namen.get(typeId) ?? eigenNaam ?? `#${typeId}`
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
