@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 // POST: mededeling instellen (alleen admin)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = json_decode(file_get_contents('php://input'), true);
-    if ((int)($data['characterId'] ?? 0) !== ADMIN_CHAR_ID) {
+    if (authCharId(is_array($data) ? $data : []) !== ADMIN_CHAR_ID) {  // geverifieerd token van de eigenaar, niet de spoofbare characterId
         http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
     }
     try {

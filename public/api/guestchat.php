@@ -51,7 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
-    if ((int)($data['adminCharId'] ?? 0) !== ADMIN_CHAR_ID) { http_response_code(403); echo json_encode(['error' => 'forbidden']); exit; }
+    // geverifieerd token van de eigenaar, niet de spoofbare adminCharId
+    if (authCharId($data) !== ADMIN_CHAR_ID) { http_response_code(403); echo json_encode(['error' => 'forbidden']); exit; }
     try {
         if (isset($data['id'])) $pdo->prepare('DELETE FROM guest_chat WHERE id = ?')->execute([(int)$data['id']]);
         else $pdo->exec('DELETE FROM guest_chat');

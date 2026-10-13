@@ -654,7 +654,7 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   const publishNav = async () => {
     setNavSaved('saving')
     try {
-      const r = await fetch('/api/navconfig.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ characterId: ADMIN_CHAR_ID, layout, labels }) })
+      const r = await fetch('/api/navconfig.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ characterId: ADMIN_CHAR_ID, token: tokens.find(t => t.characterId === ADMIN_CHAR_ID)?.accessToken, layout, labels }) })
       setNavSaved(r.ok ? 'done' : 'idle')
       if (r.ok) setTimeout(() => setNavSaved('idle'), 2000)
     } catch { setNavSaved('idle') }

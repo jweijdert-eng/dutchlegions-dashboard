@@ -3,6 +3,7 @@ require_once 'config.php';
 cors();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') { http_response_code(405); exit; }
+requireAdmin();  // inloggeschiedenis van een lid: alleen voor admins
 
 $id = (int)($_GET['characterId'] ?? 0);
 if (!$id) { http_response_code(400); echo json_encode(['error' => 'characterId vereist']); exit; }

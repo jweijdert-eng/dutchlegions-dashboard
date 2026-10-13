@@ -266,7 +266,7 @@ export default function Admin() {
     if (!adminToken) return
     await fetch('/api/motd.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, text: motdText, enabled: motdEnabled, type: motdType, until: motdUntil, link: motdLink }),
+      body: JSON.stringify({ characterId: adminToken.characterId, token: adminToken.accessToken, text: motdText, enabled: motdEnabled, type: motdType, until: motdUntil, link: motdLink }),
     }).catch(() => {})
     setMotdSaved(true); setTimeout(() => setMotdSaved(false), 2000)
   }
@@ -285,7 +285,7 @@ export default function Admin() {
   // aanwezige keys bij, zodat een accent-/links-save nooit de bridges/intel wist.
   async function saveSiteConfig(patch: Partial<{ accent: string; links: CorpLink[]; bridges: JumpBridge[]; intelChannels: IntelChannel[] }>) {
     if (!adminToken) return
-    const body: Record<string, unknown> = { characterId: adminToken.characterId }
+    const body: Record<string, unknown> = { characterId: adminToken.characterId, token: adminToken.accessToken }
     if (patch.accent !== undefined) body.accent = patch.accent
     if (patch.links !== undefined) body.links = patch.links.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
     if (patch.bridges !== undefined) body.bridges = patch.bridges.filter(b => b[0]?.trim() && b[1]?.trim())
@@ -361,7 +361,7 @@ export default function Admin() {
     if (!adminToken || !patInput.trim()) return
     await fetch('/api/sde-trigger.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, action: 'save', pat: patInput.trim() }),
+      body: JSON.stringify({ characterId: adminToken.characterId, token: adminToken.accessToken, action: 'save', pat: patInput.trim() }),
     }).catch(() => {})
     setHasPat(true); setShowPatField(false); setPatInput(''); setTriggerMsg(null)
   }
@@ -372,7 +372,7 @@ export default function Admin() {
     setTriggerMsg(null)
     const r = await fetch('/api/sde-trigger.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: adminToken.characterId, action: 'run' }),
+      body: JSON.stringify({ characterId: adminToken.characterId, token: adminToken.accessToken, action: 'run' }),
     }).then(r => r.json()).catch(() => ({ error: 'netwerkfout' }))
     if (r.ok) {
       setUpdateStart(Date.now()); setUpdatePct(3); setUpdating(true)
@@ -394,7 +394,7 @@ export default function Admin() {
       setUpdatePct(p => Math.min(95, Math.max(p, Math.round((elapsed / 130) * 100))))
       const r = await fetch('/api/sde-trigger.php', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId: adminToken.characterId, action: 'status' }),
+        body: JSON.stringify({ characterId: adminToken.characterId, token: adminToken.accessToken, action: 'status' }),
       }).then(res => res.json()).catch(() => null)
       if (!alive) return
       const fresh = r?.created_at && new Date(r.created_at).getTime() >= updateStart - 20000
@@ -428,7 +428,7 @@ export default function Admin() {
   async function fetchMembers() {
     setLoading(true)
     try {
-      const r = await fetch('/api/members.php')
+      const r = await fetch(`/api/members.php?token=${encodeURIComponent(adminToken?.accessToken ?? '')}`)
       const list = await r.json() as SiteMember[]
       setMembers(list)
       fetchMemberOrgs(list)
@@ -460,7 +460,7 @@ export default function Admin() {
 
   async function refreshMembers() {
     try {
-      const r = await fetch('/api/members.php')
+      const r = await fetch(`/api/members.php?token=${encodeURIComponent(adminToken?.accessToken ?? '')}`)
       const list = await r.json() as SiteMember[]
       setMembers(list)
       fetchMemberOrgs(list)
@@ -537,7 +537,7 @@ export default function Admin() {
   async function openDetail(m: SiteMember) {
     setDetailMember(m); setDetail(null); setDetailLoading(true)
     const [d, info] = await Promise.all([
-      fetch(`/api/member.php?characterId=${m.character_id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/member.php?characterId=${m.character_id}&token=${encodeURIComponent(adminToken?.accessToken ?? '')}`).then(r => r.ok ? r.json() : null).catch(() => null),
       getCharacterInfo(m.character_id).catch(() => null),
     ])
     setDetail(d ? { ...d, birthday: info?.birthday, secStatus: info?.security_status } : null)

@@ -6,15 +6,20 @@ $pdo = getDB();
 ensureMembersSchema($pdo);
 $method = $_SERVER['REQUEST_METHOD'];
 
-// GET: alle members OF één character check (blocked? / allowed?)
+// GET: alle members (alleen admin) OF één character check (blocked? / allowed?);
+// dat laatste mag het character zelf, bij het inloggen.
 if ($method === 'GET') {
     if (isset($_GET['characterId'])) {
+        $id  = (int)$_GET['characterId'];
+        $cid = authCharId();
+        if (!$cid || ($cid !== $id && !isAdminRole($cid))) { http_response_code(403); echo json_encode(['error' => 'forbidden']); exit; }
         $stmt = $pdo->prepare('SELECT character_id, name, blocked, allowed FROM members WHERE character_id = ?');
-        $stmt->execute([(int)$_GET['characterId']]);
+        $stmt->execute([$id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row) { $row['blocked'] = (int)$row['blocked']; $row['allowed'] = (int)$row['allowed']; }
         echo json_encode($row ?: null);
     } else {
+        requireAdmin();
         $stmt = $pdo->query('SELECT character_id, name, last_seen, blocked, allowed FROM members ORDER BY last_seen DESC');
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$r) { $r['blocked'] = (int)$r['blocked']; $r['allowed'] = (int)$r['allowed']; }

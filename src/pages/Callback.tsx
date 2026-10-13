@@ -25,7 +25,7 @@ export default function Callback() {
       .then(async (token) => {
         // Admin mag altijd
         if (token.characterId !== 1831618559) {
-          const memberInfo = await fetch(`/api/members.php?characterId=${token.characterId}`).then(r => r.json()).catch(() => null)
+          const memberInfo = await fetch(`/api/members.php?characterId=${token.characterId}&token=${encodeURIComponent(token.accessToken)}`).then(r => r.json()).catch(() => null)
           if (memberInfo?.blocked) throw new Error('Je bent geblokkeerd van dit dashboard.')
 
           const settings = await fetch('/api/settings.php').then(r => r.json()).catch(() => ({}))
