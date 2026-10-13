@@ -1,7 +1,7 @@
 <?php
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'cm135994_dutchlegions');
-define('DB_USER', 'cm135994_dutchlegions');
+define('DB_USER', 'cm135994');
 // Het wachtwoord staat niet in de repo (die is openbaar). Bij het deployen
 // schrijft GitHub Actions het uit het geheim DB_PASS in config.geheim.php
 // (tools/schrijf-geheim.mjs); dat bestand bestaat alleen op de server.
