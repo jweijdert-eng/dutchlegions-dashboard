@@ -21,3 +21,9 @@ RewriteRule ^ index.html [QSA,L]
 <FilesMatch "\.json$">
   Header set Cache-Control "public, max-age=86400"
 </FilesMatch>
+
+# Het boekhoudbestand van de FTP-deploy staat in de webmap, maar hoort niet
+# openbaar: het bevat van elk bestand een hash, ook van config.geheim.php.
+<Files ".ftp-deploy-sync-state.json">
+  Require all denied
+</Files>
