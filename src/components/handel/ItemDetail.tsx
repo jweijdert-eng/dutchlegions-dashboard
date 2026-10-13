@@ -100,7 +100,8 @@ export default function ItemDetail({ typeId, plek, g, onClose }: { typeId: numbe
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '4vh 1rem', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ ...CARD, width: '100%', maxWidth: 1050, background: 'var(--bg, #0b0b14)', padding: '1.1rem 1.2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.9rem', flexWrap: 'wrap' }}>
-          <EveImage category="types" id={typeId} variation="icon" size={64} px={44} />
+          <EveImage category="types" id={typeId} size={64} px={44}
+            variation={/(Blueprint|Reaction Formula)$/.test(naam) ? 'bp' : 'icon'} />
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>{naam}</div>
             <div style={DOF}>{hub.naam} · {st ? <>dagvolume {st.dayVolume.toLocaleString('nl-NL')} · gem. 30 d {fmtISK(st.avg30)} · trend <span style={{ color: kleur(st.trendPct) }}>{st.trendPct >= 0 ? '+' : ''}{st.trendPct.toFixed(0)}%</span></> : 'historie laden…'}</div>

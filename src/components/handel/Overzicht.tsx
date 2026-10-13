@@ -62,7 +62,10 @@ export default function Overzicht({ g, onItem, plekNaam, naarTab }: {
     try { await navigator.clipboard.writeText(prijs.toFixed(2)); setGekopieerd(sleutel); setTimeout(() => setGekopieerd(null), 1800) } catch { /* geen klembord */ }
   }
 
-  const icoon = (id: number, px = 22) => <EveImage category="types" id={id} variation="icon" size={32} px={px} />
+  const icoon = (id: number, px = 22) => (
+    <EveImage category="types" id={id} size={32} px={px}
+      variation={/(Blueprint|Reaction Formula)$/.test(g.namen.get(id) ?? '') ? 'bp' : 'icon'} />
+  )
   const itemCel = (id: number, plek?: number) => (
     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
       {icoon(id)}
@@ -164,7 +167,24 @@ export default function Overzicht({ g, onItem, plekNaam, naarTab }: {
 
       {/* 4. Orders en posities */}
       <div style={CARD}>
-        <div style={{ fontSize: '0.9rem', fontWeight: 800, marginBottom: '0.6rem' }}>📋 Mijn orders <span style={{ color: 'var(--text-dim)', fontWeight: 400, fontSize: '0.75rem' }}>({g.status.length})</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.8rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 800 }}>📋 Mijn orders <span style={{ color: 'var(--text-dim)', fontWeight: 400, fontSize: '0.75rem' }}>({g.status.length}{g.hub !== 'alle' ? ` in ${g.hub === 'overig' ? 'overige plekken' : g.hub}` : ''})</span></div>
+          {/* Per character wat er van EVE binnenkwam: zo zie je meteen of er iets mist. */}
+          <div style={{ display: 'flex', gap: '0.7rem', flexWrap: 'wrap', fontSize: '0.7rem' }}>
+            {g.bronnen.map(b => (
+              <span key={b.charId} title={b.fout ? `Ophalen mislukt: ${b.fout}` : `${b.orders} open orders bij EVE`}
+                style={{ color: b.fout ? '#ff5c6c' : 'var(--text-dim)' }}>
+                {b.naam}: <b style={{ color: b.fout ? '#ff5c6c' : 'var(--text)' }}>{b.fout ? 'fout' : b.orders}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+        {(g.nietGekozen.length > 0 || g.bronnen.some(b => b.fout)) && (
+          <div style={{ fontSize: '0.72rem', color: '#ffce54', marginBottom: '0.6rem' }}>
+            {g.nietGekozen.length > 0 && <>Alleen het gekozen character wordt getoond; {g.nietGekozen.join(', ')} {g.nietGekozen.length === 1 ? 'staat' : 'staan'} uit. Kies bovenin "alle characters" om alles te zien. </>}
+            {g.bronnen.some(b => b.fout) && <>Bij een character lukte het ophalen niet: log dat character opnieuw in.</>}
+          </div>
+        )}
         {!g.status.length ? <div style={DOF}>Geen open orders{g.hub === 'alle' ? '' : ' in deze markt'}.</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -199,6 +219,15 @@ export default function Overzicht({ g, onItem, plekNaam, naarTab }: {
             </table>
           </div>
         )}
+        <details style={{ marginTop: '0.7rem' }}>
+          <summary style={{ fontSize: '0.7rem', color: 'var(--text-dim)', cursor: 'pointer' }}>Zie je een order niet die je in EVE wel hebt staan?</summary>
+          <ul style={{ fontSize: '0.72rem', color: 'var(--text-dim)', margin: '0.4rem 0 0', paddingLeft: '1.1rem', lineHeight: 1.6 }}>
+            <li><b style={{ color: 'var(--text)' }}>Net geplaatst of aangepast?</b> EVE geeft orders met tot 20 minuten vertraging door. Druk later op Ververs.</li>
+            <li><b style={{ color: 'var(--text)' }}>Ander character?</b> Alleen de characters hierboven tellen mee. Staat er één niet tussen, voeg hem toe of kies "alle characters".</li>
+            <li><b style={{ color: 'var(--text)' }}>Voor je corporation geplaatst</b> (corp-wallet)? Die orders geeft EVE alleen met corp-rechten; die toont deze pagina (nog) niet.</li>
+            <li><b style={{ color: 'var(--text)' }}>Markt gefilterd?</b> Bovenin staat de markt op "{g.hub === 'alle' ? 'Alle hubs' : g.hub}".</li>
+          </ul>
+        </details>
       </div>
 
       <div style={CARD}>

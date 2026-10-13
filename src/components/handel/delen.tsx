@@ -1,6 +1,7 @@
 // Gedeeld door de tabbladen van het Handelscentrum: stijl, de gegevensvorm en
 // kleine bouwsteentjes.
 import type { MarketOrder, PublicMarketOrder } from '../../api/esi'
+import EveImage from '../EveImage'
 import type { TokenData } from '../../auth/sso'
 import type { Fees, Kost, Tx, OpenLot, Verkoop, ZonderKoop } from '../../utils/handel'
 
@@ -38,6 +39,8 @@ export interface Gegevens {
   fee: Fees
   hub: string                                   // filter: 'alle', 'jita', …, 'overig'
   sinds: number | null                          // sinds wanneer we handel bewaren
+  bronnen: Array<{ charId: number; naam: string; orders: number; fout: string | null }>  // wat er per character binnenkwam
+  nietGekozen: string[]                         // ingelogde characters die nu niet geselecteerd zijn
 }
 
 export const CARD: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.9rem 1rem' }
@@ -61,11 +64,18 @@ export function Tegel({ label, waarde, sub, kleurWaarde }: { label: string; waar
   )
 }
 
-/** Een item als knop: klik opent het item-detail. */
-export function ItemKnop({ id, namen, onItem, plek }: { id: number; namen: Map<number, string>; onItem: (typeId: number, locationId?: number) => void; plek?: number }) {
+/** Een item als knop, met icoon: klik opent het item-detail. */
+export function ItemKnop({ id, namen, onItem, plek, icoon = true }: {
+  id: number; namen: Map<number, string>; onItem: (typeId: number, locationId?: number) => void; plek?: number; icoon?: boolean
+}) {
+  const naam = namen.get(id)
+  // Blueprints en reactie-formules hebben bij EVE een eigen plaatje ("bp").
+  const bp = !!naam && /(Blueprint|Reaction Formula)$/.test(naam)
   return (
-    <button style={ITEMBTN} onClick={() => onItem(id, plek)} title="Details bekijken">
-      {namen.get(id) ?? `#${id}`}
+    <button style={{ ...ITEMBTN, display: 'inline-flex', alignItems: 'center', gap: '0.45rem', maxWidth: '100%' }}
+      onClick={() => onItem(id, plek)} title="Details bekijken">
+      {icoon && <EveImage category="types" id={id} variation={bp ? 'bp' : 'icon'} size={32} px={20} />}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{naam ?? `#${id}`}</span>
     </button>
   )
 }

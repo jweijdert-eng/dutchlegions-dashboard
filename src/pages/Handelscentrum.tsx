@@ -34,7 +34,14 @@ function bewaard<T extends string>(sleutel: string, geldig: readonly T[], standa
 function onthoud(sleutel: string, waarde: string) { try { localStorage.setItem(sleutel, waarde) } catch { /* niet erg */ } }
 
 export default function Handelscentrum() {
-  const { activeTokens: tokens } = useAuth()
+  const { activeTokens, tokens: alleTokens } = useAuth()
+  // activeTokens is bij één gekozen character elke render een nieuwe lijst; zonder
+  // dit vaste exemplaar laadt de pagina zichzelf eindeloos opnieuw.
+  const tokenSleutel = activeTokens.map(t => t.characterId + ':' + t.accessToken).join('|')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tokens = useMemo(() => activeTokens, [tokenSleutel])
+  const nietGekozen = alleTokens.filter(t => !tokens.some(x => x.characterId === t.characterId)).map(t => t.characterName)
+  const [bronnen, setBronnen] = useState<Array<{ charId: number; naam: string; orders: number; fout: string | null }>>([])
   const [tab, setTab] = useState<Tab>(() => bewaard('handel:tab', TABS.map(t => t.key), 'overzicht'))
   const [hub, setHub] = useState<string>(() => bewaard('handel:hub', HUB_OPTIES.map(h => h.key), 'alle'))
   const [feeIdx, setFeeIdx] = useState<number>(() => {
@@ -70,16 +77,24 @@ export default function Handelscentrum() {
     setLaden(true); setFout(null)
     try {
       const perChar = await Promise.all(tokens.map(async t => {
+        // Mislukt het ophalen van orders, dan zeggen we dat (per character) in plaats
+        // van stil een lege lijst te tonen - anders lijkt een order gewoon te ontbreken.
+        let ordersFout: string | null = null
         const [o, tx, jr, w] = await Promise.all([
-          getMarketOrders(t.characterId, t.accessToken).catch(() => [] as MarketOrder[]),
+          getMarketOrders(t.characterId, t.accessToken).catch((e: unknown) => {
+            ordersFout = e instanceof Error ? e.message : 'ophalen mislukt'
+            return [] as MarketOrder[]
+          }),
           getTransactions(t.characterId, t.accessToken).catch(() => [] as WalletTransaction[]),
           getWalletJournal(t.characterId, t.accessToken, 5).catch(() => []),
           getWallet(t.characterId, t.accessToken).catch(() => null),
         ])
         bewaarTx(t.characterId, tx)
         bewaarKosten(t.characterId, jr)
-        return { orders: o.map(x => ({ ...x, charId: t.characterId }) as EigenOrder), wallet: w }
+        return { charId: t.characterId, naam: t.characterName, ordersFout,
+                 orders: o.map(x => ({ ...x, charId: t.characterId }) as EigenOrder), wallet: w }
       }))
+      setBronnen(perChar.map(p => ({ charId: p.charId, naam: p.naam, orders: p.orders.length, fout: p.ordersFout })))
       const alleOrders = perChar.flatMap(p => p.orders)
       const nieuweOpslag = leesAlles()
       const mijnTx = nieuweOpslag.txs.filter(t => charIds.has(t.charId))
@@ -195,8 +210,9 @@ export default function Handelscentrum() {
     verkocht: fifoAlles.verkocht.filter(v => inHub(v.locationId)),
     zonderKoop: fifoAlles.zonderKoop,
     open: fifoAlles.open.filter(l => inHub(l.locationId)),
-    boeken, namen, plekken, wallet, fee, hub, sinds: bewaardSinds(txs),
-  }), [tokens, chars, orders, status, posities, txs, kosten, fifoAlles, boeken, namen, plekken, wallet, fee, hub, inHub])
+    boeken, namen, plekken, wallet, fee, hub, sinds: bewaardSinds(txs), bronnen, nietGekozen,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [tokens, chars, orders, status, posities, txs, kosten, fifoAlles, boeken, namen, plekken, wallet, fee, hub, inHub, bronnen, nietGekozen.join('|')])
 
   const onItem = useCallback((typeId: number, plek?: number) => setDetail({ typeId, plek }), [])
   const zonderKoopWaarde = fifoAlles.zonderKoop.filter(z => z.tijd >= Date.now() - 30 * DAG).reduce((s, z) => s + z.waarde, 0)
