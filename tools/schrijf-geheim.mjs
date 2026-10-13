@@ -6,7 +6,11 @@
 // geen nieuwe versie dan een site die niet bij zijn database kan.
 import fs from 'node:fs'
 
-const wachtwoord = process.env.DB_PASS || ''
+// Bij plakken in GitHub gaat er makkelijk een spatie of enter mee; die horen
+// niet bij het wachtwoord en laten de database de login weigeren.
+const ruw = process.env.DB_PASS || ''
+const wachtwoord = ruw.trim()
+if (ruw !== wachtwoord) console.log('Let op: spaties/enters rond het geheim DB_PASS weggehaald')
 if (!wachtwoord) {
   console.error('DB_PASS ontbreekt: zet het als geheim in GitHub (Settings > Secrets and variables > Actions).')
   process.exit(1)
