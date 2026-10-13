@@ -192,7 +192,7 @@ export default function ItemDetail({ typeId, plek, g, onClose }: { typeId: numbe
               const dagen = st && st.dayVolume > 0 ? s.order.volume_remain / (st.dayVolume * 0.3) : null
               return (
                 <div key={s.order.order_id} style={RIJ}>
-                  <span style={{ fontSize: '0.78rem' }}>{s.isBuy ? 'Koop' : 'Verkoop'}order {fmtISK(s.order.price)} <span style={{ color: 'var(--text-dim)', fontSize: '0.68rem' }}>· {plekNaam(s.order.location_id)}</span></span>
+                  <span style={{ fontSize: '0.78rem' }}>{s.isBuy ? 'Koop' : 'Verkoop'}order {fmtISK(s.order.price)} <span style={{ color: 'var(--text-dim)', fontSize: '0.68rem' }}>· {plekNaam(s.order.location_id)} · {g.chars.get(s.order.charId) ?? s.order.charId}</span></span>
                   <span style={DOF}>
                     {s.order.volume_remain.toLocaleString('nl-NL')} over ·{' '}
                     {s.overboden === null ? 'stand onbekend' : s.overboden ? <b style={{ color: '#ffce54' }}>{s.boven} boven je</b> : <b style={{ color: '#4ade80' }}>bovenaan</b>}

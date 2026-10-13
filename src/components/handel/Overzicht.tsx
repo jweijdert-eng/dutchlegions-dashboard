@@ -143,7 +143,7 @@ export default function Overzicht({ g, onItem, plekNaam, naarTab }: {
           <div style={{ display: 'grid', gap: '0.5rem' }}>
             {overboden.map(s => (
               <ActieRij key={'o' + s.order.order_id} rand="#ffce54" item={itemCel(s.order.type_id, s.order.location_id)}
-                plek={plekNaam(s.order.location_id)}
+                plek={plekNaam(s.order.location_id) + ' · ' + (g.chars.get(s.order.charId) ?? 'character ' + s.order.charId)}
                 tekst={<>{s.isBuy ? 'Verhoog je koopprijs' : 'Verlaag je verkoopprijs'}: {fmtISK(s.order.price)} → <b style={{ color: 'var(--text)', fontSize: '0.95rem' }}>{fmtISK(s.voorstel ?? s.order.price)}</b>
                   <span style={{ color: 'var(--text-dim)' }}> · {s.boven > 1 ? `${s.boven} orders boven je` : 'overboden'}</span></>}
                 knoppen={<>
@@ -189,7 +189,7 @@ export default function Overzicht({ g, onItem, plekNaam, naarTab }: {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ ...TH, textAlign: 'left' }}>Item</th><th style={{ ...TH, textAlign: 'left' }}>Plek</th><th style={TH}>Soort</th>
+                <th style={{ ...TH, textAlign: 'left' }}>Item</th><th style={{ ...TH, textAlign: 'left' }}>Character</th><th style={{ ...TH, textAlign: 'left' }}>Plek</th><th style={TH}>Soort</th>
                 <th style={TH}>Prijs</th><th style={{ ...TH, textAlign: 'left' }}>Gevuld</th><th style={TH}>Status</th><th style={TH}>Loopt nog</th><th style={TH}>Waarde</th>
               </tr></thead>
               <tbody>
@@ -198,6 +198,12 @@ export default function Overzicht({ g, onItem, plekNaam, naarTab }: {
                   return (
                     <tr key={s.order.order_id} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ ...TD, textAlign: 'left', maxWidth: 280 }}>{itemCel(s.order.type_id, s.order.location_id)}</td>
+                      <td style={{ ...TD, textAlign: 'left', maxWidth: 170 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', maxWidth: '100%' }}>
+                          <EveImage category="characters" id={s.order.charId} variation="portrait" size={32} px={18} round />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.chars.get(s.order.charId) ?? s.order.charId}</span>
+                        </span>
+                      </td>
                       <td style={{ ...TD, textAlign: 'left', color: 'var(--text-dim)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{plekNaam(s.order.location_id)}</td>
                       <td style={TD}>{s.isBuy ? <Badge tekst="KOOP" kleur={KLEUR.koop} achter="rgba(76,201,240,0.12)" /> : <Badge tekst="VERKOOP" kleur={KLEUR.verkoop} achter="rgba(244,162,97,0.12)" />}</td>
                       <td style={{ ...TD, fontWeight: 700 }}>{fmtISK(s.order.price)}</td>
