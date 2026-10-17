@@ -50,7 +50,7 @@ async function generatePKCE() {
   return { verifier, challenge }
 }
 
-export async function startLogin() {
+export async function startLogin(extraScopes: string[] = [], returnTo = '/') {
   if (!CLIENT_ID) throw new Error('VITE_EVE_CLIENT_ID is niet ingesteld in .env')
 
   const { verifier, challenge } = await generatePKCE()
@@ -58,12 +58,13 @@ export async function startLogin() {
 
   sessionStorage.setItem('pkce_verifier', verifier)
   sessionStorage.setItem('oauth_state', state)
+  sessionStorage.setItem('oauth_return_to', returnTo === '/corp-wallet' ? returnTo : '/')
 
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
-    scope: SCOPES,
+    scope: [...new Set([...SCOPES.split(' '), ...extraScopes])].join(' '),
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',

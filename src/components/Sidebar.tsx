@@ -61,6 +61,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Ideeënbus',    path: '/ideeen',     icon: '💡', badge: 'ideas' },
   { label: 'EVE Nieuws',   path: '/eve-news',   icon: '📰', badge: null },
   { label: 'Finance',      path: '/wallet',     icon: '🏦', badge: null },
+  { label: 'Corp wallet',  path: '/corp-wallet', icon: '🏦', badge: null },
   { label: 'Handelscentrum', path: '/handel', icon: '💹', badge: null },
   { label: 'Market',       path: '/market',     icon: '🛒', badge: null },
   { label: 'Trade Vandaag', path: '/jita-today', icon: '✅', badge: null },
@@ -111,7 +112,7 @@ export type LayoutEntry =
 const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'item', path: '/' },
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
-  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/handel', '/jita-today', '/market', '/jita-scanner', '/gap-scanner', '/hub-arbitrage', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/mineralen', '/hauling'] },
+  { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/corp-wallet', '/handel', '/jita-today', '/market', '/jita-scanner', '/gap-scanner', '/hub-arbitrage', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/mineralen', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build-profit', '/build'] },
   { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/thera', '/alarm', '/fleet', '/fleet-payout', '/ansiblex', '/ratting'] },
 ]

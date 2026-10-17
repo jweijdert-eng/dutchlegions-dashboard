@@ -53,7 +53,9 @@ export default function Callback() {
           }
         }
         addToken(token)
-        window.location.replace('/')
+        const returnTo = sessionStorage.getItem('oauth_return_to')
+        sessionStorage.removeItem('oauth_return_to')
+        window.location.replace(returnTo === '/corp-wallet' ? returnTo : '/')
       })
       .catch((e: Error) => setError(e.message))
   }, [addToken])

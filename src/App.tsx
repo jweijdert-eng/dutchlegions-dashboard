@@ -17,6 +17,7 @@ const lz = <T extends React.ComponentType>(f: () => Promise<{ default: T }>) =>
 const Dashboard    = lz(() => import('./pages/Dashboard'))
 const Character    = lz(() => import('./pages/Character'))
 const Wallet       = lz(() => import('./pages/Wallet'))
+const CorpWallet   = lz(() => import('./pages/CorpWallet'))
 const Kills        = lz(() => import('./pages/Kills'))
 const CorpKillboard = lz(() => import('./pages/CorpKillboard'))
 const EnemyDossier  = lz(() => import('./pages/EnemyDossier'))
@@ -237,6 +238,7 @@ function AppRoutes() {
       <Route path="/" element={<RootRoute />} />
       <Route path="/character" element={<ProtectedRoute><Character /></ProtectedRoute>} />
       <Route path="/wallet"    element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
+      <Route path="/corp-wallet" element={<ProtectedRoute><CorpWallet /></ProtectedRoute>} />
       <Route path="/kills"     element={<ProtectedRoute><Kills /></ProtectedRoute>} />
       <Route path="/corp-killboard" element={<ProtectedRoute><CorpKillboard /></ProtectedRoute>} />
       <Route path="/enemy-dossier" element={<ProtectedRoute><EnemyDossier /></ProtectedRoute>} />
