@@ -16,7 +16,9 @@ interface WalletState { key: string; wallets: CorpWalletData[]; notices: string[
 interface JournalState { key: string; entries: CorpJournalEntry[]; page: number; pages: number }
 
 export default function CorpWallet() {
-  const { activeTokens: tokens } = useAuth()
+  // Alle gekoppelde characters, niet alleen het geselecteerde: de wallet-rol zit vaak op een alt
+  // (bv. de CEO van een eigen corp), terwijl je main bovenaan geselecteerd staat.
+  const { tokens } = useAuth()
   // Character + toestemming, niet het token zelf: dat wordt elke ~20 minuten ververst.
   const tokenKey = tokens.map(t => `${t.characterId}:${tokenScopes(t.accessToken).includes(CORP_WALLET_SCOPE) ? 1 : 0}`).join('|')
   const tokensRef = useRef(tokens)
@@ -35,7 +37,7 @@ export default function CorpWallet() {
   const [search, setSearch] = useState('')
   usePageLoading(loading || journalLoading)
 
-  // Een andere characterselectie verbergt de vorige corpgegevens meteen.
+  // Een character erbij of eraf (of een ingetrokken toestemming) verbergt de vorige corpgegevens meteen.
   const wallets = state?.key === tokenKey ? state.wallets : []
   const wallet = wallets.find(w => w.id === corpId) ?? wallets[0]
   const division = wallet?.divisions.find(d => d.division === divisionId) ?? wallet?.divisions[0]
@@ -102,7 +104,7 @@ export default function CorpWallet() {
     right={<button className="corp-wallet-btn" disabled={loading || journalLoading} onClick={() => { setPage(1); setRefresh(n => n + 1) }}>↻ Verversen</button>} />}>
     <div className="corp-wallet">
     <p style={{ color: 'var(--text-dim)', fontSize: '.8rem', marginTop: 0 }}>
-      Je ziet de wallets waarvoor je geselecteerde characters in EVE leesrechten hebben. Automatisch bijgewerkt om de vijf minuten.
+      Je ziet de wallets waarvoor een van je gekoppelde characters in EVE leesrechten heeft. Automatisch bijgewerkt om de vijf minuten.
     </p>
     {error && <div className="card" role="alert" style={{ padding: '1rem', color: 'var(--red)', marginBottom: '.75rem' }}>{error}</div>}
     {state?.key === tokenKey && state.notices.map(notice => <div className="card" role="alert" key={notice} style={{ padding: '1rem', color: 'var(--gold)', marginBottom: '.75rem' }}>{notice}</div>)}

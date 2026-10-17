@@ -6,14 +6,18 @@ const walletScope = 'esi-wallet.read_corporation_wallets.v1'
 const divisionScope = 'esi-corporations.read_divisions.v1'
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 
-async function setup({ scopes = [walletScope, divisionScope], denied = [], namesDenied = false, journalDenied = false, refresh = false } = {}) {
+async function setup({ scopes = [walletScope, divisionScope], denied = [], namesDenied = false, journalDenied = false, refresh = false, main = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } })
   const calls = []
   let failJournal = journalDenied
   const maakToken = (id, label) => `test.${btoa(JSON.stringify({ sub: `CHARACTER:EVE:${id}`, scp: scopes }))}.${label}-${id}`
-  await ctx.addInitScript(({ tokens }) => {
-    if (!sessionStorage.getItem('test_seeded')) { localStorage.setItem('eve_tokens', JSON.stringify(tokens)); sessionStorage.setItem('test_seeded', '1') }
-  }, { tokens: [90000001, 90000002].map(id => ({
+  await ctx.addInitScript(({ tokens, main }) => {
+    if (!sessionStorage.getItem('test_seeded')) {
+      localStorage.setItem('eve_tokens', JSON.stringify(tokens))
+      if (main) localStorage.setItem('eve_main_char', String(main))
+      sessionStorage.setItem('test_seeded', '1')
+    }
+  }, { main, tokens: [90000001, 90000002].map(id => ({
     characterId: id, characterName: `Character ${id}`, expiresAt: Date.now() + (refresh ? 60000 : 7200000),
     accessToken: maakToken(id, 'test'), refreshToken: `refresh-${id}`,
   })) })
@@ -123,6 +127,15 @@ try {
   assert.equal(e.errors.length, 0, e.errors.join('\n'))
   await e.ctx.close()
   console.log('OK: token verversen laadt niet alles opnieuw; journaal gebruikt het verse token; geen koppel-blok bij een werkende wallet')
+
+  // Main zonder rol bovenaan geselecteerd; de alt (CEO) mag de wallet wel zien.
+  const f = await setup({ denied: [90000001], main: 90000001 })
+  await f.page.getByTestId('corp-total').waitFor()
+  assert.equal(await f.page.getByTestId('corp-total').innerText(), '28.000.000,00 ISK')
+  assert.ok(f.calls.some(c => c.path.endsWith('/wallets/') && c.who === 90000002), 'de alt moet gebruikt worden, ook als de main geselecteerd is')
+  assert.equal(f.errors.length, 0, f.errors.join('\n'))
+  await f.ctx.close()
+  console.log('OK: wallet van een alt is zichtbaar terwijl de main bovenaan geselecteerd staat')
 } finally {
   await browser.close()
 }
