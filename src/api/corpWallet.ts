@@ -17,6 +17,7 @@ export interface CorpJournalEntry {
 export interface CorpWalletData {
   id: number
   name: string
+  ticker: string
   divisions: CorpDivision[]
   charIds: number[]   // characters die deze wallet mogen lezen; de werkende eerst
   via: string
@@ -66,7 +67,7 @@ export async function loadCorpWallets(tokens: TokenData[], signal: AbortSignal) 
     } catch { notices.push(`${token.characterName}: corporation kon niet worden opgehaald. Probeer opnieuw.`) }
   }))
   const wallets = await Promise.all([...groups].map(async ([id, candidates]) => {
-    const name = await getCorporation(id).then(c => c.name).catch(() => `Corporation ${id}`)
+    const { name, ticker } = await getCorporation(id).catch(() => ({ name: `Corporation ${id}`, ticker: '' }))
     try {
       const { data, token } = await withAccess<Array<{ division: number; balance: number }>>(candidates, `/corporations/${id}/wallets/`, signal)
       const names: Record<number, string> = {}
@@ -78,7 +79,7 @@ export async function loadCorpWallets(tokens: TokenData[], signal: AbortSignal) 
         } catch { /* Divisienamen vereisen Director; saldi werken ook zonder die rol. */ }
       }
       return {
-        id, name, charIds: [token, ...candidates.filter(t => t !== token)].map(t => t.characterId), via: token.characterName,
+        id, name, ticker, charIds: [token, ...candidates.filter(t => t !== token)].map(t => t.characterId), via: token.characterName,
         divisions: data.map(d => ({ ...d, name: names[d.division] ?? (d.division === 1 ? 'Master Wallet' : `Divisie ${d.division}`) }))
           .sort((a, b) => a.division - b.division),
       } satisfies CorpWalletData

@@ -5,8 +5,10 @@ const APP = process.env.TEST_APP || 'http://127.0.0.1:8081'
 const walletScope = 'esi-wallet.read_corporation_wallets.v1'
 const divisionScope = 'esi-corporations.read_divisions.v1'
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
+// 1×1 doorzichtige PNG voor images.evetech.net (portretten, logo's, iconen).
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
 
-async function setup({ scopes = [walletScope, divisionScope], denied = [], namesDenied = false, journalDenied = false, refresh = false, main = null } = {}) {
+async function setup({ scopes = [walletScope, divisionScope], denied = [], namesDenied = false, journalDenied = false, refresh = false, main = null, pad = '/corp-wallet' } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } })
   const calls = []
   let failJournal = journalDenied
@@ -32,6 +34,7 @@ async function setup({ scopes = [walletScope, divisionScope], denied = [], names
       return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { access_token: maakToken(id, 'nieuw'), refresh_token: `refresh-${id}`, expires_in: 1200 } })
     }
     if (url.hostname === 'login.eveonline.com') return route.fulfill({ contentType: 'text/html', body: 'Mock EVE authorization' })
+    if (url.hostname === 'images.evetech.net') return route.fulfill({ contentType: 'image/png', body: PNG })
     if (url.hostname !== 'esi.evetech.net') return route.fulfill({ json: {} })
     const path = url.pathname.replace('/latest', '')
     const auth = route.request().headers().authorization ?? ''
@@ -58,13 +61,14 @@ async function setup({ scopes = [walletScope, divisionScope], denied = [], names
       }] : [] })
     }
     if (/\/wallet\/$/.test(path)) return route.fulfill({ json: 100 })
+    if (path === '/status/') return route.fulfill({ json: { players: 20000, server_version: '1', start_time: new Date().toISOString() } })
     return route.fulfill({ json: [] })
   })
   const page = await ctx.newPage()
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', e => { errors.push(e.message); console.error('PAGE:', e.message) })
-  await page.goto(`${APP}/corp-wallet`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${APP}${pad}`, { waitUntil: 'domcontentloaded' })
   return { ctx, page, calls, errors, setJournalDenied: value => { failJournal = value } }
 }
 
@@ -136,6 +140,26 @@ try {
   assert.equal(f.errors.length, 0, f.errors.join('\n'))
   await f.ctx.close()
   console.log('OK: wallet van een alt is zichtbaar terwijl de main bovenaan geselecteerd staat')
+
+  // Dashboard: band met logo en totaal, ook met de main geselecteerd; zonder toestemming geen band en geen walletverzoeken.
+  const g = await setup({ denied: [90000001], main: 90000001, pad: '/' })
+  const band = g.page.getByTestId('corp-wallet-band')
+  await band.waitFor()
+  assert.ok((await band.innerText()).includes('28.0M ISK'), await band.innerText())
+  assert.ok((await band.innerText()).includes('Test Corporation [TEST]'))
+  assert.equal(await band.locator('img[src*="/corporations/98000001/logo"]').count(), 1)
+  await band.screenshot({ path: '.verify-shots/corp-wallet-band.png' })
+  await band.getByRole('button', { name: 'Meer →' }).click()
+  await g.page.waitForURL('**/corp-wallet')
+  assert.equal(g.errors.length, 0, g.errors.join('\n'))
+  await g.ctx.close()
+  const h = await setup({ scopes: [], pad: '/' })
+  await h.page.getByText('TOTAAL WALLET').waitFor()
+  await h.page.waitForTimeout(1500)
+  assert.equal(await h.page.getByTestId('corp-wallet-band').count(), 0)
+  assert.equal(h.calls.filter(c => c.path.endsWith('/wallets/')).length, 0)
+  await h.ctx.close()
+  console.log('OK: dashboard toont de corp-wallet-band (logo, naam, totaal, Meer → naar de pagina); zonder toestemming niets')
 } finally {
   await browser.close()
 }

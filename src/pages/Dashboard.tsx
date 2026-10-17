@@ -33,6 +33,8 @@ import TopKillersTicker from '../components/TopKillersTicker'
 import KillOfDay from '../components/KillOfDay'
 import Starfield from '../components/Starfield'
 import { useMemberSettings } from '../utils/memberSettings'
+import { useCorpWallets } from '../hooks/useCorpWallets'
+import type { CorpWalletData } from '../api/corpWallet'
 
 const GAP = '0.75rem'
 
@@ -124,6 +126,37 @@ function Section({ title, link, children, dragHandle }: { title: string; link?: 
         )}
       </div>
       <div style={{ flex: 1, padding: '0.625rem 0.875rem', overflowY: 'auto' }}>{children}</div>
+    </div>
+  )
+}
+
+// Corp wallet als brede band onder de stat cards: logo, naam, totaal en de divisies met saldo.
+// Alleen voor wie een corp wallet mag lezen (de rest ziet niets van dit blok).
+function CorpWalletBand({ wallet, time }: { wallet: CorpWalletData; time: number }) {
+  const navigate = useNavigate()
+  const total = wallet.divisions.reduce((s, d) => s + d.balance, 0)
+  const metSaldo = wallet.divisions.filter(d => d.balance !== 0)
+  const divisies = metSaldo.length ? metSaldo : wallet.divisions.slice(0, 1)
+  return (
+    <div className="stat-card" data-testid="corp-wallet-band" style={{ '--accent': 'var(--gold)', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.875rem 1rem', marginBottom: GAP } as React.CSSProperties}>
+      <EveImage category="corporations" id={wallet.id} variation="logo" size={64} px={56} style={{ borderRadius: 4, flexShrink: 0 }} />
+      <div style={{ minWidth: 170 }}>
+        <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.18em', marginBottom: '0.3rem' }}>CORP WALLET</div>
+        <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{wallet.name}{wallet.ticker && <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}> [{wallet.ticker}]</span>}</div>
+        <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--gold)', marginTop: '0.1rem' }}>{fmtISK(total)} ISK</div>
+        <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', marginTop: '0.15rem' }}>via {wallet.via} · {new Date(time).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</div>
+      </div>
+      <div style={{ flex: '1 1 300px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.5rem' }}>
+        {divisies.map(d => (
+          <div key={d.division} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 3, padding: '0.45rem 0.6rem', minWidth: 0 }}>
+            <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
+            <div style={{ fontSize: '0.78rem', fontWeight: 600, marginTop: '0.1rem' }}>{fmtISK(d.balance)}</div>
+          </div>
+        ))}
+      </div>
+      <button onClick={() => navigate('/corp-wallet')} style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--text-dim)', fontSize: '0.6rem', cursor: 'pointer', padding: 0 }}>
+        Meer →
+      </button>
     </div>
   )
 }
@@ -588,6 +621,7 @@ export default function Dashboard() {
 
   const { editMode, setEditMode, previewMode } = useLayoutMode()
   const member = useMemberSettings()
+  const corpWallets = useCorpWallets(allTokens)
   const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(loadOrder)
   const [charOrder, setCharOrder]     = useState<number[]>(() => loadCharOrder(allTokens.map(t => t.characterId)))
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -1002,6 +1036,8 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {corpWallets?.wallets.map(w => <CorpWalletBand key={w.id} wallet={w} time={corpWallets.time} />)}
 
       {member.localWidget && !previewMode && (
         <div style={{ marginBottom: GAP }}>
