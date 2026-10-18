@@ -18,9 +18,11 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS build_projects (
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Wie je bent komt uit het EVE-token, niet uit een meegestuurd character-ID: die zijn
+// openbaar, dus anders kon iedereen andermans projecten lezen, overschrijven en wissen.
 if ($method === 'GET') {
-    $charId = (int)($_GET['characterId'] ?? 0);
-    if (!$charId) { http_response_code(400); echo json_encode(['error' => 'missing characterId']); exit; }
+    $charId = authCharId();
+    if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     try {
         $stmt = $pdo->prepare('SELECT data FROM build_projects WHERE character_id = ? ORDER BY updated_at DESC');
         $stmt->execute([$charId]);
@@ -38,9 +40,10 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $body    = json_decode(file_get_contents('php://input'), true) ?? [];
-    $charId  = (int)($body['characterId'] ?? 0);
+    $charId  = authCharId($body);
+    if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $project = $body['project'] ?? null;
-    if (!$charId || !is_array($project) || empty($project['id'])) {
+    if (!is_array($project) || empty($project['id'])) {
         http_response_code(400); echo json_encode(['error' => 'missing fields']); exit;
     }
     $id        = substr((string)$project['id'], 0, 40);
@@ -49,6 +52,11 @@ if ($method === 'POST') {
     $charName  = substr((string)($body['characterName'] ?? ''), 0, 100);
     $data      = json_encode($project, JSON_UNESCAPED_UNICODE);
     try {
+        // Het id is de sleutel: zonder deze check overschrijft een bestaand id andermans project.
+        $van = $pdo->prepare('SELECT character_id FROM build_projects WHERE id = ?');
+        $van->execute([$id]);
+        $eigenaar = $van->fetchColumn();
+        if ($eigenaar !== false && (int)$eigenaar !== $charId) { http_response_code(403); echo json_encode(['error' => 'Niet jouw project']); exit; }
         $stmt = $pdo->prepare('INSERT INTO build_projects (id, character_id, character_name, name, data, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE character_name = ?, name = ?, data = ?, updated_at = ?');
@@ -62,9 +70,10 @@ if ($method === 'POST') {
 
 if ($method === 'DELETE') {
     $body   = json_decode(file_get_contents('php://input'), true) ?? [];
-    $charId = (int)($body['characterId'] ?? 0);
+    $charId = authCharId($body);
+    if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $id     = substr((string)($body['id'] ?? ''), 0, 40);
-    if (!$charId || $id === '') { http_response_code(400); echo json_encode(['error' => 'missing fields']); exit; }
+    if ($id === '') { http_response_code(400); echo json_encode(['error' => 'missing fields']); exit; }
     try {
         $stmt = $pdo->prepare('DELETE FROM build_projects WHERE id = ? AND character_id = ?');
         $stmt->execute([$id, $charId]);

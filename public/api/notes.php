@@ -4,9 +4,11 @@ cors();
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Wie je bent komt uit het EVE-token, niet uit een meegestuurd character-ID: die zijn
+// openbaar, dus anders kon iedereen andermans notities lezen, overschrijven en wissen.
 if ($method === 'GET') {
-    $charId = (int)($_GET['characterId'] ?? 0);
-    if (!$charId) { http_response_code(400); echo json_encode(['error' => 'missing characterId']); exit; }
+    $charId = authCharId();
+    if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     try {
         $pdo  = getDB();
         $stmt = $pdo->prepare('SELECT id, title, content, updated_at FROM notes WHERE character_id = ? ORDER BY updated_at DESC');
@@ -24,10 +26,11 @@ if ($method === 'GET') {
 }
 
 if ($method === 'POST') {
-    $data   = json_decode(file_get_contents('php://input'), true);
-    $charId = (int)($data['characterId'] ?? 0);
+    $data   = json_decode(file_get_contents('php://input'), true) ?? [];
+    $charId = authCharId($data);
+    if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $note   = $data['note'] ?? null;
-    if (!$charId || !$note || empty($note['id'])) {
+    if (!$note || empty($note['id'])) {
         http_response_code(400); echo json_encode(['error' => 'missing fields']); exit;
     }
     $id        = $note['id'];
@@ -37,6 +40,11 @@ if ($method === 'POST') {
     $charName  = substr($data['characterName'] ?? '', 0, 100);
     try {
         $pdo  = getDB();
+        // Het id is de sleutel: zonder deze check overschrijft een bestaand id andermans notitie.
+        $van = $pdo->prepare('SELECT character_id FROM notes WHERE id = ?');
+        $van->execute([$id]);
+        $eigenaar = $van->fetchColumn();
+        if ($eigenaar !== false && (int)$eigenaar !== $charId) { http_response_code(403); echo json_encode(['error' => 'Niet jouw notitie']); exit; }
         $stmt = $pdo->prepare('INSERT INTO notes (id, character_id, character_name, title, content, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE character_name = ?, title = ?, content = ?, updated_at = ?');
         $stmt->execute([$id, $charId, $charName, $title, $content, $updatedAt, $charName, $title, $content, $updatedAt]);
         echo json_encode(['ok' => true]);
@@ -47,10 +55,11 @@ if ($method === 'POST') {
 }
 
 if ($method === 'DELETE') {
-    $data   = json_decode(file_get_contents('php://input'), true);
-    $charId = (int)($data['characterId'] ?? 0);
+    $data   = json_decode(file_get_contents('php://input'), true) ?? [];
+    $charId = authCharId($data);
+    if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $id     = $data['id'] ?? '';
-    if (!$charId || !$id) { http_response_code(400); echo json_encode(['error' => 'missing fields']); exit; }
+    if (!$id) { http_response_code(400); echo json_encode(['error' => 'missing fields']); exit; }
     try {
         $pdo  = getDB();
         $stmt = $pdo->prepare('DELETE FROM notes WHERE id = ? AND character_id = ?');

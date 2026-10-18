@@ -237,21 +237,22 @@ async function fetchJitaSell(typeIds: number[]): Promise<Map<number, number>> {
 }
 
 // ── API ─────────────────────────────────────────────────────────────────────
-async function apiLoad(charId: number): Promise<Project[]> {
-  const r = await fetch(`/api/buildprojects.php?characterId=${charId}`)
+// De server leest uit het token wie je bent (character-ID's zijn openbaar).
+async function apiLoad(token: string): Promise<Project[]> {
+  const r = await fetch(`/api/buildprojects.php?token=${encodeURIComponent(token)}`)
   const j = await r.json()
   return Array.isArray(j) ? j : []
 }
-async function apiSave(charId: number, charName: string, project: Project) {
+async function apiSave(token: string, charName: string, project: Project) {
   await fetch('/api/buildprojects.php', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ characterId: charId, characterName: charName, project }),
+    body: JSON.stringify({ token, characterName: charName, project }),
   }).catch(() => {})
 }
-async function apiDelete(charId: number, id: string) {
+async function apiDelete(token: string, id: string) {
   await fetch('/api/buildprojects.php', {
     method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ characterId: charId, id }),
+    body: JSON.stringify({ token, id }),
   }).catch(() => {})
 }
 
@@ -272,6 +273,10 @@ export default function BuildProject() {
   const { tokens, activeTokens, mainCharId } = useAuth()
   const charId = mainCharId ?? tokens[0]?.characterId ?? 0
   const charName = tokens.find(t => t.characterId === charId)?.characterName ?? ''
+  // Het token ververst elke ~20 minuten: opslaan pakt steeds het actuele, laden wacht op een geldig token.
+  const tokenRef = useRef('')
+  tokenRef.current = tokens.find(t => t.characterId === charId)?.accessToken ?? ''
+  const tokenGeldig = tokens.some(t => t.characterId === charId && t.expiresAt > Date.now())
 
   const [names, setNames] = useState<Record<string, string>>({})
   const [recipes, setRecipes] = useState<Map<number, Recipe>>(new Map())
@@ -334,10 +339,10 @@ export default function BuildProject() {
   }, [])
 
   useEffect(() => {
-    if (!charId) return
+    if (!charId || !tokenGeldig) return
     setLoading(true)
-    apiLoad(charId).then(p => { setProjects(p); setActiveId(p[0]?.id ?? null) }).finally(() => setLoading(false))
-  }, [charId])
+    apiLoad(tokenRef.current).then(p => { setProjects(p); setActiveId(p[0]?.id ?? null) }).finally(() => setLoading(false))
+  }, [charId, tokenGeldig])
 
   // Voorraad + jobs ophalen over alle ingelogde characters
   const refreshInventory = useCallback(async () => {
@@ -647,7 +652,7 @@ export default function BuildProject() {
       if (p.id !== activeId) return p
       const next = { ...mut(p), updatedAt: Date.now() }
       if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => apiSave(charId, charName, next), 500)
+      saveTimer.current = setTimeout(() => apiSave(tokenRef.current, charName, next), 500)
       return next
     }))
   }
@@ -674,12 +679,12 @@ export default function BuildProject() {
     setProjects(prev => [p, ...prev])
     setActiveId(p.id)
     setCreating(false); setSearch(''); setNewQty(1)
-    apiSave(charId, charName, p)
+    apiSave(tokenRef.current, charName, p)
   }
   const deleteProject = (id: string) => {
     setProjects(prev => prev.filter(p => p.id !== id))
     if (activeId === id) setActiveId(null)
-    apiDelete(charId, id)
+    apiDelete(tokenRef.current, id)
   }
 
   // ── Voortgang ─────────────────────────────────────────────────────────────

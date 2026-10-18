@@ -13,19 +13,19 @@ function fmt(ts: number) {
   return new Date(ts).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-async function apiSave(charId: number, charName: string, note: Note) {
+async function apiSave(token: string, charName: string, note: Note) {
   await fetch('/api/notes.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ characterId: charId, characterName: charName, note }),
+    body: JSON.stringify({ token, characterName: charName, note }),
   }).catch(() => { /* ignore */ })
 }
 
-async function apiDelete(charId: number, id: string) {
+async function apiDelete(token: string, id: string) {
   await fetch('/api/notes.php', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ characterId: charId, id }),
+    body: JSON.stringify({ token, id }),
   }).catch(() => { /* ignore */ })
 }
 
@@ -33,6 +33,11 @@ export default function Notes() {
   const { tokens, selectedCharId } = useAuth()
   const charId = selectedCharId ?? tokens[0]?.characterId ?? null
   const charName = tokens.find(t => t.characterId === charId)?.characterName ?? null
+  // De server leest uit het token wie je bent. Het token ververst elke ~20 minuten,
+  // dus opslaan pakt steeds het actuele; laden wacht tot er een geldig token is.
+  const tokenRef = useRef('')
+  tokenRef.current = tokens.find(t => t.characterId === charId)?.accessToken ?? ''
+  const tokenGeldig = tokens.some(t => t.characterId === charId && t.expiresAt > Date.now())
 
   const charNameRef = useRef<string>('')
   charNameRef.current = charName ?? ''
@@ -47,8 +52,8 @@ export default function Notes() {
   const selected = notes.find(n => n.id === selectedId) ?? null
 
   useEffect(() => {
-    if (!charId) return
-    fetch(`/api/notes.php?characterId=${charId}`)
+    if (!charId || !tokenGeldig) return
+    fetch(`/api/notes.php?token=${encodeURIComponent(tokenRef.current)}`)
       .then(r => r.json())
       .then((data: Note[]) => {
         if (Array.isArray(data)) {
@@ -57,7 +62,7 @@ export default function Notes() {
         }
       })
       .catch(() => { /* ignore */ })
-  }, [charId])
+  }, [charId, tokenGeldig])
 
   useEffect(() => {
     if (selected) {
@@ -77,7 +82,7 @@ export default function Notes() {
           n.id === selectedId ? { ...n, title, content, updatedAt } : n
         )
         const note = updated.find(n => n.id === selectedId)
-        if (note) apiSave(charId, charNameRef.current, note)
+        if (note) apiSave(tokenRef.current, charNameRef.current, note)
         return updated
       })
       setDirty(false)
@@ -97,14 +102,14 @@ export default function Notes() {
     const note: Note = { id: crypto.randomUUID(), title: 'Nieuwe notitie', content: '', updatedAt: Date.now() }
     setNotes(prev => [note, ...prev])
     setSelectedId(note.id)
-    apiSave(charId, charNameRef.current, note)
+    apiSave(tokenRef.current, charNameRef.current, note)
   }
 
   function deleteNote(id: string) {
     if (!charId) return
     setNotes(prev => prev.filter(n => n.id !== id))
     if (selectedId === id) setSelectedId(notes.find(n => n.id !== id)?.id ?? null)
-    apiDelete(charId, id)
+    apiDelete(tokenRef.current, id)
   }
 
   return (
