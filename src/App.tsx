@@ -49,7 +49,6 @@ const BuildProfit  = lz(() => import('./pages/BuildProfit'))
 const BuildProject = lz(() => import('./pages/BuildProject'))
 const Wars         = lz(() => import('./pages/Wars'))
 const IndustryCost = lz(() => import('./pages/IndustryCost'))
-const RecruitFunnel = lz(() => import('./pages/RecruitFunnel'))
 const CourierCalc  = lz(() => import('./pages/CourierCalc'))
 const BoosterCalc  = lz(() => import('./pages/BoosterCalc'))
 const StationTrading = lz(() => import('./pages/StationTrading'))
@@ -276,7 +275,6 @@ function AppRoutes() {
       <Route path="/build"      element={<ProtectedRoute><BuildProject /></ProtectedRoute>} />
       <Route path="/wars"       element={<ProtectedRoute><Wars /></ProtectedRoute>} />
       <Route path="/industry-cost" element={<ProtectedRoute><IndustryCost /></ProtectedRoute>} />
-      <Route path="/recruit-funnel" element={<ProtectedRoute><RecruitFunnel /></ProtectedRoute>} />
       <Route path="/courier-calc" element={<ProtectedRoute><CourierCalc /></ProtectedRoute>} />
       <Route path="/boosters"    element={<ProtectedRoute><BoosterCalc /></ProtectedRoute>} />
       <Route path="/trading-pnl" element={<ProtectedRoute><StationTrading /></ProtectedRoute>} />

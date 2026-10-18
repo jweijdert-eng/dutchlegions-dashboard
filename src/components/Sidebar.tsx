@@ -94,7 +94,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Bouwwinst',    path: '/build-profit', icon: '💰', badge: null },
   { label: 'Bouwproject',  path: '/build',      icon: '🔨', badge: null },
   { label: 'Industrie-kosten', path: '/industry-cost', icon: '🧾', badge: null, wip: true },
-  { label: 'Recruitment',  path: '/recruit-funnel', icon: '📋', badge: null, wip: true },
   { label: 'Courier-calc', path: '/courier-calc', icon: '📬', badge: null, wip: true },
   { label: 'Boosters',     path: '/boosters', icon: '💉', badge: null, wip: true },
   { label: 'Trading P&L',  path: '/trading-pnl', icon: '💹', badge: null, wip: true },
@@ -895,25 +894,6 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
           </NavLink>
         )}
 
-        {/* Recruitment — voor recruiters (admins/owner zien 't al via Ontwikkeling) */}
-        {myRole === 'recruiter' && !isAdmin && (
-          <NavLink
-            to="/recruit-funnel"
-            title={collapsed ? 'Recruitment' : undefined}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: '0.65rem',
-              padding: collapsed ? '0.55rem 0' : '0.55rem 1rem',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              textDecoration: 'none',
-              background: isActive ? 'rgba(0,180,216,0.07)' : 'transparent',
-              borderLeft: `2px solid ${isActive ? 'var(--blue)' : 'transparent'}`,
-              color: isActive ? 'var(--blue)' : 'var(--text)',
-            })}
-          >
-            <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>📋</span>
-            {!collapsed && <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Recruitment</span>}
-          </NavLink>
-        )}
 
         {/* Instellingen — altijd zichtbaar voor members */}
         <NavLink

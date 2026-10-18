@@ -898,7 +898,6 @@ export default function Admin() {
                             style={{ padding: '0.2rem 0.3rem', fontSize: '0.65rem', fontWeight: 600, borderRadius: 3, cursor: 'pointer', background: 'var(--surface)', border: `1px solid ${ROLE_COLOR[memRole] ?? 'var(--border)'}`, color: ROLE_COLOR[memRole] ?? 'var(--text)' }}
                           >
                             <option value="member">Member</option>
-                            <option value="recruiter">Recruiter</option>
                             <option value="admin">Admin</option>
                           </select>
                           <button

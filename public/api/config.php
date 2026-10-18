@@ -126,7 +126,7 @@ function ensureRolesSchema(PDO $pdo): void {
     )");
 }
 
-// Rol van een character: 'admin' | 'recruiter' | 'member' (uitbreidbaar). Owner = altijd admin.
+// Rol van een character: 'admin' | 'member' (uitbreidbaar). Owner = altijd admin.
 function roleOf(int $cid): string {
     if ($cid === ADMIN_CHAR_ID) return 'admin';
     try {
@@ -144,16 +144,3 @@ function isAdminRole(int $cid): bool {
     return $cid === ADMIN_CHAR_ID || roleOf($cid) === 'admin';
 }
 
-// Is dit character een recruiting-admin? (owner OF rol admin/recruiter OF de oude recruit_admins-tabel)
-function isRecruitAdmin(int $cid): bool {
-    if ($cid === ADMIN_CHAR_ID) return true;
-    $role = roleOf($cid);
-    if ($role === 'admin' || $role === 'recruiter') return true;
-    try {
-        $pdo = getDB();
-        $pdo->exec("CREATE TABLE IF NOT EXISTS recruit_admins (character_id BIGINT PRIMARY KEY, name VARCHAR(128), added_by BIGINT, created_at DATETIME)");
-        $st = $pdo->prepare("SELECT 1 FROM recruit_admins WHERE character_id = ?");
-        $st->execute([$cid]);
-        return (bool)$st->fetchColumn();
-    } catch (Exception $e) { return false; }
-}
