@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import Login from './pages/Login'
@@ -9,7 +9,6 @@ import { AlertsProvider } from './context/AlertsContext'
 import { LoadingProvider } from './context/LoadingContext'
 import { LayoutModeProvider, useLayoutMode } from './context/LayoutModeContext'
 import { useSiteSettings } from './hooks/useSiteSettings'
-import { getMemberSettings } from './utils/memberSettings'
 
 const lz = <T extends React.ComponentType>(f: () => Promise<{ default: T }>) =>
   lazy(() => f().catch(() => { window.location.reload(); return new Promise<never>(() => {}) }))
@@ -200,33 +199,6 @@ function AppRoutes() {
       .catch(() => {})
   }, [])
 
-  // Recruiter-chat: notificeer de admin overal in het dashboard zodra er een
-  // nieuw (ongelezen) bezoekersbericht binnenkomt. prevUnread onthoudt de vorige
-  // stand zodat we niet bij de eerste poll of bij ongewijzigde stand notificeren.
-  const adminToken = tokens.find(t => t.characterId === ADMIN_CHAR_ID)
-  const prevUnread = useRef<number | null>(null)
-  useEffect(() => {
-    if (!adminToken) return
-    let cancelled = false
-    const check = async () => {
-      try {
-        const r = await fetch(`/api/pmchat.php?action=threads&token=${encodeURIComponent(adminToken.accessToken)}`, { cache: 'no-cache' })
-        const j = await r.json()
-        if (cancelled || !Array.isArray(j)) return
-        const total = j.reduce((s: number, t: { staff_unread?: number }) => s + (Number(t.staff_unread) || 0), 0)
-        if (prevUnread.current !== null && total > prevUnread.current && Notification.permission === 'granted' && getMemberSettings().notifRecruiter !== false) {
-          new Notification('Recruiter-chat', {
-            body: `${total} ongelezen bericht${total !== 1 ? 'en' : ''} in de recruiter-chat`,
-            icon: '/favicon.ico',
-          })
-        }
-        prevUnread.current = total
-      } catch { /* netwerk-fout: stil overslaan */ }
-    }
-    check()
-    const id = setInterval(check, 20000)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [adminToken?.characterId])
 
   const isAdmin = tokens.some(t => t.characterId === ADMIN_CHAR_ID)
   if (maintenance && (!isAdmin || previewMode)) return <MaintenancePage />
