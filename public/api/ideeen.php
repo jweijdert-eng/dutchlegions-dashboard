@@ -1,7 +1,7 @@
 <?php
 // Ideeënbus — leden sturen ideeën in (token-geverifieerd). Alleen admins zien de hele
 // lijst; een lid ziet enkel zijn eigen idee(ën) + de reacties erop. Admin kan een status
-// zetten (open/gepland/klaar) en reageren. Patroon volgt guestchat.php/ansiblex.php.
+// zetten (open/gepland/klaar) en reageren. Patroon volgt ansiblex.php.
 require_once 'config.php';
 cors();
 $pdo = getDB();
