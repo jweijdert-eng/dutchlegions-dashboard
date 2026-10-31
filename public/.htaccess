@@ -22,6 +22,19 @@ RewriteRule ^ index.html [QSA,L]
   Header set Cache-Control "public, max-age=86400"
 </FilesMatch>
 
+# Beveiligingsheaders.
+# - HSTS: de browser gaat voortaan altijd via https (een jaar lang).
+# - CSP: scripts alleen van onze eigen site, dus geen ingesmokkelde inline-code of
+#   onmouseover=… (de vangrail onder de MOTD-opschoning). Plaatjes en API-aanroepen mogen
+#   naar elke https-host (ESI, zKillboard, Fuzzwork, …). Inline styles zijn nodig voor React.
+# - frame-ancestors / X-Frame-Options: niemand mag het dashboard in een frame laden.
+Header always set Strict-Transport-Security "max-age=31536000"
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "DENY"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https:; media-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src https:; object-src 'none'; base-uri 'self'; form-action 'self' https://login.eveonline.com; frame-ancestors 'none'"
+
 # Het boekhoudbestand van de FTP-deploy staat in de webmap, maar hoort niet
 # openbaar: het bevat van elk bestand een hash, ook van config.geheim.php.
 <Files ".ftp-deploy-sync-state.json">

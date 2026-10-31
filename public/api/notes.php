@@ -7,7 +7,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 // Wie je bent komt uit het EVE-token, niet uit een meegestuurd character-ID: die zijn
 // openbaar, dus anders kon iedereen andermans notities lezen, overschrijven en wissen.
 if ($method === 'GET') {
-    $charId = authCharId();
+    $charId = memberCharId();
     if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     try {
         $pdo  = getDB();
@@ -20,14 +20,14 @@ if ($method === 'GET') {
         }
         echo json_encode($rows);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }
 
 if ($method === 'POST') {
     $data   = json_decode(file_get_contents('php://input'), true) ?? [];
-    $charId = authCharId($data);
+    $charId = memberCharId($data);
     if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $note   = $data['note'] ?? null;
     if (!$note || empty($note['id'])) {
@@ -49,14 +49,14 @@ if ($method === 'POST') {
         $stmt->execute([$id, $charId, $charName, $title, $content, $updatedAt, $charName, $title, $content, $updatedAt]);
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }
 
 if ($method === 'DELETE') {
     $data   = json_decode(file_get_contents('php://input'), true) ?? [];
-    $charId = authCharId($data);
+    $charId = memberCharId($data);
     if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $id     = $data['id'] ?? '';
     if (!$id) { http_response_code(400); echo json_encode(['error' => 'missing fields']); exit; }
@@ -66,7 +66,7 @@ if ($method === 'DELETE') {
         $stmt->execute([$id, $charId]);
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }

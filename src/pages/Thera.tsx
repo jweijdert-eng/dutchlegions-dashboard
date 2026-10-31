@@ -3,6 +3,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useMyRole } from '../hooks/useMyRole'
 import { useAuth } from '../auth/AuthContext'
+import { apiHeaders } from '../auth/apiToken'
 import { setWaypoint } from '../api/esi'
 import TheraSettings from '../components/TheraSettings'
 
@@ -131,7 +132,7 @@ export default function Thera() {
   const haal = useCallback(async (ververs = false, stil = false) => {
     if (!stil) { setLaden(true); setFout('') }
     try {
-      const res = await fetch(`/api/thera.php?action=list${ververs ? '&refresh=1' : ''}`)
+      const res = await fetch(`/api/thera.php?action=list${ververs ? '&refresh=1' : ''}`, { headers: apiHeaders() })
       const data = await res.json() as Feed
       if (!res.ok || !data.ok) { if (!stil) setFout('Ophalen mislukt.') }
       else setFeed(data)

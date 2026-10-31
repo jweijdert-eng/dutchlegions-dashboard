@@ -159,7 +159,7 @@ export default function Ideeen() {
 
   const load = useCallback(() => {
     if (!token) { setLoading(false); return }
-    fetch(`/api/ideeen.php?token=${encodeURIComponent(token)}`, { cache: 'no-store' })
+    fetch('/api/ideeen.php', { cache: 'no-store', headers: { 'X-Token': token } })
       .then(r => r.json())
       .then((d: { isAdmin?: boolean; ideas?: Idea[] }) => {
         setIsAdmin(!!d.isAdmin)

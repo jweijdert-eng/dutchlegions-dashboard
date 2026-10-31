@@ -16,7 +16,7 @@ try {
     // POST: registreer een page view
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
-        $id   = (int)($data['characterId'] ?? 0);
+        $id   = requireMember(is_array($data) ? $data : []);
         $page = substr(trim($data['page'] ?? ''), 0, 64);
         if (!$id || $page === '') { http_response_code(400); echo json_encode(['error' => 'missing']); exit; }
         $pdo->prepare('INSERT INTO page_views (character_id, page, viewed_at) VALUES (?, ?, NOW())')->execute([$id, $page]);
@@ -26,6 +26,7 @@ try {
 
     // GET: aggregaten per pagina (laatste 30 dagen)
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        requireAdmin();
         $stmt = $pdo->query("
             SELECT page, COUNT(*) AS views, COUNT(DISTINCT character_id) AS users
             FROM page_views
@@ -40,5 +41,5 @@ try {
 
     http_response_code(405);
 } catch (Exception $e) {
-    http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+    serverFout($e);
 }

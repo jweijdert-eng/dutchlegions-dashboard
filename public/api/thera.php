@@ -526,7 +526,7 @@ if ($actie === 'test') {
 
 if ($actie === 'poll') {
     $key = (string)($_GET['key'] ?? '');
-    if (!hash_equals($cfg['poll_key'], $key) && !authCharId()) {
+    if (!hash_equals($cfg['poll_key'], $key) && !isMember(authCharId())) {
         http_response_code(403); echo json_encode(['error' => 'forbidden']); exit;
     }
     $res = theraVervers($pdo, $cfg);
@@ -536,8 +536,9 @@ if ($actie === 'poll') {
     exit;
 }
 
-// action=list — ververst zelf als de feed ouder is dan ES_TTL, zodat de pagina
+// action=list (alleen leden) — ververst zelf als de feed ouder is dan ES_TTL, zodat de pagina
 // ook zonder cron actueel is (en dan meteen meldt wat nieuw is).
+requireMember();
 $laatst = 0;
 $st = $pdo->prepare("SELECT value FROM settings WHERE `key` = 'thera_last_poll'");
 $st->execute();

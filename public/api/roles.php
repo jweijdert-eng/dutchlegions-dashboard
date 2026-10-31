@@ -4,7 +4,7 @@
 require_once 'config.php';
 cors();
 
-$cid = eveVerify($_GET['token'] ?? '');
+$cid = authCharId();
 
 try {
     $pdo = getDB();
@@ -39,5 +39,5 @@ try {
     echo json_encode(['me' => $me, 'roles' => $list]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    serverFout($e);
 }

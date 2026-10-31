@@ -239,7 +239,7 @@ async function fetchJitaSell(typeIds: number[]): Promise<Map<number, number>> {
 // ── API ─────────────────────────────────────────────────────────────────────
 // De server leest uit het token wie je bent (character-ID's zijn openbaar).
 async function apiLoad(token: string): Promise<Project[]> {
-  const r = await fetch(`/api/buildprojects.php?token=${encodeURIComponent(token)}`)
+  const r = await fetch('/api/buildprojects.php', { headers: { 'X-Token': token } })
   const j = await r.json()
   return Array.isArray(j) ? j : []
 }

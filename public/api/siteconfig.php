@@ -10,7 +10,7 @@ function valid_hex(string $c): bool { return (bool)preg_match('/^#[0-9a-fA-F]{6}
 // GET: publieke site-config (accentkleur + handige links) — voor iedereen leesbaar.
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('theme_accent','corp_links','jump_bridges','intel_channels')");
+        $stmt = $pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('theme_accent','corp_links','intel_channels')");
         $rows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) $rows[$r['key']] = $r['value'];
 
@@ -23,20 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             if (is_array($decoded)) $links = $decoded;
         }
 
-        $bridges = [];
-        if (!empty($rows['jump_bridges'])) {
-            $decoded = json_decode($rows['jump_bridges'], true);
-            if (is_array($decoded)) $bridges = $decoded;
-        }
-
         $intelChannels = [];
         if (!empty($rows['intel_channels'])) {
             $decoded = json_decode($rows['intel_channels'], true);
             if (is_array($decoded)) $intelChannels = $decoded;
         }
-        echo json_encode(['accent' => $accent, 'links' => $links, 'bridges' => $bridges, 'intelChannels' => $intelChannels]);
+        echo json_encode(['accent' => $accent, 'links' => $links, 'intelChannels' => $intelChannels]);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }
@@ -49,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     try {
         // MERGE: werk uitsluitend de keys bij die in de request zitten, zodat een
-        // gedeeltelijke save (bv. alleen accent of links) de bridges/intel niet wist.
+        // gedeeltelijke save (bv. alleen accent of links) de intel-kanalen niet wist.
         $stmt = $pdo->prepare('INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?');
 
         if (array_key_exists('accent', $data)) {
@@ -71,20 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute(['corp_links', $json, $json]);
         }
 
-        if (array_key_exists('bridges', $data)) {
-            $bridges = [];
-            foreach ((array)$data['bridges'] as $b) {
-                if (!is_array($b) || count($b) < 2) continue;
-                $a = strtoupper(trim((string)$b[0]));
-                $c = strtoupper(trim((string)$b[1]));
-                if ($a === '' || $c === '') continue;
-                $bridges[] = [mb_substr($a, 0, 32), mb_substr($c, 0, 32)];
-                if (count($bridges) >= 100) break;
-            }
-            $bjson = json_encode($bridges);
-            $stmt->execute(['jump_bridges', $bjson, $bjson]);
-        }
-
         if (array_key_exists('intelChannels', $data)) {
             $intelChannels = [];
             foreach ((array)$data['intelChannels'] as $c) {
@@ -100,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }

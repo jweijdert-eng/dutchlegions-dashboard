@@ -17,7 +17,7 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $d    = json_decode(file_get_contents('php://input'), true) ?? [];
-        $id   = (int)($d['characterId'] ?? 0);
+        $id   = requireMember(is_array($d) ? $d : []);   // eigen character, uit het token
         $name = mb_substr(trim((string)($d['name'] ?? '')), 0, 128);
         $m3   = max(0, (int)($d['m3'] ?? 0));
         $isk  = max(0, (int)($d['isk'] ?? 0));
@@ -32,11 +32,12 @@ try {
         exit;
     }
 
-    // GET → top miners van DEZE maand (alleen wie daadwerkelijk gemined heeft)
+    // GET → top miners van DEZE maand (alleen wie daadwerkelijk gemined heeft); alleen voor leden
+    requireMember();
     $stmt = $pdo->prepare("SELECT character_id, name, m3, isk, updated_at FROM miners WHERE ym = ? AND m3 > 0 ORDER BY m3 DESC LIMIT 50");
     $stmt->execute([date('Y-m')]);
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    serverFout($e);
 }

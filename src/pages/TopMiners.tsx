@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { usePageLoading } from '../hooks/usePageLoading'
+import { apiHeaders } from '../auth/apiToken'
 
 interface Miner { character_id: number; name: string; m3: number; isk: number; updated_at: string }
 
@@ -30,7 +31,7 @@ export default function TopMiners() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/miners.php')
+    fetch('/api/miners.php', { headers: apiHeaders() })
       .then(r => r.json())
       .then((d: Miner[]) => {
         if (cancelled) return

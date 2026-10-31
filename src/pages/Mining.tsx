@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { apiToken } from '../auth/apiToken'
 import { getMining, resolveNames, getReprocessBundle, getTypeInfo, type MiningEntry } from '../api/esi'
 import Layout, { PageHeader } from '../components/Layout'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
@@ -129,7 +130,7 @@ export default function Mining() {
         for (const [cid, v] of perChar) {
           fetch('/api/miners.php', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ characterId: cid, name: v.name, m3: Math.round(v.m3), isk: Math.round(v.isk) }),
+            body: JSON.stringify({ characterId: cid, name: v.name, m3: Math.round(v.m3), isk: Math.round(v.isk), token: apiToken(cid) }),
           }).catch(() => {})
         }
       })

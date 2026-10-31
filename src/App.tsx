@@ -24,8 +24,6 @@ const SovTimer      = lz(() => import('./pages/SovTimer'))
 const Thera         = lz(() => import('./pages/Thera'))
 const Alarm         = lz(() => import('./pages/Alarm'))
 const FleetPayout   = lz(() => import('./pages/FleetPayout'))
-const JumpBridges   = lz(() => import('./pages/JumpBridges'))
-const Ansiblex      = lz(() => import('./pages/Ansiblex'))
 const Industry     = lz(() => import('./pages/Industry'))
 const Mining       = lz(() => import('./pages/Mining'))
 const Planets      = lz(() => import('./pages/Planets'))
@@ -180,7 +178,7 @@ function usePageTracking() {
     sessionStorage.setItem(key, '1')
     fetch('/api/pageview.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: charId, page }),
+      body: JSON.stringify({ characterId: charId, page, token: tokens.find(t => t.characterId === charId)?.accessToken ?? '' }),
     }).catch(() => {})
   }, [location.pathname, tokens, mainCharId])
 }
@@ -217,8 +215,6 @@ function AppRoutes() {
       <Route path="/thera"     element={<ProtectedRoute><Thera /></ProtectedRoute>} />
       <Route path="/alarm"     element={<ProtectedRoute><Alarm /></ProtectedRoute>} />
       <Route path="/fleet-payout" element={<ProtectedRoute><FleetPayout /></ProtectedRoute>} />
-      <Route path="/jumpbridges" element={<ProtectedRoute><JumpBridges /></ProtectedRoute>} />
-      <Route path="/ansiblex" element={<ProtectedRoute><Ansiblex /></ProtectedRoute>} />
       <Route path="/market"    element={<ProtectedRoute><Market /></ProtectedRoute>} />
       <Route path="/jita-scanner" element={<ProtectedRoute><JitaScanner /></ProtectedRoute>} />
       <Route path="/gap-scanner" element={<ProtectedRoute><GapScanner /></ProtectedRoute>} />

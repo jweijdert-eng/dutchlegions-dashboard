@@ -45,7 +45,7 @@ export default function TheraSettings({ token, onSaved }: { token: string; onSav
     let weg = false
     void (async () => {
       try {
-        const res = await fetch(`/api/thera.php?action=config&token=${encodeURIComponent(token)}`)
+        const res = await fetch('/api/thera.php?action=config', { headers: { 'X-Token': token } })
         const d = await res.json()
         if (weg) return
         if (res.ok && d.ok) setCfg(d as TheraCfg)
@@ -70,7 +70,7 @@ export default function TheraSettings({ token, onSaved }: { token: string; onSav
 
   const test = useCallback(async () => {
     try {
-      const res = await fetch(`/api/thera.php?action=test&token=${encodeURIComponent(token)}`)
+      const res = await fetch('/api/thera.php?action=test', { headers: { 'X-Token': token } })
       const d = await res.json().catch(() => ({}))
       zeg(d.ok ? '✅ Testbericht verstuurd — kijk in Discord' : `⚠ ${d.error || 'Versturen mislukt'}`)
     } catch { zeg('⚠ Versturen mislukt') }

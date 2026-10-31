@@ -8,7 +8,6 @@ import {
   type CharacterFleet, type FleetInfo, type FleetMember, type FleetWing,
 } from '../api/esi'
 import { secColor } from '../utils/secColor'
-import { useSiteConfig, type JumpBridge } from '../hooks/useSiteConfig'
 import { useIntelSystems, type SystemIntelGroup } from '../hooks/useIntelSystems'
 import { fetchDscanItems, type DscanGroup } from '../utils/dscan'
 import Layout, { PageHeader } from '../components/Layout'
@@ -25,11 +24,42 @@ function tokenScopes(accessToken: string): string[] {
   } catch { return [] }
 }
 
+// De MOTD komt van de fleet-baas en is dus onbetrouwbare HTML. Niet met regexen filteren
+// (die zijn te omzeilen, bv. onmouseover=… zonder aanhalingstekens), maar echt ontleden en
+// opnieuw opbouwen: alleen een vaste set tags, en alleen deze attributen:
+//   a.href     alleen http(s)-links; EVE-links (showinfo: e.d.) worden gewone tekst
+//   font.color alleen een kleurcode
+// Alles daarbuiten blijft alleen als tekst over.
+const MOTD_TAGS = new Set(['A', 'B', 'I', 'U', 'BR', 'FONT', 'SPAN', 'P', 'UL', 'LI', 'STRONG', 'EM'])
+
 function sanitizeMotd(html: string): string {
-  return html
-    .replace(/<(?!\/?(a|b|i|br|font|span|p|ul|li|strong|em)\b)[^>]*>/gi, '')
-    .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, '')
+  const bron = new DOMParser().parseFromString(html, 'text/html').body
+  const doel = document.createElement('div')
+  const kopieer = (van: Node, naar: Node) => {
+    for (const n of Array.from(van.childNodes)) {
+      if (n.nodeType === Node.TEXT_NODE) { naar.appendChild(document.createTextNode(n.textContent ?? '')); continue }
+      if (n.nodeType !== Node.ELEMENT_NODE) continue
+      const el = n as Element
+      if (!MOTD_TAGS.has(el.tagName)) { kopieer(el, naar); continue }
+      const nieuw = document.createElement(el.tagName.toLowerCase())
+      if (el.tagName === 'A') {
+        const href = el.getAttribute('href') ?? ''
+        if (/^https?:\/\//i.test(href.trim())) {
+          nieuw.setAttribute('href', href.trim())
+          nieuw.setAttribute('target', '_blank')
+          nieuw.setAttribute('rel', 'noopener noreferrer')
+        }
+      }
+      if (el.tagName === 'FONT') {
+        const kleur = (el.getAttribute('color') ?? '').trim()
+        if (/^#?[0-9a-f]{3,8}$/i.test(kleur)) nieuw.setAttribute('color', kleur.startsWith('#') ? kleur : '#' + kleur)
+      }
+      kopieer(el, nieuw)
+      naar.appendChild(nieuw)
+    }
+  }
+  kopieer(bron, doel)
+  return doel.innerHTML
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -84,13 +114,12 @@ const STRUCT_KEYWORDS: { kw: RegExp; name: string }[] = [
 
 // New Eden cluster-kaart: alle systemen als dots (canvas), fleet-leden + regio-namen
 // als overlay (SVG). Interactief: slepen = pannen, scrollen = zoomen.
-function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, intel, intelStatus }: {
+function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, intel, intelStatus }: {
   coords: Record<string, [number, number]>
   sysMeta: Record<string, [string, number, number]>
   regionMap: Record<string, string>
   adj: Record<string, number[]>
   memberNodes: MemberNode[]
-  bridges: JumpBridge[]
   intel: Record<string, SystemIntelGroup>
   intelStatus: string
 }) {
@@ -125,33 +154,12 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
   const [ctxRoute, setCtxRoute] = useState<number[] | null>(null)   // route voor het open menu (jumps)
   const [routePath, setRoutePath] = useState<number[] | null>(null) // op de kaart getekende route
 
-  // Systeem-naam (hoofdletters) → systeem-id. Eerst declareren (bridgeConnections gebruikt 'm).
+  // Systeem-naam (hoofdletters) → systeem-id.
   const nameToId = useMemo(() => {
     const m = new Map<string, string>()
     for (const [id, meta] of Object.entries(sysMeta)) m.set(meta[0].toUpperCase(), id)
     return m
   }, [sysMeta])
-
-  // Jump bridges als ESI-connections: "sidA%7CsidB,sidC%7CsidD" → kortste route via bridges.
-  const bridgeConnections = useMemo(() => {
-    const pairs: string[] = []
-    for (const [a, b] of bridges) {
-      const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
-      if (ia && ib) pairs.push(`${ia}%7C${ib}`)
-    }
-    return pairs.join(',')
-  }, [bridges, nameToId])
-  const routeOpts = bridgeConnections || undefined
-
-  // Set van bridge-paren (beide richtingen) → om JB-segmenten in de route te herkennen.
-  const bridgePairSet = useMemo(() => {
-    const s = new Set<string>()
-    for (const [a, b] of bridges) {
-      const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
-      if (ia && ib) { s.add(`${ia}-${ib}`); s.add(`${ib}-${ia}`) }
-    }
-    return s
-  }, [bridges, nameToId])
 
   // Route wissen: kaart-lijn weg + autopilot in-game leegmaken (waypoint = huidige systeem).
   async function clearRoute() {
@@ -176,15 +184,15 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     setCtxRoute(null)
     if (!ctx || !originSid || originSid === ctx.sid) return
     let cancelled = false
-    getRoute(originSid, ctx.sid, 'shortest', routeOpts).then(r => { if (!cancelled && Array.isArray(r)) setCtxRoute(r) }).catch(() => {})
+    getRoute(originSid, ctx.sid, 'shortest').then(r => { if (!cancelled && Array.isArray(r)) setCtxRoute(r) }).catch(() => {})
     return () => { cancelled = true }
-  }, [ctx, originSid, routeOpts])
+  }, [ctx, originSid])
 
   async function showRoute(destSid: number) {
     setCtx(null)
     if (!canLocation) { setDestMsg({ text: 'Log opnieuw in — je login mist het locatie-recht', ok: false }); setTimeout(() => setDestMsg(null), 5000); return }
     if (!originSid) { setDestMsg({ text: 'Eigen locatie onbekend (in EVE ingelogd?)', ok: false }); setTimeout(() => setDestMsg(null), 3500); return }
-    const r = ctxRoute ?? await getRoute(originSid, destSid, 'shortest', routeOpts).catch(() => null)
+    const r = ctxRoute ?? await getRoute(originSid, destSid, 'shortest').catch(() => null)
     if (r && r.length > 1) setRoutePath(r)
     else setDestMsg({ text: 'Geen route gevonden', ok: false })
   }
@@ -228,7 +236,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       setDestMsg({ text: r.ok ? `${clear ? 'Route gezet' : 'Waypoint toegevoegd'} → ${name}` : `Mislukt → ${name}: ${reason(r.status)}`, ok: r.ok })
       // Bij succes ook de route-lijn op de kaart tekenen (zelfde route als in-game).
       if (r.ok && canLocation && originSid && originSid !== sid) {
-        getRoute(originSid, sid, 'shortest', routeOpts).then(rt => { if (Array.isArray(rt) && rt.length > 1) setRoutePath(rt) }).catch(() => {})
+        getRoute(originSid, sid, 'shortest').then(rt => { if (Array.isArray(rt) && rt.length > 1) setRoutePath(rt) }).catch(() => {})
       }
     }
     setTimeout(() => setDestMsg(null), 5000)
@@ -287,18 +295,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     return [...acc.entries()].map(([rid, a]) => ({ rid, name: regionMap[String(rid)] ?? '', x: a.sx / a.n, z: a.sy / a.n }))
   }, [coords, sysMeta, regionMap])
 
-  // Systeemnaam (hoofdletters) → systeem-id, voor het resolven van bridges en intel.
-  // Jump bridges → coördinaat-paren.
-  const bridgeCoords = useMemo(() => {
-    const out: Array<[[number, number], [number, number]]> = []
-    for (const [a, b] of bridges) {
-      const ia = nameToId.get(a.trim().toUpperCase()), ib = nameToId.get(b.trim().toUpperCase())
-      if (!ia || !ib) continue
-      const ca = coords[ia], cb = coords[ib]
-      if (ca && cb) out.push([ca, cb])
-    }
-    return out
-  }, [bridges, nameToId, coords])
 
   // Intel → kaart-markers (rood !-icoon bij threat, oranje bij onbekend; clear = niets).
   const intelMarkers = useMemo(() => {
@@ -342,30 +338,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
     }
     ctx.stroke()
 
-    // 1b) Jump bridges (Ansiblex) — groene gebogen lijn (zoals de in-game route).
-    if (bridgeCoords.length) {
-      ctx.save()
-      ctx.strokeStyle = 'rgba(82,224,128,0.5)'
-      ctx.lineWidth = Math.min(2.4, 1 + tf.k * 0.07)
-      ctx.lineCap = 'round'
-      ctx.shadowColor = 'rgba(82,224,128,0.3)'
-      ctx.shadowBlur = 3
-      ctx.beginPath()
-      for (const [ca, cb] of bridgeCoords) {
-        const [ax, ay] = scr(ca); const [bx, by] = scr(cb)
-        if ((ax < 0 && bx < 0) || (ax > W && bx > W) || (ay < 0 && by < 0) || (ay > H && by > H)) continue
-        // Boog: controlepunt loodrecht op het midden van de verbinding.
-        const mx = (ax + bx) / 2, my = (ay + by) / 2
-        const dx = bx - ax, dy = by - ay
-        const len = Math.hypot(dx, dy) || 1
-        const off = len * 0.28
-        ctx.moveTo(ax, ay)
-        ctx.quadraticCurveTo(mx + (dy / len) * off, my - (dx / len) * off, bx, by)
-      }
-      ctx.stroke()
-      ctx.restore()
-    }
-
     // 2) Systemen als dots (gekleurd op security).
     for (const [sid, c] of Object.entries(coords)) {
       const [x, y] = scr(c)
@@ -376,7 +348,7 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       ctx.beginPath(); ctx.arc(x, y, Math.max(0.5, s / 2), 0, Math.PI * 2); ctx.fill()
     }
     ctx.globalAlpha = 1
-  }, [coords, sysMeta, adj, base, tf, bridgeCoords])
+  }, [coords, sysMeta, adj, base, tf])
 
   // Auto-zoom: éénmalig inzoomen op de FC zodra coords + leden geladen zijn.
   useEffect(() => {
@@ -551,27 +523,20 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       )}
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none' }} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        {/* Route (origin → doel): per segment — gewone sprong (cyaan) of jump bridge (goud, gebogen) */}
+        {/* Route (origin → doel) */}
         {routePath && routePath.length > 1 && (() => {
           const pts = routePath.map(s => { const c = coords[String(s)]; return c ? { s, p: screen(c[0], c[1]) } : null }).filter(Boolean) as { s: number; p: [number, number] }[]
           if (pts.length < 2) return null
           const segs = pts.slice(1).map((pt, i) => {
             const a = pts[i].p, b = pt.p
-            const jb = bridgePairSet.has(`${pts[i].s}-${pt.s}`)
-            if (jb) {
-              const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2
-              const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1
-              const off = Math.min(len * 0.22, 40)
-              return { jb, d: `M ${a[0]} ${a[1]} Q ${mx - dy / len * off} ${my + dx / len * off} ${b[0]} ${b[1]}` }
-            }
-            return { jb, d: `M ${a[0]} ${a[1]} L ${b[0]} ${b[1]}` }
+            return { d: `M ${a[0]} ${a[1]} L ${b[0]} ${b[1]}` }
           })
           return (
             <g style={{ pointerEvents: 'none' }}>
               {/* glow-onderlaag */}
-              {segs.map((s, i) => <path key={`g${i}`} d={s.d} fill="none" stroke={s.jb ? '#f0c040' : '#00b4d8'} strokeWidth={6} strokeOpacity={0.18} strokeLinecap="round" />)}
+              {segs.map((s, i) => <path key={`g${i}`} d={s.d} fill="none" stroke="#00b4d8" strokeWidth={6} strokeOpacity={0.18} strokeLinecap="round" />)}
               {/* hoofdlijn met stroming */}
-              {segs.map((s, i) => <path key={`l${i}`} className="route-flow" d={s.d} fill="none" stroke={s.jb ? '#ffd864' : '#22d3ee'} strokeWidth={s.jb ? 2.2 : 1.8} strokeOpacity={0.95} strokeLinecap="round" strokeDasharray={s.jb ? '1 5' : '6 4'} />)}
+              {segs.map((s, i) => <path key={`l${i}`} className="route-flow" d={s.d} fill="none" stroke="#22d3ee" strokeWidth={1.8} strokeOpacity={0.95} strokeLinecap="round" strokeDasharray="6 4" />)}
               {/* knooppunten + start/eind */}
               {pts.map((pt, i) => <circle key={i} cx={pt.p[0]} cy={pt.p[1]} r={i === 0 ? 3.4 : i === pts.length - 1 ? 3.6 : 1.5} fill={i === 0 ? '#3ecf6e' : i === pts.length - 1 ? '#f0c040' : '#22d3ee'} stroke="#05050e" strokeWidth={i === 0 || i === pts.length - 1 ? 1 : 0} />)}
             </g>
@@ -824,12 +789,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
       </svg>
       <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: '0.58rem', color: 'rgba(150,165,210,0.5)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
         <span>sleep = pan · scroll = zoom</span>
-        {bridgeCoords.length > 0 && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--green)' }}>
-            <svg width={18} height={8}><path d="M1 7 Q9 -1 17 5" fill="none" stroke="#52e080" strokeWidth={1.6} strokeLinecap="round" /></svg>
-            jump bridge
-          </span>
-        )}
         {intelStatus === 'live' && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: intelMarkers.length ? 'var(--red)' : 'var(--text-dim)' }}>
             <svg width={10} height={10}><circle cx={5} cy={5} r={5} fill={intelMarkers.length ? '#e05555' : '#445'} /><text x={5} y={8} textAnchor="middle" fontSize={7} fontWeight={700} fill="#fff">!</text></svg>
@@ -844,7 +803,6 @@ function ClusterMap({ coords, sysMeta, regionMap, adj, memberNodes, bridges, int
 export default function Fleet() {
   // Álle accounts, niet alleen de geselecteerde — je kunt met een ander character in fleet zitten.
   const { tokens } = useAuth()
-  const { bridges: siteBridges } = useSiteConfig()
 
   const [charFleet, setCharFleet]     = useState<CharacterFleet | null>(null)
   const [fleetInfo, setFleetInfo]     = useState<FleetInfo | null>(null)
@@ -1381,7 +1339,7 @@ export default function Fleet() {
               </div>
               {/* Kaart — direct naast de card, begrensd zodat 'ie niet enorm wordt */}
               <div style={{ flex: 1, minWidth: 320, maxWidth: 860 }}>
-                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
+                <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} intel={intel} intelStatus={intelStatus} />
               </div>
               {/* Recente kills & losses (in-game-stijl), naast de kaart */}
               <div style={{ flexShrink: 0 }}>
@@ -1393,7 +1351,7 @@ export default function Fleet() {
               {/* Live-kaart ook op de Leden-tab — naast de ledentabel */}
               {Object.keys(coords).length > 0 && fleetMap.memberNodes.length > 0 && (
                 <div style={{ flex: '1 1 480px', minWidth: 320, maxWidth: 760 }}>
-                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} bridges={siteBridges} intel={intel} intelStatus={intelStatus} />
+                  <ClusterMap coords={coords} sysMeta={sysMeta} regionMap={regionMap} adj={adj} memberNodes={fleetMap.memberNodes} intel={intel} intelStatus={intelStatus} />
                 </div>
               )}
               <div style={{ flex: '1 1 380px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden' }}>

@@ -6,10 +6,9 @@ import { getMemberSettings } from '../utils/memberSettings'
 // Beheerd op de Admin-pagina. Module-gecachet zodat componenten één fetch delen.
 
 export interface CorpLink { label: string; url: string }
-export type JumpBridge = [string, string]   // paar systeem-namen
-export interface SiteConfig { accent: string; links: CorpLink[]; bridges: JumpBridge[]; intelChannels: IntelChannel[] }
+export interface SiteConfig { accent: string; links: CorpLink[]; intelChannels: IntelChannel[] }
 
-const EMPTY: SiteConfig = { accent: '', links: [], bridges: [], intelChannels: [] }
+const EMPTY: SiteConfig = { accent: '', links: [], intelChannels: [] }
 let _cache: SiteConfig | null = null
 let _inflight: Promise<SiteConfig> | null = null
 
@@ -29,7 +28,6 @@ export function fetchSiteConfig(force = false): Promise<SiteConfig> {
         _cache = {
           accent: d?.accent ?? '',
           links: Array.isArray(d?.links) ? d.links : [],
-          bridges: Array.isArray(d?.bridges) ? d.bridges.filter(b => Array.isArray(b) && b.length === 2) : [],
           intelChannels: Array.isArray(d?.intelChannels)
             ? d.intelChannels.filter(c => c && typeof c.prefix === 'string' && c.prefix.trim())
             : [],

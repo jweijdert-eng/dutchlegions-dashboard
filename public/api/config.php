@@ -8,6 +8,11 @@ define('DB_USER', 'cm135994_dutchlegions');
 require __DIR__ . '/config.geheim.php';
 define('ADMIN_CHAR_ID', 1831618559);
 define('GITHUB_REPO', 'jweijdert-eng/dutchlegions-dashboard');
+// Client-id van onze EVE-app (openbaar, staat ook in de bundle). Alleen tokens die
+// EVE voor deze app heeft uitgegeven tellen; een token van een andere EVE-tool niet.
+define('EVE_CLIENT_ID', '28c22b1bbaeb4058bac25924e60d9266');
+define('CORP_ID', 98652891);
+define('ALLIANCE_ID', 99013537);
 
 function getDB(): PDO {
     $pdo = new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME.';charset=utf8', DB_USER, DB_PASS);
@@ -19,8 +24,23 @@ function cors(): void {
     header('Content-Type: application/json');
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
+    header('Access-Control-Allow-Headers: Content-Type, X-Token');
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
+}
+
+// Interne fout: details alleen in de serverlog, de buitenwereld krijgt een kale melding.
+function serverFout(Throwable $e): void {
+    error_log('[dashboard] ' . basename($_SERVER['SCRIPT_NAME'] ?? '') . ': ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Serverfout']);
+}
+
+// Het EVE-token van het verzoek: bij voorkeur uit de X-Token-header (dan staat het niet
+// in de URL en dus niet in de serverlogs), anders uit de body of de query.
+function verzoekToken(array $body = []): string {
+    $h = trim((string)($_SERVER['HTTP_X_TOKEN'] ?? ''));
+    if ($h !== '') return $h;
+    return (string)($body['token'] ?? $_GET['token'] ?? '');
 }
 
 // Verifieer een EVE v2 access-token → character-id (of null als ongeldig/verlopen).
@@ -40,6 +60,7 @@ function eveVerify(string $token): ?int {
     if ((int)($payload['exp'] ?? 0) < time()) return null;                          // verlopen
     if (!in_array((string)($payload['iss'] ?? ''), ['https://login.eveonline.com', 'login.eveonline.com'], true)) return null;
     if (!in_array('EVE Online', (array)($payload['aud'] ?? []), true)) return null;
+    if ((string)($payload['azp'] ?? '') !== EVE_CLIENT_ID) return null;               // voor ónze app uitgegeven
     $sub = (string)($payload['sub'] ?? '');
     if (strpos($sub, ':') !== false) $sub = substr(strrchr($sub, ':'), 1);          // CHARACTER:EVE:<id>
     return ctype_digit($sub) ? (int)$sub : null;
@@ -94,7 +115,92 @@ function rsaPem(string $n, string $e): string {
 // Haal het geverifieerde character-id uit een meegestuurd EVE-token (body 'token' of query 'token').
 // Retourneert null als er geen geldig, niet-verlopen EVE-token is meegestuurd.
 function authCharId(array $body = []): ?int {
-    return eveVerify((string)($body['token'] ?? $_GET['token'] ?? ''));
+    return eveVerify(verzoekToken($body));
+}
+
+// Mag dit character het dashboard gebruiken? Dezelfde regels als de toegangspoort in de
+// browser (Callback.tsx): admin altijd; geblokkeerd nooit; daarna corp/alliance-eis,
+// de allowlist per character en de allowlist van hele corps/alliances.
+function isMember(?int $cid): bool {
+    static $cache = [];
+    if (!$cid) return false;
+    if (isset($cache[$cid])) return $cache[$cid];
+    if (isAdminRole($cid)) return $cache[$cid] = true;
+    try {
+        $pdo = getDB();
+        ensureMembersSchema($pdo);
+        $st = $pdo->prepare('SELECT * FROM members WHERE character_id = ?');
+        $st->execute([$cid]);
+        $m = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        if ((int)($m['blocked'] ?? 0) === 1) return $cache[$cid] = false;
+
+        $set = [];
+        foreach ($pdo->query("SELECT `key`, value FROM settings WHERE `key` IN ('require_corp','require_alliance')") as $r) {
+            $set[$r['key']] = $r['value'] === 'true';
+        }
+        $eisCorp = $set['require_corp'] ?? false;
+        $eisAll  = $set['require_alliance'] ?? false;
+        if (!$eisCorp && !$eisAll) return $cache[$cid] = true;
+        if ((int)($m['allowed'] ?? 0) === 1) return $cache[$cid] = true;
+
+        $aff = affiliatie($pdo, $cid);
+        if ($aff === null) return $cache[$cid] = false;
+        [$corp, $all] = $aff;
+        if (($eisCorp && $corp === CORP_ID) || ($eisAll && $all === ALLIANCE_ID)) return $cache[$cid] = true;
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS allowed_orgs (org_id BIGINT PRIMARY KEY, type VARCHAR(16), name VARCHAR(128), created_at DATETIME)");
+        $st = $pdo->prepare("SELECT 1 FROM allowed_orgs WHERE (type = 'corp' AND org_id = ?) OR (type = 'alliance' AND org_id = ?)");
+        $st->execute([$corp, $all ?: -1]);
+        return $cache[$cid] = (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('[dashboard] isMember: ' . $e->getMessage());
+        return $cache[$cid] = false;
+    }
+}
+
+// [corp-id, alliance-id of 0] van een character, via ESI; een uur bewaard in de DB. Is ESI
+// onbereikbaar, dan geldt de laatst bekende stand; zonder stand null.
+function affiliatie(PDO $pdo, int $cid): ?array {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS member_aff (
+        character_id BIGINT PRIMARY KEY, corp_id BIGINT NOT NULL, alliance_id BIGINT NOT NULL DEFAULT 0, checked_at DATETIME NOT NULL)");
+    $st = $pdo->prepare('SELECT corp_id, alliance_id, checked_at FROM member_aff WHERE character_id = ?');
+    $st->execute([$cid]);
+    $oud = $st->fetch(PDO::FETCH_ASSOC);
+    if ($oud && strtotime($oud['checked_at'] . ' UTC') > time() - 3600) return [(int)$oud['corp_id'], (int)$oud['alliance_id']];
+
+    $ch = curl_init('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode([$cid]),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_TIMEOUT => 6, CURLOPT_USERAGENT => 'dutchlegionsdashboard.eu']);
+    $ruw = curl_exec($ch);
+    $ok  = curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200;
+    curl_close($ch);
+    $d = $ok ? json_decode((string)$ruw, true) : null;
+    if (is_array($d) && isset($d[0]['corporation_id'])) {
+        $corp = (int)$d[0]['corporation_id'];
+        $all  = (int)($d[0]['alliance_id'] ?? 0);
+        $pdo->prepare('INSERT INTO member_aff (character_id, corp_id, alliance_id, checked_at) VALUES (?,?,?,UTC_TIMESTAMP())
+                       ON DUPLICATE KEY UPDATE corp_id = VALUES(corp_id), alliance_id = VALUES(alliance_id), checked_at = UTC_TIMESTAMP()')
+            ->execute([$cid, $corp, $all]);
+        return [$corp, $all];
+    }
+    return $oud ? [(int)$oud['corp_id'], (int)$oud['alliance_id']] : null;
+}
+
+// Geverifieerd token van een lid vereist; stuurt 403 en stopt anders. Geeft het character-id.
+function requireMember(array $body = []): int {
+    $cid = authCharId($body);
+    if (!$cid || !isMember($cid)) {
+        http_response_code(403);
+        echo json_encode(['error' => 'forbidden']);
+        exit;
+    }
+    return $cid;
+}
+
+// Character-id als het een lid is, anders null (voor endpoints die zelf hun 403 sturen).
+function memberCharId(array $body = []): ?int {
+    $cid = authCharId($body);
+    return ($cid && isMember($cid)) ? $cid : null;
 }
 
 // Dwing admin-rechten af op basis van een geverifieerd token; stuurt 403 en stopt bij afwezigheid.

@@ -35,7 +35,7 @@ function Sparkline({ values }: { values: number[] }) {
 }
 
 
-type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' | 'ansiblex' | 'ideas'; wip?: boolean }
+type NavItem = { label: string; path: string; icon: string; badge: null | 'mail' | 'jobs' | 'alerts' | 'ideas'; wip?: boolean }
 
 // Kleurpalet voor door admin beheerde links (cyclisch toegekend).
 const LINK_COLORS = ['#00b4d8', '#f0a030', '#4ade80', '#a78bfa', '#f472b6', '#e05555']
@@ -83,7 +83,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Wars',         path: '/wars',       icon: '🗡️', badge: null },
   { label: 'Fleet',        path: '/fleet',      icon: '🛰️', badge: null },
   { label: 'Fleet Payout', path: '/fleet-payout', icon: '💸', badge: null },
-  { label: 'Ansiblex', path: '/ansiblex', icon: '🌉', badge: 'ansiblex' },
   { label: 'Ratting',      path: '/ratting',    icon: '🪙', badge: null },
   { label: 'Industry',     path: '/industry',   icon: '🔩', badge: 'jobs' },
   { label: 'Mining',       path: '/mining',     icon: '⚒️', badge: null },
@@ -113,7 +112,7 @@ const DEFAULT_LAYOUT: LayoutEntry[] = [
   { kind: 'group', id: 'grp-character', label: 'Character', icon: '◈', children: ['/character', '/skills', '/mail', '/assets', '/notes'] },
   { kind: 'group', id: 'grp-finance',   label: 'Finance',   icon: '◑', children: ['/wallet', '/corp-wallet', '/handel', '/jita-today', '/market', '/jita-scanner', '/gap-scanner', '/hub-arbitrage', '/jita-monitor', '/jita-positions', '/contracts', '/koopjes', '/mineralen', '/hauling'] },
   { kind: 'group', id: 'grp-industry',  label: 'Industrie', icon: '◫', children: ['/industry', '/mining', '/planets', '/fittings', '/blueprints', '/buildvsbuy', '/build-profit', '/build'] },
-  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/thera', '/alarm', '/fleet', '/fleet-payout', '/ansiblex', '/ratting'] },
+  { kind: 'group', id: 'grp-pvp',       label: 'PvP',       icon: '⚔', children: ['/kills', '/corp-killboard', '/enemy-dossier', '/sov-timer', '/thera', '/alarm', '/fleet', '/fleet-payout', '/ratting'] },
 ]
 
 const NAV_LS_KEY = 'nav_layout_v1'
@@ -207,12 +206,10 @@ function LeafRow({ item, badgeCount, collapsed, nested, label }: { item: NavItem
       {!collapsed && <span style={nested
         ? { fontWeight: 400, letterSpacing: '0.03em', flex: 1 }
         : { fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>{name}</span>}
-      {!collapsed && (item.badge === 'ansiblex'
-        ? (count > 0 && <span title="Lijst is bijgewerkt" style={{ fontSize: 12, lineHeight: 1, flexShrink: 0 }}>🔄</span>)
-        : item.badge === 'mail'
+      {!collapsed && (item.badge === 'mail'
         ? (count > 0 && <span title={`${count} ongelezen mail`} style={{ marginLeft: 'auto', width: 9, height: 9, borderRadius: '50%', background: '#ff7a00', boxShadow: '0 0 6px #ff7a00', flexShrink: 0 }} />)
         : <Badge count={count} />)}
-      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: item.badge === 'ansiblex' ? 'var(--gold)' : item.badge === 'mail' ? '#ff7a00' : 'var(--red)' }} />}
+      {collapsed && count > 0 && <span style={{ position: 'absolute', top: 5, right: 9, width: 7, height: 7, borderRadius: '50%', background: item.badge === 'mail' ? '#ff7a00' : 'var(--red)' }} />}
     </NavLink>
   )
 }
@@ -584,29 +581,13 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
   // owner OF rol-admin → ziet alle features. In member-preview verbergen we ze (net als de Admin-link).
   const isAdmin = (isAdminChar || myRole === 'admin') && !previewMode
   const member = useMemberSettings()
-  // Ansiblex "bijgewerkt"-indicator: server-timestamp vs. wat dit toestel voor het laatst
-  // zag (localStorage). Markeer als gezien zodra de Ansiblex-pagina geopend wordt.
-  const location = useLocation()
-  const [ansiAt, setAnsiAt] = useState<number | null>(null)
-  const [ansiSeen, setAnsiSeen] = useState<number>(() => { try { return Number(localStorage.getItem('ansiblex_seen') || 0) } catch { return 0 } })
-  useEffect(() => {
-    fetch('/api/ansiblex.php', { cache: 'no-store' }).then(r => r.json())
-      .then((d: { updatedAt?: number | null }) => setAnsiAt(d?.updatedAt ?? null)).catch(() => {})
-  }, [])
-  useEffect(() => {
-    if (location.pathname === '/ansiblex' && ansiAt) {
-      try { localStorage.setItem('ansiblex_seen', String(ansiAt)) } catch { /* ignore */ }
-      setAnsiSeen(ansiAt)
-    }
-  }, [location.pathname, ansiAt])
-  const ansiUpdate = !!(ansiAt && ansiAt > ansiSeen)
   // Ideeënbus-badge: aantal open ideeën (server geeft dit alleen aan admins terug).
   const ideasTok = (tokens.find(t => t.characterId === mainCharId) ?? tokens[0])?.accessToken
   const [ideasOpen, setIdeasOpen] = useState(0)
   useEffect(() => {
     if (!ideasTok) { setIdeasOpen(0); return }
     let cancelled = false
-    fetch(`/api/ideeen.php?action=count&token=${encodeURIComponent(ideasTok)}`, { cache: 'no-store' })
+    fetch('/api/ideeen.php?action=count', { cache: 'no-store', headers: { 'X-Token': ideasTok } })
       .then(r => r.json())
       .then((d: { open?: number }) => { if (!cancelled) setIdeasOpen(Number(d?.open) || 0) })
       .catch(() => {})
@@ -731,7 +712,6 @@ export default function Sidebar({ mobile = false, open = false, onClose }: { mob
     if (key === 'mail')   return alerts.unreadMail
     if (key === 'jobs')   return alerts.readyJobs
     if (key === 'alerts') return alerts.unreadMail + alerts.readyJobs
-    if (key === 'ansiblex') return ansiUpdate ? 1 : 0
     if (key === 'ideas')    return ideasOpen
     return 0
   }

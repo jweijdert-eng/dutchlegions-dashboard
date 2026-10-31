@@ -53,7 +53,7 @@ export default function Notes() {
 
   useEffect(() => {
     if (!charId || !tokenGeldig) return
-    fetch(`/api/notes.php?token=${encodeURIComponent(tokenRef.current)}`)
+    fetch('/api/notes.php', { headers: { 'X-Token': tokenRef.current } })
       .then(r => r.json())
       .then((data: Note[]) => {
         if (Array.isArray(data)) {

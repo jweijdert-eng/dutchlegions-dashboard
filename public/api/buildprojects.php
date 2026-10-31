@@ -21,7 +21,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 // Wie je bent komt uit het EVE-token, niet uit een meegestuurd character-ID: die zijn
 // openbaar, dus anders kon iedereen andermans projecten lezen, overschrijven en wissen.
 if ($method === 'GET') {
-    $charId = authCharId();
+    $charId = memberCharId();
     if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     try {
         $stmt = $pdo->prepare('SELECT data FROM build_projects WHERE character_id = ? ORDER BY updated_at DESC');
@@ -33,14 +33,14 @@ if ($method === 'GET') {
         }
         echo json_encode($out);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }
 
 if ($method === 'POST') {
     $body    = json_decode(file_get_contents('php://input'), true) ?? [];
-    $charId  = authCharId($body);
+    $charId  = memberCharId($body);
     if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $project = $body['project'] ?? null;
     if (!is_array($project) || empty($project['id'])) {
@@ -63,14 +63,14 @@ if ($method === 'POST') {
         $stmt->execute([$id, $charId, $charName, $name, $data, $updatedAt, $charName, $name, $data, $updatedAt]);
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }
 
 if ($method === 'DELETE') {
     $body   = json_decode(file_get_contents('php://input'), true) ?? [];
-    $charId = authCharId($body);
+    $charId = memberCharId($body);
     if (!$charId) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $id     = substr((string)($body['id'] ?? ''), 0, 40);
     if ($id === '') { http_response_code(400); echo json_encode(['error' => 'missing fields']); exit; }
@@ -79,7 +79,7 @@ if ($method === 'DELETE') {
         $stmt->execute([$id, $charId]);
         echo json_encode(['ok' => true]);
     } catch (Exception $e) {
-        http_response_code(500); echo json_encode(['error' => $e->getMessage()]);
+        serverFout($e);
     }
     exit;
 }

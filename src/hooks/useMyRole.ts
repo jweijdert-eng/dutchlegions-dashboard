@@ -12,7 +12,7 @@ export function useMyRole(): Role {
   useEffect(() => {
     if (!tok) { setRole('guest'); return }
     let cancelled = false
-    fetch(`/api/roles.php?token=${encodeURIComponent(tok.accessToken)}`)
+    fetch('/api/roles.php', { headers: { 'X-Token': tok.accessToken } })
       .then(r => r.json())
       .then(j => { if (!cancelled && typeof j?.me === 'string') setRole(j.me as Role) })
       .catch(() => {})

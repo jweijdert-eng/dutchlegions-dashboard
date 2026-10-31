@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Layout, { PageHeader } from '../components/Layout'
 import { useAuth } from '../auth/AuthContext'
+import { apiHeaders } from '../auth/apiToken'
 import { usePageLoading } from '../hooks/usePageLoading'
 import { useIntelSystems, INTEL_SUPPORTED } from '../hooks/useIntelSystems'
 import { getSystems, getSystemJumps, getCharacterLocation, getCharacterShip, resolveNames } from '../api/esi'
@@ -154,7 +155,7 @@ export default function Alarm() {
     if (!scherp || !set.gaten) { setGaten([]); return }
     const haal = async () => {
       try {
-        const r = await fetch('/api/thera.php?action=list')
+        const r = await fetch('/api/thera.php?action=list', { headers: apiHeaders() })
         const d = await r.json()
         setGaten((d.rows ?? []).map((x: { sig_id: string; system_id: number; system: string; out_system: string; maat: string; first_seen: string }) => ({
           key: `gat:${x.sig_id}`, sysId: x.system_id, systeem: x.system, soort: 'gat' as const,

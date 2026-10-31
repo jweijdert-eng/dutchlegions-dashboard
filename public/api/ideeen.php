@@ -1,7 +1,7 @@
 <?php
 // Ideeënbus — leden sturen ideeën in (token-geverifieerd). Alleen admins zien de hele
 // lijst; een lid ziet enkel zijn eigen idee(ën) + de reacties erop. Admin kan een status
-// zetten (open/gepland/klaar) en reageren. Patroon volgt ansiblex.php.
+// zetten (open/gepland/klaar) en reageren. Patroon volgt motd.php.
 require_once 'config.php';
 cors();
 $pdo = getDB();
@@ -44,7 +44,7 @@ function repliesFor(PDO $pdo, int $ideaId): array {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $cid = eveVerify($_GET['token'] ?? '');
+    $cid = memberCharId();
     if (!$cid) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $admin = isAdminRole($cid);
 
@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
-    $cid = eveVerify($data['token'] ?? '');
+    $cid = memberCharId(is_array($data) ? $data : []);
     if (!$cid) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $admin  = isAdminRole($cid);
     $action = (string)($data['action'] ?? 'create');
@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
-    $cid = eveVerify($data['token'] ?? '');
+    $cid = memberCharId(is_array($data) ? $data : []);
     if (!$cid) { http_response_code(403); echo json_encode(['error' => 'Niet ingelogd']); exit; }
     $admin = isAdminRole($cid);
     $ideaId = (int)($data['ideaId'] ?? 0);

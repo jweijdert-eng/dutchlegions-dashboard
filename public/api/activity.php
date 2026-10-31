@@ -3,6 +3,7 @@ require_once 'config.php';
 cors();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') { http_response_code(405); exit; }
+requireAdmin();
 
 try {
     $pdo = getDB();
@@ -37,5 +38,5 @@ try {
     ]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    serverFout($e);
 }

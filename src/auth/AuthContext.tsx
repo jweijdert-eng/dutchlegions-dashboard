@@ -107,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fetch('/api/checkin.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ characterId: t.characterId, name: t.characterName }),
+          body: JSON.stringify({ characterId: t.characterId, name: t.characterName, token: t.accessToken }),
         }).catch(() => {})
       }
     }
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetch('/api/checkin.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: token.characterId, name: token.characterName, type: 'login' }),
+      body: JSON.stringify({ characterId: token.characterId, name: token.characterName, type: 'login', token: token.accessToken }),
     }).catch(() => { /* ignore */ })
   }, [])
 

@@ -5,7 +5,7 @@ import Layout, { PageHeader } from '../components/Layout'
 import { useLayoutMode } from '../context/LayoutModeContext'
 import { getCharacterInfo, getCorporation, getAlliance } from '../api/esi'
 import EveImage from '../components/EveImage'
-import { fetchSiteConfig, applyAccent, type CorpLink, type JumpBridge } from '../hooks/useSiteConfig'
+import { fetchSiteConfig, applyAccent, type CorpLink } from '../hooks/useSiteConfig'
 import { DEFAULT_INTEL_CHANNELS, type IntelChannel } from '../utils/intelChannels'
 import TheraSettings from '../components/TheraSettings'
 
@@ -168,9 +168,6 @@ export default function Admin() {
   const [motdSaved, setMotdSaved] = useState(false)
   const [accent, setAccent] = useState('')
   const [links, setLinks] = useState<CorpLink[]>([])
-  const [bridges, setBridges] = useState<JumpBridge[]>([])
-  const [bridgePaste, setBridgePaste] = useState('')
-  const [bridgesOpen, setBridgesOpen] = useState(false)
   const [intelChannels, setIntelChannels] = useState<IntelChannel[]>([])
   const [intelOpen, setIntelOpen] = useState(false)
   const [theraOpen, setTheraOpen] = useState(false)
@@ -217,19 +214,17 @@ export default function Admin() {
       const d = await fetch('/api/siteconfig.php', { cache: 'no-cache' }).then(r => r.json())
       setAccent(d.accent ?? '')
       setLinks(Array.isArray(d.links) ? d.links : [])
-      setBridges(Array.isArray(d.bridges) ? d.bridges.filter((b: unknown) => Array.isArray(b) && b.length === 2) : [])
       setIntelChannels(Array.isArray(d.intelChannels) ? d.intelChannels.filter((c: IntelChannel) => c?.prefix?.trim()) : [])
     } catch { /* ignore */ }
   }
 
   // Sla alleen de meegegeven onderdelen op (partial). De server werkt enkel de
-  // aanwezige keys bij, zodat een accent-/links-save nooit de bridges/intel wist.
-  async function saveSiteConfig(patch: Partial<{ accent: string; links: CorpLink[]; bridges: JumpBridge[]; intelChannels: IntelChannel[] }>) {
+  // aanwezige keys bij, zodat een accent-/links-save nooit de intel-kanalen wist.
+  async function saveSiteConfig(patch: Partial<{ accent: string; links: CorpLink[]; intelChannels: IntelChannel[] }>) {
     if (!adminToken) return
     const body: Record<string, unknown> = { characterId: adminToken.characterId, token: adminToken.accessToken }
     if (patch.accent !== undefined) body.accent = patch.accent
     if (patch.links !== undefined) body.links = patch.links.filter(l => l.label.trim() && /^https?:\/\//i.test(l.url.trim()))
-    if (patch.bridges !== undefined) body.bridges = patch.bridges.filter(b => b[0]?.trim() && b[1]?.trim())
     if (patch.intelChannels !== undefined) body.intelChannels = patch.intelChannels.filter(c => c.prefix.trim()).map(c => ({ prefix: c.prefix.trim(), label: c.label.trim() }))
     await fetch('/api/siteconfig.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -244,42 +239,6 @@ export default function Admin() {
     setAccent(hex)
     applyAccent(hex)               // live preview
     saveSiteConfig({ accent: hex })
-  }
-
-  // Bulk-plak: één bridge per regel. Scheider tussen de twee systemen mag »/›/→/↔/->/|/,/;/tab
-  // of gewoon een spatie; een trailing " - Ansiblex Jump Gate" wordt weggeknipt.
-  function parseBridgePaste(text: string): JumpBridge[] {
-    const seen = new Set<string>()
-    const out: JumpBridge[] = []
-    for (let line of text.split(/\r?\n/)) {
-      line = line.trim().replace(/\s*[-–—]\s*ansiblex.*$/i, '').trim()
-      if (!line) continue
-      let parts = line.split(/\s*(?:»|›|→|↔|<->|->|=>|\||\t|,|;)\s*/).filter(Boolean)
-      if (parts.length < 2) parts = line.split(/\s+/).filter(Boolean)   // val terug op spatie
-      if (parts.length < 2) continue
-      const a = parts[0].trim().toUpperCase(), b = parts[1].trim().toUpperCase()
-      if (!a || !b || a === b) continue
-      const key = [a, b].sort().join('|')
-      if (seen.has(key)) continue
-      seen.add(key); out.push([a, b])
-    }
-    return out
-  }
-
-  // Verwerk de plaktekst → voeg toe aan de bestaande lijst (deduped) en sla op.
-  function applyBridgePaste() {
-    const parsed = parseBridgePaste(bridgePaste)
-    if (!parsed.length) return
-    const seen = new Set(bridges.map(b => [b[0].toUpperCase(), b[1].toUpperCase()].sort().join('|')))
-    const merged = [...bridges]
-    for (const p of parsed) {
-      const key = [p[0], p[1]].sort().join('|')
-      if (seen.has(key)) continue
-      seen.add(key); merged.push(p)
-    }
-    setBridges(merged)
-    setBridgePaste('')
-    saveSiteConfig({ bridges: merged })
   }
 
   async function fetchBpInfo() {
@@ -357,8 +316,8 @@ export default function Admin() {
     setLoading(true)
     try {
       const [act, pv] = await Promise.all([
-        fetch('/api/activity.php').then(r => r.json()),
-        fetch('/api/pageview.php').then(r => (r.ok ? r.json() : [])).catch(() => []),
+        fetch('/api/activity.php', { headers: { 'X-Token': adminToken?.accessToken ?? '' } }).then(r => r.json()),
+        fetch('/api/pageview.php', { headers: { 'X-Token': adminToken?.accessToken ?? '' } }).then(r => (r.ok ? r.json() : [])).catch(() => []),
       ])
       setActivity(act)
       setPageStats(Array.isArray(pv) ? pv : [])
@@ -369,7 +328,7 @@ export default function Admin() {
   async function fetchMembers() {
     setLoading(true)
     try {
-      const r = await fetch(`/api/members.php?token=${encodeURIComponent(adminToken?.accessToken ?? '')}`)
+      const r = await fetch('/api/members.php', { headers: { 'X-Token': adminToken?.accessToken ?? '' } })
       const list = await r.json() as SiteMember[]
       setMembers(list)
       fetchMemberOrgs(list)
@@ -382,7 +341,7 @@ export default function Admin() {
   async function fetchRoles() {
     if (!adminToken) return
     try {
-      const r = await fetch(`/api/roles.php?token=${encodeURIComponent(adminToken.accessToken)}`)
+      const r = await fetch('/api/roles.php', { headers: { 'X-Token': adminToken.accessToken } })
       const j = await r.json()
       const map: Record<number, string> = {}
       for (const x of j?.roles ?? []) map[Number(x.character_id)] = x.role
@@ -393,15 +352,15 @@ export default function Admin() {
   async function setMemberRole(m: SiteMember, role: string) {
     if (!adminToken) return
     setRoles(prev => { const n = { ...prev }; if (role === 'member') delete n[m.character_id]; else n[m.character_id] = role; return n })
-    await fetch(`/api/roles.php?token=${encodeURIComponent(adminToken.accessToken)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    await fetch('/api/roles.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': adminToken.accessToken },
       body: JSON.stringify({ characterId: m.character_id, name: m.name, role }),
     }).catch(() => {})
   }
 
   async function refreshMembers() {
     try {
-      const r = await fetch(`/api/members.php?token=${encodeURIComponent(adminToken?.accessToken ?? '')}`)
+      const r = await fetch('/api/members.php', { headers: { 'X-Token': adminToken?.accessToken ?? '' } })
       const list = await r.json() as SiteMember[]
       setMembers(list)
       fetchMemberOrgs(list)
@@ -478,7 +437,7 @@ export default function Admin() {
   async function openDetail(m: SiteMember) {
     setDetailMember(m); setDetail(null); setDetailLoading(true)
     const [d, info] = await Promise.all([
-      fetch(`/api/member.php?characterId=${m.character_id}&token=${encodeURIComponent(adminToken?.accessToken ?? '')}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/member.php?characterId=${m.character_id}`, { headers: { 'X-Token': adminToken?.accessToken ?? '' } }).then(r => r.ok ? r.json() : null).catch(() => null),
       getCharacterInfo(m.character_id).catch(() => null),
     ])
     setDetail(d ? { ...d, birthday: info?.birthday, secStatus: info?.security_status } : null)
@@ -1088,68 +1047,6 @@ export default function Admin() {
                   style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
                 >Opslaan</button>
               </div>
-            </div>
-
-            {/* Jump bridges (fleet-kaart) */}
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '1rem 1.1rem' }}>
-              <div onClick={() => setBridgesOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>🌉 Jump bridges (fleet-kaart) <span style={{ fontSize: '0.66rem', fontWeight: 400, color: 'var(--text-dim)' }}>({bridges.length})</span></div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{bridgesOpen ? '▲' : '▼'}</span>
-              </div>
-              {bridgesOpen && (<>
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '0.5rem', marginBottom: '0.7rem' }}>Ansiblex-verbindingen staan niet in de SDE — voer ze hier in als paar systeem-namen (bv. <code>BKG-Q2</code> ↔ <code>9F-7PZ</code>). Ze worden op de fleet-kaart als blauwe lijn getekend.</div>
-
-              {/* Bulk-plakken: alle bridges in één keer */}
-              <div style={{ marginBottom: '0.8rem' }}>
-                <textarea
-                  value={bridgePaste}
-                  onChange={e => setBridgePaste(e.target.value)}
-                  rows={4}
-                  placeholder={'Plak hier alle bridges — één per regel, bv.:\nBKG-Q2 » 9F-7PZ\n9F-7PZ » C-LP3N\nof: BKG-Q2, 9F-7PZ'}
-                  style={{ width: '100%', boxSizing: 'border-box', background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', fontFamily: 'monospace', padding: '0.45rem 0.6rem', outline: 'none', resize: 'vertical' }}
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.35rem' }}>
-                  <button
-                    onClick={applyBridgePaste}
-                    disabled={!bridgePaste.trim()}
-                    style={{ background: 'rgba(62,207,110,0.12)', border: '1px solid var(--green)', borderRadius: 3, color: 'var(--green)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: bridgePaste.trim() ? 'pointer' : 'not-allowed', opacity: bridgePaste.trim() ? 1 : 0.5 }}
-                  >Inlezen & toevoegen</button>
-                  {bridgePaste.trim() && <span style={{ fontSize: '0.64rem', color: 'var(--text-dim)' }}>{parseBridgePaste(bridgePaste).length} bridge(s) herkend</span>}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                {bridges.map((b, i) => (
-                  <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                    <input
-                      value={b[0]}
-                      onChange={e => setBridges(bs => bs.map((x, j) => j === i ? [e.target.value, x[1]] : x))}
-                      placeholder="Systeem A"
-                      style={{ width: 130, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
-                    />
-                    <span style={{ color: 'var(--text-dim)' }}>↔</span>
-                    <input
-                      value={b[1]}
-                      onChange={e => setBridges(bs => bs.map((x, j) => j === i ? [x[0], e.target.value] : x))}
-                      placeholder="Systeem B"
-                      style={{ width: 130, background: '#05050e', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--text)', fontSize: '0.72rem', padding: '0.35rem 0.5rem', outline: 'none' }}
-                    />
-                    <button onClick={() => setBridges(bs => bs.filter((_, j) => j !== i))} title="Verwijderen"
-                      style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, color: 'var(--red)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, padding: '0.25rem 0.5rem' }}>×</button>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.65rem' }}>
-                <button
-                  onClick={() => setBridges(bs => bs.length < 100 ? [...bs, ['', '']] : bs)}
-                  style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 3, color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.3rem 0.7rem', cursor: 'pointer' }}
-                >+ Bridge toevoegen</button>
-                <button
-                  onClick={() => saveSiteConfig({ bridges })}
-                  style={{ background: 'rgba(0,180,216,0.12)', border: '1px solid var(--blue)', borderRadius: 3, color: 'var(--blue)', fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.95rem', cursor: 'pointer' }}
-                >Opslaan</button>
-              </div>
-              </>)}
             </div>
 
             {/* Intel-kanalen (Intel-pagina + fleet-kaart) */}
