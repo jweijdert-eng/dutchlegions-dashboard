@@ -11,10 +11,11 @@ export interface MemberSettings {
   accent: string            // persoonlijke accentkleur (#rrggbb), leeg = site-accent
   translate: boolean        // Local-berichten vertalen
   translateLang: 'en' | 'nl' // doeltaal voor de vertaling
+  shareLocation: boolean    // positie van je characters delen op "Waar is iedereen"
 }
 
 const KEY = 'eve_member_settings'
-const DEFAULTS: MemberSettings = { hiddenTabs: [], notifications: true, notifJobs: true, sound: true, localWidget: true, accent: '', translate: false, translateLang: 'en' }
+const DEFAULTS: MemberSettings = { hiddenTabs: [], notifications: true, notifJobs: true, sound: true, localWidget: true, accent: '', translate: false, translateLang: 'en', shareLocation: true }
 const EVENT = 'membersettings'
 
 export function getMemberSettings(): MemberSettings {
@@ -29,6 +30,7 @@ export function getMemberSettings(): MemberSettings {
       accent: /^#[0-9a-fA-F]{6}$/.test(raw.accent) ? raw.accent : '',
       translate: raw.translate === true,
       translateLang: raw.translateLang === 'nl' ? 'nl' : 'en',
+      shareLocation: raw.shareLocation !== false,
     }
   } catch { return { ...DEFAULTS } }
 }

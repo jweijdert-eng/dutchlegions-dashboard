@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { refreshAccessToken, type TokenData } from './sso'
 import { fetchSiteSettings } from '../hooks/useSiteSettings'
+import { useLocationReporter } from '../hooks/useLocationReporter'
 
 interface AuthContextValue {
   tokens: TokenData[]
@@ -99,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => { doRefresh() }, 60_000)
     return () => clearInterval(id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Waar is iedereen: positie van de characters doorgeven (elke 30 s, zie de hook)
+  useLocationReporter(tokens)
 
   // Heartbeat: update last_seen direct bij laden én elke 5 minuten
   useEffect(() => {

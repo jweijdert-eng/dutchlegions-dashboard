@@ -238,6 +238,21 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Locatie delen */}
+        <div style={card}>
+          <div style={cardTitle}>📍 Waar is iedereen</div>
+          <div style={cardSub}>Je positie delen met de corp op de pagina "Waar is iedereen".</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>Locatie delen</div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
+                Systeem, station en schip van je gekoppelde characters worden elke 30 s doorgegeven zolang het dashboard open staat. Uit = je verdwijnt direct van de lijst.
+              </div>
+            </div>
+            <Toggle on={settings.shareLocation} onChange={v => setMemberSettings({ shareLocation: v })} />
+          </div>
+        </div>
+
         {/* Dashboard-widgets */}
         <div style={card}>
           <div style={cardTitle}>▦ Dashboard</div>
