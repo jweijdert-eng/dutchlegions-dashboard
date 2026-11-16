@@ -65,6 +65,28 @@ console.log('  OK  feed toont sprong 5-6QW7 → Q-02UL:', /5-6QW7\s*→\s*[\d.-]
 console.log('  OK  teller actief = 3:', /3\s*actief/.test(tekst.replace(/\n/g, ' ')))
 console.log('  OK  waarschuwing login zonder locatie-recht:', /Zonder Recht: je login mist het locatie-recht/.test(tekst))
 
+// Kaart (stijl DL Intel): regio automatisch = Delve, poortlijnen + bolletjes, portretten op bezette systemen.
+await p.waitForSelector('svg line', { timeout: 10000 }).catch(() => {})
+const regioSel = await p.locator('select[aria-label="Regio op de kaart"]').inputValue()
+const optTekst = await p.locator('select[aria-label="Regio op de kaart"] option[value=auto]').innerText()
+console.log('  OK  kaart kiest automatisch Delve:', regioSel === 'auto' && /Delve/.test(optTekst))
+const lijnen = await p.locator('svg line').count(); const bollen = await p.locator('svg circle').count()
+console.log('  OK  kaart heeft poortlijnen en systemen:', lijnen > 50 && bollen > 80, `(${lijnen} lijnen, ${bollen} cirkels)`)
+console.log('  OK  portretten op bezette systemen (Q-02UL 2x, PS-94K 1x):', (await p.locator(`svg image[href*="/${IK}/portrait"]`).count()) === 1 && (await p.locator('svg image').count()) === 3)
+console.log('  OK  Jita (andere regio) staat niet op de kaart maar telt als buiten:', (await p.locator('svg text:text-is("Jita")').count()) === 0 && /1 lid buiten deze regio/.test(await p.locator('body').innerText()))
+// Klik op PS-94K → lijst alleen Rita, knop om het weer los te laten.
+await p.locator('svg g:has(> text:text-is("PS-94K")) > circle[fill="#71bed3"]').first().click()
+await p.waitForTimeout(300)
+console.log('  OK  klik op systeem filtert de lijst:', (await p.locator('#waar-lijst >> text=Rita Ratter').count()) === 1 && (await p.locator('#waar-lijst >> text=Piet Pilot').count()) === 0)
+await p.click('button:has-text("alleen PS-94K")')
+await p.waitForTimeout(300)
+console.log('  OK  filter weer los:', (await p.locator('#waar-lijst >> text=Piet Pilot').count()) === 1)
+await p.selectOption('select[aria-label="Regio op de kaart"]', '10000002')
+await p.waitForTimeout(500)
+console.log('  OK  regio wisselen naar The Forge toont Jita:', (await p.locator('svg text:text-is("Jita")').count()) === 1)
+await p.selectOption('select[aria-label="Regio op de kaart"]', 'auto')
+await p.waitForTimeout(300)
+
 // Rapporteur: één POST voor het character mét recht, geen voor het character zonder.
 await p.waitForTimeout(1000)
 const mijn = posts.filter(x => x.body?.solar_system_id)

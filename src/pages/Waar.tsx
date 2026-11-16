@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Layout, { PageHeader } from '../components/Layout'
 import EveImage from '../components/EveImage'
 import SolarSystem from '../components/SolarSystem'
+import WaarKaart from '../components/WaarKaart'
 import { useAuth } from '../auth/AuthContext'
 import { apiHeaders } from '../auth/apiToken'
 import { usePageLoading } from '../hooks/usePageLoading'
@@ -63,6 +64,8 @@ export default function Waar() {
   const [nu, setNu] = useState(Date.now())
   const [filter, setFilter] = useState('')
   const [alleenActief, setAlleenActief] = useState(false)
+  const [regioKeuze, setRegioKeuze] = useState<'auto' | number>('auto')   // kaart: automatisch = waar de meeste actieve leden zitten
+  const [gekozenSysteem, setGekozenSysteem] = useState<number | null>(null)
 
   const [systemen, setSystemen] = useState<Record<string, [string, number, number]>>({})
   const [regios, setRegios] = useState<Record<string, string>>({})
@@ -124,8 +127,21 @@ export default function Waar() {
   const sysSec = (id: number) => systemen[String(id)]?.[1]
   const regioNaam = (id: number) => { const r = systemen[String(id)]?.[2]; return r ? (regios[String(r)] ?? '') : '' }
 
+  // Kaart: regio's waar iemand zit (actieve leden tellen dubbel), standaard de drukste; anders Delve.
+  const regioTelling = useMemo(() => {
+    const t = new Map<number, number>()
+    for (const m of leden) {
+      const r = systemen[String(m.solar_system_id)]?.[2]; if (!r) continue
+      t.set(r, (t.get(r) ?? 0) + (m.age <= ACTIEF_S ? 2 : 1))
+    }
+    return [...t.entries()].sort((a, b) => b[1] - a[1])
+  }, [leden, systemen])
+  const kaartRegio = regioKeuze === 'auto' ? (regioTelling[0]?.[0] ?? 10000060) : regioKeuze
+  const kaartLeden = useMemo(() => leden.map(m => ({ character_id: m.character_id, name: m.name, solar_system_id: m.solar_system_id, actief: m.age <= ACTIEF_S })), [leden])
+
   const zoek = filter.trim().toLowerCase()
   const gefilterd = leden.filter(m => {
+    if (gekozenSysteem && m.solar_system_id !== gekozenSysteem) return false
     if (alleenActief && m.age > ACTIEF_S) return false
     if (!zoek) return true
     const hooi = [m.name, sysNaam(m.solar_system_id), regioNaam(m.solar_system_id), m.ship_type_id ? typeNamen.get(m.ship_type_id) ?? '' : '', m.ship_name ?? ''].join(' ').toLowerCase()
@@ -187,6 +203,25 @@ export default function Waar() {
           <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>
             Grijs = al even niets gehoord (dashboard dicht of offline). Ververst elke 15 s.
           </span>
+        </div>
+
+        {/* Regiokaart (stijl DL Intel) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <span style={LABEL}>Kaart</span>
+            <select value={regioKeuze} onChange={e => { setRegioKeuze(e.target.value === 'auto' ? 'auto' : Number(e.target.value)); setGekozenSysteem(null) }} style={{ ...INPUT, padding: '0.25rem 0.4rem' }} aria-label="Regio op de kaart">
+              <option value="auto">Automatisch{regioTelling[0] ? ` (${regios[String(regioTelling[0][0])] ?? ''})` : ''}</option>
+              {regioTelling.map(([rid]) => <option key={rid} value={rid}>{regios[String(rid)] ?? rid}</option>)}
+              {!regioTelling.some(([rid]) => rid === 10000060) && <option value={10000060}>Delve</option>}
+            </select>
+            {gekozenSysteem && (
+              <button onClick={() => setGekozenSysteem(null)} style={{ ...INPUT, cursor: 'pointer', fontSize: '0.66rem' }}>
+                ✕ alleen {sysNaam(gekozenSysteem)}
+              </button>
+            )}
+            <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)' }}>Klik op een systeem om de lijst daarop te zetten.</span>
+          </div>
+          <WaarKaart systemen={systemen} regios={regios} leden={kaartLeden} regioId={kaartRegio} gekozen={gekozenSysteem} onKies={setGekozenSysteem} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: '0.8rem', alignItems: 'start' }}>
