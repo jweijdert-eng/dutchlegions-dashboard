@@ -43,6 +43,12 @@ inputs:
 runs:
   using: composite
   steps:
+    # De host stuurt geen tussencertificaat mee; zonder deze bundel faalt de strenge
+    # certificaatcontrole. Vernieuwen: bash vernieuw-ca.sh in deze map.
+    - name: Tussencertificaten voor FTPS
+      shell: bash
+      run: echo "NODE_EXTRA_CA_CERTS=${{ github.action_path }}/ftps-ca.pem" >> "$GITHUB_ENV"
+
     - name: Upload via FTP
       id: upload_1
       continue-on-error: true
