@@ -20,13 +20,17 @@ inputs:
     required: false
     default: /public_html/
   protocol:
-    description: FTP protocol
+    description: FTP protocol (ftps = versleuteld)
     required: false
-    default: ftp
+    default: ftps
   port:
     description: FTP port
     required: false
     default: "21"
+  security:
+    description: strict = certificaat van de server controleren
+    required: false
+    default: strict
   dangerous-clean-slate:
     description: Whether to wipe the remote directory before upload
     required: false
@@ -50,6 +54,7 @@ runs:
         local-dir: ${{ inputs.local-dir }}
         server-dir: ${{ inputs.server-dir }}
         protocol: ${{ inputs.protocol }}
+        security: ${{ inputs.security }}
         port: ${{ inputs.port }}
         dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
         timeout: ${{ inputs.timeout-ms }}
@@ -71,6 +76,7 @@ runs:
         local-dir: ${{ inputs.local-dir }}
         server-dir: ${{ inputs.server-dir }}
         protocol: ${{ inputs.protocol }}
+        security: ${{ inputs.security }}
         port: ${{ inputs.port }}
         dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
         timeout: ${{ inputs.timeout-ms }}
@@ -92,6 +98,7 @@ runs:
         local-dir: ${{ inputs.local-dir }}
         server-dir: ${{ inputs.server-dir }}
         protocol: ${{ inputs.protocol }}
+        security: ${{ inputs.security }}
         port: ${{ inputs.port }}
         dangerous-clean-slate: ${{ inputs.dangerous-clean-slate }}
         timeout: ${{ inputs.timeout-ms }}

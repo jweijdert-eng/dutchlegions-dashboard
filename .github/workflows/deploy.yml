@@ -44,7 +44,8 @@ jobs:
       - name: Upload via FTP
         uses: ./.github/actions/ftp-deploy-retry
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          # FTPS: het certificaat van de host staat op deze naam, niet op ons domein.
+          server: h63.mijn.host
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           timeout-ms: ${{ env.FTP_TIMEOUT_MS }}
